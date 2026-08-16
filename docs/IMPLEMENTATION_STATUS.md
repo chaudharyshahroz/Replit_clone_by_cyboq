@@ -573,7 +573,7 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 475 unit tests
+pnpm test                        # 496 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
@@ -584,9 +584,10 @@ pnpm verify:production-config    # 17 checks on .env.production.example
 
 ---
 
-## Milestone 6 — Integrations 🚧
+## Milestone 6 — Integrations ✅
 
-`@reklu/integrations` — 37 tests. GitHub, Vercel and Supabase OAuth.
+`@reklu/integrations` — 58 tests. GitHub, Vercel and Supabase: OAuth,
+connection storage and deployment adapters.
 
 | Item | State | Verified by |
 | ---- | ----- | ----------- |
@@ -599,12 +600,20 @@ pnpm verify:production-config    # 17 checks on .env.production.example
 | `/api/integrations/[provider]/start` + `/callback` | ✅ | both routes build; every failure redirects with a readable message |
 | Settings → Connections UI | ✅ | three distinct states: not configured, available, connected |
 | Unconfigured providers name their env vars + callback URL | ✅ | spec §25 — no dead buttons |
-| Deployment adapters (push to GitHub, deploy to Vercel) | ⬜ | not started; needs Build enabled to be useful |
+| GitHub push — blobs → tree → commit → ref, one commit | ✅ | empty-repo and existing-branch paths both tested against a stubbed API |
+| Vercel deploy — inline file tree, no git repo required | ✅ | reports Vercel's own state; never claims READY on its own |
+| Supabase provisioning — project + one-time DB password | ✅ | weak passwords refused; async status polled, never assumed |
+| Unicode-safe repo/project naming | ✅ | regression: NFKD combining marks turned every accented letter into a hyphen |
 
 **Not exercised against a live provider.** No OAuth credentials are registered
-yet, so no authorization has completed end to end. The flows are covered by
-unit tests; the round trip is not. Registering one GitHub OAuth app is what
-turns that from tested to verified.
+yet, so no authorization and no push has completed end to end. Deployment
+adapters are tested against a stubbed `fetch`, which verifies request shape,
+ordering and what is *not* sent — not that GitHub accepts them. Registering one
+GitHub OAuth app is what turns this from tested to verified.
+
+**Export UI is not wired.** The adapters exist and are callable; no button in
+the Build workspace calls them yet, because Build is disabled in production
+until an isolated sandbox exists.
 
 ---
 
@@ -651,6 +660,10 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    local `.env` was corrected; `setup.sh` should detect this.
 5. **Build is the only major subsystem not exercised in production.** It is off
    by design (`BUILD_ENABLED=false`) pending an isolated sandbox.
+8. **`.gitignore` once excluded a whole package.** An unanchored `build/` matched
+   `packages/build` and both Build UI directories, so all of M5 was absent from
+   every deploy while working locally. Guarded by `pnpm verify:repo`; run it
+   before trusting that a green local build means a green clone.
 6. **Build is off in the shipped production configuration** (`BUILD_ENABLED=false`).
    Enabling it needs an isolated sandbox — E2B, or a Docker host separate from
    the app server. Neither the `docker` nor the `e2b` sandbox driver is

@@ -104,6 +104,64 @@ export async function getJson<T>(
   return (await response.json()) as T;
 }
 
+/** An authenticated write against a provider's API. */
+export async function sendJson<T>(
+  provider: string,
+  method: 'POST' | 'PATCH' | 'PUT',
+  url: string,
+  accessToken: string,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
+  const response = await request(
+    provider,
+    url,
+    {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...extraHeaders,
+      },
+      body: JSON.stringify(body),
+    },
+    // Uploads of a generated tree take longer than a metadata call.
+    30_000,
+  );
+
+  if (!response.ok) {
+    // Provider error messages are genuinely useful here ("name already exists"),
+    // and unlike token endpoints these responses carry no credentials.
+    const detail = await response.text().catch(() => '');
+    throw new IntegrationError(
+      provider,
+      `${provider} rejected ${method} ${new URL(url).pathname}: HTTP ${response.status}${
+        detail ? ` — ${detail.slice(0, 300)}` : ''
+      }`,
+      response.status,
+    );
+  }
+
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+/** A GET that distinguishes "absent" from "failed". */
+export async function getJsonOrNull<T>(
+  provider: string,
+  url: string,
+  accessToken: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<T | null> {
+  try {
+    return await getJson<T>(provider, url, accessToken, extraHeaders);
+  } catch (error) {
+    if (error instanceof IntegrationError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 /** Whether a token is currently accepted. Never throws — the caller wants a fact. */
 export async function tokenWorks(
   provider: string,
