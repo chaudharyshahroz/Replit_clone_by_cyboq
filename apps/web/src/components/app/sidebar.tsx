@@ -32,7 +32,7 @@ interface NavItem {
 
 const PRIMARY: readonly NavItem[] = [
   { href: '/home', label: 'Home', icon: Home, available: true },
-  { href: '/chat', label: 'Chat', icon: MessageSquare, available: false },
+  { href: '/chat', label: 'Chat', icon: MessageSquare, available: true },
   { href: '/research', label: 'Research', icon: Telescope, available: false },
   { href: '/build', label: 'Build', icon: Wrench, available: false },
 ];

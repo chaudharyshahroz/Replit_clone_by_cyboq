@@ -8,7 +8,7 @@ const config: NextConfig = {
   reactStrictMode: true,
 
   // Workspace packages ship TypeScript source (see docs/DECISIONS.md D1).
-  transpilePackages: ['@reklu/shared', '@reklu/database', '@reklu/auth'],
+  transpilePackages: ['@reklu/shared', '@reklu/database', '@reklu/auth', '@reklu/ai'],
 
   // postgres.js and other node-native deps must not be bundled for the server.
   serverExternalPackages: ['postgres'],

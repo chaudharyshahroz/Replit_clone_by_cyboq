@@ -212,3 +212,45 @@ Connections and History render as `aria-disabled` items labelled "Soon".
 **Why.** Spec §137 forbids dead buttons. A nav link to a route that 404s is
 worse than an honest disabled state: it costs the user a click and teaches them
 the navigation lies. The home page and settings state the same thing in prose.
+
+
+---
+
+### D16 — Vendor SDKs sit *inside* the adapter, not behind it
+
+**Decision.** `@reklu/ai` defines Reklu's own `AIProvider` interface, and the
+Vercel AI SDK is used as an implementation detail within
+`providers/vendor.ts`.
+
+**Why.** Spec §9 requires that Reklu never couple to one AI company, and that
+provider-specific code not scatter. Hand-writing five streaming HTTP protocols
+would be a large, bug-prone surface for no architectural gain. Using the SDK
+underneath a Reklu-owned interface gets correct protocol handling while keeping
+the seam: swapping or adding a provider touches one directory, and nothing
+outside `providers/` imports a vendor package.
+
+**What Reklu owns regardless of the SDK:** the stream event protocol, token
+accounting, the error taxonomy (retryable vs not), and routing.
+
+---
+
+### D17 — A development mock provider, explicitly labelled
+
+**Decision.** When no vendor key is configured in development, a `dev-echo`
+provider stands in. It is labelled "Development Mock" in the model selector, on
+every message it produces, and in the empty state.
+
+**Why.** Spec §111 permits an isolated development adapter but forbids the UI
+pretending a real action succeeded. This lets the whole pipeline — routing,
+streaming, persistence, metering, rendering — be exercised and verified without
+credentials, which is what made it possible to find and fix real bugs before a
+key existed.
+
+**Guards.** It throws if constructed with `NODE_ENV=production`; it is only
+selected when zero real providers are configured; it bills **0** units so it can
+never consume a customer's quota; and its output describes what it received
+rather than imitating an answer.
+
+**Consequence.** It is exempt from plan model-allowlists. Gating it behind one
+left developers with no selectable model at all — a real bug, now covered by a
+regression test.

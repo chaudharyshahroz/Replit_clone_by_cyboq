@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (second increment)
+**Last updated:** 2026-08-16 (third increment — M2 partial)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -110,13 +110,53 @@ implemented directly against the (Auth.js-shaped) schema. See DECISIONS.md D14.
 
 ---
 
-## Milestones 2–11 ⬜
+## Milestone 2 — Multi-model chat 🚧 (core done; Compare, history UI and attachments remain)
+
+### `@reklu/ai` ✅ — 42 tests
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Provider abstraction (`AIProvider`) | ✅ | generate / stream / embed / capabilities; no vendor SDK is imported outside `providers/` |
+| Vendor adapters | ✅ | Anthropic, OpenAI, Google, xAI, DeepSeek via one AI-SDK-backed adapter |
+| Development mock provider | ✅ | labelled **Development Mock** everywhere; throws if loaded in production; bills 0 units |
+| Model registry | ✅ | reads `ai_models`; annotates each with whether the credential is actually present |
+| Reklu Auto | ✅ | `classify()` → `route()`; hard capabilities are filters, not score penalties; every decision carries a reason |
+| Usage + cost | ✅ | integer micro-dollars, no float drift; writes `ai_requests` + `usage_ledger`; never throws away an answer if metering fails |
+| Quota check | ✅ | reports used/limit/remaining/reset so the UI can explain, not just refuse |
+
+### Chat surface ✅ (verified end-to-end in a browser)
+
+| Item | State | Verified by |
+| ---- | ----- | ----------- |
+| `POST /api/chat` SSE streaming | ✅ | 188 events, 185 incremental text deltas, real `finish` usage |
+| Conversation + message persistence | ✅ | `conversations.message_count = 2`, user seq 0 + assistant seq 1 |
+| Usage metering | ✅ | `ai_requests` and `usage_ledger` rows written with latency + TTFT |
+| Model selector (grouped, Reklu Auto default) | ✅ | rendered; mock badged |
+| Streaming UI, stop button, retry on error | ✅ | rendered |
+| Authorization + quota before any write | ✅ | route ordering |
+
+### Remaining in M2 ⬜
+
+- **Compare Mode** (spec §13) — schema ready (`compareModelKeys`, `compareGroupId`); not built
+- **Conversation history UI** — turns persist and reload correctly, but there is no
+  sidebar list or resume-a-thread screen yet
+- **File attachments** — blocked on `@reklu/storage` (M1)
+- **Markdown rendering** — assistant text currently renders as plain text, so
+  `**bold**` and code fences show as literal characters
+- **Auto-generated conversation titles** — currently the truncated first message
+
+A real bug was found by testing in the browser and fixed: the Free plan's model
+allowlist filtered out the development mock, so Chat reported itself
+unconfigured even though the mock was available. Covered by a regression test.
+
+---
+
+## Milestones 3–11 ⬜
 
 All not started. Scope is unchanged from the specification:
 
 | # | Milestone | Notes |
 | - | --------- | ----- |
-| 2 | Multi-model chat, model registry, Reklu Auto, streaming, Compare | Schema ready (`ai_providers`, `ai_models`, `ai_requests`) |
 | 3 | Projects, memory, artifacts | Schema ready |
 | 4 | Research engine + citations | Schema ready |
 | 5 | Build workspace, sandbox, preview, checkpoints | Schema ready |
