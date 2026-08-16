@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (seventh increment — M3 complete)
+**Last updated:** 2026-08-16 (eighth increment — M4 core)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -313,11 +313,57 @@ them **unapproved** so the existing approval gate governs them.
 
 ---
 
-## Milestones 4–11 ⬜
+## Milestone 4 — Research engine 🚧 (pipeline + citations done; §26 conversions remain)
+
+### `@reklu/research` ✅ — 77 tests
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| SSRF guard | ✅ | **49 tests**; blocks cloud metadata, private ranges, IPv4-mapped loopback, non-http schemes, embedded credentials, dangerous ports; re-validates after DNS and on every redirect hop |
+| Citation integrity | ✅ | **28 tests**; markers validated against retrieved sources, fabricated ones stripped from prose, claim + passage stored |
+| Content extraction | ✅ | dependency-free; strips scripts/nav/boilerplate, prefers `<article>`/`<main>`, rejects cookie walls as non-substantive |
+| Bounded fetching | ✅ | per-domain concurrency, byte cap, manual redirect following so each hop is re-checked |
+| Web adapters | ✅ | Brave / Tavily / Serper behind one interface |
+| Workspace adapter | ✅ | **needs no credential** — researches the workspace's own indexed files |
+| Pipeline | ✅ | 11 discrete stages, each reported as entered |
+| Modes | ✅ | quick / research / deep differ in depth and rounds, not in kind |
+
+### Verified end-to-end (no API key required)
+
+A research run over workspace files entered **all 11 stages in order**,
+retrieved a source, produced a report, persisted the session with its plan and
+queries, stored the source with provenance and relevance, and created a
+`research_report` artifact linked back to the session.
+
+Two real bugs found by the citation tests: removing a marker left `"grew ."`
+and a trailing space at line end. Both removal paths now share one tidy-up
+routine, because having two was how they diverged.
+
+### Remaining in M4 ⬜
+
+- **Sources panel UI** — sources persist with provenance; no panel renders them yet
+- **Research history** — sessions persist; no list screen
+- **Research → Document / Presentation / Project** conversions (spec §26) —
+  `deriveArtifact` exists and the report is already an artifact
+- **Deep Research as a queued job** — runs inline today, so a long run is bound
+  to the request; the `deep_research` job contract and stages already exist
+- **Exact passage locating** — citations store the source's opening rather than
+  the precise supporting span
+
+### Honest limits
+
+- **Web search is unconfigured**, so only the workspace adapter was exercised.
+  The three web adapters are written but have never issued a request.
+- The **development mock does not emit `[n]` citations**, so while citation
+  stripping is covered by 28 unit tests, the pipeline's enforcement path has not
+  been observed removing a real model's fabricated marker.
+
+---
+
+## Milestones 5–11 ⬜
 
 | # | Milestone | Notes |
 | - | --------- | ----- |
-| 4 | Research engine + citations | Schema ready |
 | 5 | Build workspace, sandbox, preview, checkpoints | Schema ready |
 | 6 | GitHub / Vercel / Supabase, deployment | Schema ready |
 | 7 | Skills | Schema ready |

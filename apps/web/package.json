@@ -18,6 +18,7 @@
     "@reklu/database": "workspace:*",
     "@reklu/projects": "workspace:*",
     "@reklu/queue": "workspace:*",
+    "@reklu/research": "workspace:*",
     "@reklu/shared": "workspace:*",
     "@reklu/storage": "workspace:*",
     "drizzle-orm": "^0.45.2",
