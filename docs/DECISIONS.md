@@ -169,3 +169,46 @@ alternative — installing pg17 — risked disturbing an unrelated database
 
 **Consequence.** The build does not survive a `brew upgrade postgresql@16`.
 Production should use a Postgres image with pgvector preinstalled.
+
+
+---
+
+### D14 — Session layer implemented directly, not Auth.js v5
+
+**Decision.** Database-backed session cookies implemented in `@reklu/auth`,
+against a schema that is already Auth.js-shaped.
+
+**Why.** Auth.js v5 has been in beta for a long time and has historically lagged
+Next.js major releases; Next 16 support is unproven. The pieces actually needed
+now — password verification and session cookies — are well-understood, and the
+schema (`users`, `accounts`, `sessions`, `verification_tokens`) is already
+adapter-compatible, so switching later is a configuration change rather than a
+migration.
+
+**What is deliberately not hand-rolled.** OAuth authorization-code flows and
+token exchange. When Google/GitHub credentials are supplied, those go through a
+vetted implementation writing into the existing `accounts` table.
+
+**Properties the implementation holds, each covered by a test:**
+- The cookie carries a random 32-byte token; the database stores only its
+  SHA-256, so a database leak yields no usable sessions.
+- Cookies are `httpOnly` (XSS cannot exfiltrate), `SameSite=Lax` (blocks the
+  basic CSRF shape), and `Secure` whenever `APP_URL` is https.
+- Sign-in returns one indistinguishable response for unknown account, wrong
+  password, OAuth-only account, and suspended account — and burns comparable CPU
+  in each case, so the form is not an account-enumeration oracle. Measured
+  ratio: 0.95.
+- Suspension takes effect on the next request, not the next sign-in.
+- scrypt parameters are encoded in each stored hash, so cost can be raised and
+  old hashes upgrade transparently on next successful sign-in.
+
+---
+
+### D15 — Unbuilt features render as disabled, never as links
+
+**Decision.** Sidebar entries for Chat, Research, Build, Projects, Artifacts,
+Connections and History render as `aria-disabled` items labelled "Soon".
+
+**Why.** Spec §137 forbids dead buttons. A nav link to a route that 404s is
+worse than an honest disabled state: it costs the user a click and teaches them
+the navigation lies. The home page and settings state the same thing in prose.

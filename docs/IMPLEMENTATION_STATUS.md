@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16
+**Last updated:** 2026-08-16 (second increment)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -33,7 +33,7 @@ is therefore a greenfield build, not a migration. No existing work was destroyed
 
 ---
 
-## Milestone 1 — Foundation 🚧
+## Milestone 1 — Foundation 🚧 (data, auth and shell done; storage/queue/worker remain)
 
 ### `@reklu/shared` ✅ — 69 tests passing
 
@@ -68,17 +68,44 @@ Three real bugs were found by these tests and fixed, not worked around:
 | Extension bootstrap (`vector`, `pgcrypto`) | ✅ | fails loudly rather than degrading silently |
 | Pooled client + hot-reload guard | ✅ | written |
 | Query helpers (tenancy, soft delete, vector, cursor paging) | ✅ | written |
-| Seed data (model registry, plans, built-in skills) | ⬜ | **next task** |
+| Seed data (model registry, plans, flags, built-in skills) | ✅ | idempotent; 5 providers, 9 models, 3 plans, 10 flags, 6 skills |
 
 Verify: `psql -d reklu -c "\dt"`
 
+### `@reklu/auth` ✅ — 17 tests + 13 live checks
+
+Auth.js v5 is still beta and lags Next majors, so the session layer is
+implemented directly against the (Auth.js-shaped) schema. See DECISIONS.md D14.
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Password hashing | ✅ | scrypt, parameters encoded in the hash, transparent upgrade on sign-in |
+| Sessions | ✅ | database-backed; cookie holds a random token, DB stores only its SHA-256 |
+| Registration | ✅ | user + personal workspace + owner membership + Free subscription in **one transaction** |
+| Authentication | ✅ | uniform failure response + CPU burn on unknown accounts (anti-enumeration) |
+| Authorization | ✅ | `requireWorkspace` (role-ranked), `requireProject` (visibility-aware), `requireSuperAdmin` |
+| OAuth sign-in | ⬜ | schema ready (`accounts`); needs provider credentials |
+| Email verification / password reset | ⬜ | schema ready (`verification_tokens`); needs an email sender |
+
+### `apps/web` 🚧
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Design system + landing page | ✅ | tokens, marketing site |
+| Sign up / sign in / sign out | ✅ | server actions; verified end-to-end in a browser |
+| Route protection | ✅ | unauthenticated `/home`, `/settings`, `/skills` → 307 to `/login` (server-side) |
+| App shell + sidebar | ✅ | unbuilt features render disabled with "Soon", never as dead links |
+| Workspace home | ✅ | live model registry, plan, provider configuration state |
+| Skills library | ✅ | real rows, grouped by category, instructions inspectable |
+| Settings + system status | ✅ | honest per-capability configured/not-configured with the exact env var |
+| Onboarding flow | ⬜ | spec §70 |
+| Mobile navigation | ⬜ | sidebar hides below `md`; no drawer yet |
+
 ### Remaining in M1 ⬜
 
-- `@reklu/auth` — Auth.js v5, credentials + Google + GitHub, session management
 - `@reklu/storage` — S3/local driver abstraction
 - `@reklu/queue` — BullMQ definitions, job contracts, progress reporting
-- `@reklu/ui` — design system (tokens, primitives, icon system)
-- `apps/web` — Next.js app, shell, navigation, settings
+- `@reklu/ui` — extract the design system out of `apps/web`
 - `apps/worker` — worker process
 
 ---
