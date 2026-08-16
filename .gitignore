@@ -1,0 +1,35 @@
+node_modules/
+.pnpm-store/
+
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+!.env.example
+
+coverage/
+playwright-report/
+test-results/
+.playwright/
+
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Runtime sandbox scratch space — never commit generated user projects
+.sandbox/
+/tmp-sandboxes/
+
+# Local storage driver bucket (dev only)
+.storage/

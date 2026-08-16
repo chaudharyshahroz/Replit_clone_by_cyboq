@@ -1,0 +1,294 @@
+/**
+ * Reklu Build: generated projects, their file trees, checkpoints, sandboxes,
+ * repositories and deployments (spec §27–45).
+ *
+ * `build_versions` is the safety property here: every meaningful AI change
+ * creates a checkpoint, so a model that breaks a working application can always
+ * be undone (spec §33).
+ */
+import { relations } from 'drizzle-orm';
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+import { primaryId, softDelete, timestamps, tsColumn } from './_shared';
+import {
+  buildStatusEnum,
+  buildTargetEnum,
+  deploymentStatusEnum,
+  sandboxStatusEnum,
+} from './enums';
+import { users } from './identity';
+import { projects } from './projects';
+import { workspaces } from './tenancy';
+
+export const buildProjects = pgTable(
+  'build_projects',
+  {
+    id: primaryId('build'),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    conversationId: text('conversation_id'),
+    createdById: text('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    target: buildTargetEnum('target').notNull().default('website'),
+    status: buildStatusEnum('status').notNull().default('draft'),
+    statusDetail: text('status_detail'),
+
+    /**
+     * The Build Brief (spec §29) — Reklu's interpretation of the product before
+     * any code is written: users, features, pages, data model, stack. Persisted
+     * because later edits are reasoned against it, not against the raw prompt.
+     */
+    brief: jsonb('brief').$type<Record<string, unknown>>(),
+    briefApprovedAt: tsColumn('brief_approved_at'),
+
+    framework: text('framework'),
+    packageManager: text('package_manager').default('pnpm'),
+
+    /** Set when an existing repository was imported rather than generated. */
+    importedFromRepo: text('imported_from_repo'),
+    /** Architecture summary produced by analysing an imported codebase. */
+    codebaseAnalysis: jsonb('codebase_analysis').$type<Record<string, unknown>>(),
+
+    currentVersionId: text('current_version_id'),
+    versionCount: integer('version_count').notNull().default(0),
+    lastBuiltAt: tsColumn('last_built_at'),
+    ...timestamps,
+    ...softDelete,
+  },
+  (table) => [
+    uniqueIndex('build_projects_workspace_slug_idx').on(table.workspaceId, table.slug),
+    index('build_projects_workspace_idx').on(table.workspaceId),
+    index('build_projects_project_idx').on(table.projectId),
+    index('build_projects_deleted_idx').on(table.deletedAt),
+  ],
+);
+
+/** An immutable checkpoint of the whole file tree. */
+export const buildVersions = pgTable(
+  'build_versions',
+  {
+    id: primaryId('buildVersion'),
+    buildProjectId: text('build_project_id')
+      .notNull()
+      .references(() => buildProjects.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    version: integer('version').notNull(),
+    /** What the user asked for, and what changed. Shown in version history. */
+    prompt: text('prompt'),
+    changeSummary: text('change_summary'),
+    /** Paths touched, for a readable diff view. */
+    changedPaths: jsonb('changed_paths').$type<string[]>().notNull().default([]),
+
+    /** Git commit inside the sandbox working tree, when git-backed. */
+    commitSha: text('commit_sha'),
+    modelKey: text('model_key'),
+    createdById: text('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+
+    /** False when generation produced a tree that failed checks. */
+    checksPassed: boolean('checks_passed'),
+    checkOutput: text('check_output'),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('build_versions_unique_idx').on(table.buildProjectId, table.version),
+    index('build_versions_project_idx').on(table.buildProjectId),
+  ],
+);
+
+export const buildFiles = pgTable(
+  'build_files',
+  {
+    id: primaryId('buildFile'),
+    buildProjectId: text('build_project_id')
+      .notNull()
+      .references(() => buildProjects.id, { onDelete: 'cascade' }),
+    buildVersionId: text('build_version_id')
+      .notNull()
+      .references(() => buildVersions.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    /** Normalized, sandbox-relative path. Traversal is rejected before insert. */
+    path: text('path').notNull(),
+    /** Inline for text files; large or binary files go to object storage. */
+    content: text('content'),
+    storageKey: text('storage_key'),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+    language: text('language'),
+    isBinary: boolean('is_binary').notNull().default(false),
+    /** True when generated by AI in this version, for the changed-file indicator. */
+    isGenerated: boolean('is_generated').notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('build_files_version_path_idx').on(table.buildVersionId, table.path),
+    index('build_files_project_idx').on(table.buildProjectId),
+  ],
+);
+
+/**
+ * An isolated execution environment. Generated code never runs in the Reklu app
+ * or worker process — see docs/BUILD_ARCHITECTURE.md.
+ */
+export const sandboxes = pgTable(
+  'sandboxes',
+  {
+    id: primaryId('sandbox'),
+    buildProjectId: text('build_project_id')
+      .notNull()
+      .references(() => buildProjects.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    driver: text('driver').notNull(), // local | e2b | docker
+    externalId: text('external_id'),
+    status: sandboxStatusEnum('status').notNull().default('provisioning'),
+
+    previewUrl: text('preview_url'),
+    port: integer('port'),
+
+    /** Enforced ceilings, recorded so a run's limits are auditable after the fact. */
+    memoryLimitMb: integer('memory_limit_mb'),
+    diskLimitMb: integer('disk_limit_mb'),
+    timeoutMs: integer('timeout_ms'),
+
+    lastActiveAt: tsColumn('last_active_at'),
+    /** Idle sandboxes are reaped; this is when. */
+    expiresAt: tsColumn('expires_at'),
+    stoppedAt: tsColumn('stopped_at'),
+    errorMessage: text('error_message'),
+    ...timestamps,
+  },
+  (table) => [
+    index('sandboxes_build_idx').on(table.buildProjectId),
+    index('sandboxes_status_idx').on(table.status),
+    index('sandboxes_expires_idx').on(table.expiresAt),
+  ],
+);
+
+export const repositoryConnections = pgTable(
+  'repository_connections',
+  {
+    id: primaryId('repository'),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    buildProjectId: text('build_project_id').references(() => buildProjects.id, {
+      onDelete: 'cascade',
+    }),
+    /** The credential used to act on this repo; see schema/tools.ts. */
+    connectionId: text('connection_id'),
+
+    provider: text('provider').notNull().default('github'),
+    owner: text('owner').notNull(),
+    repo: text('repo').notNull(),
+    defaultBranch: text('default_branch').notNull().default('main'),
+    isPrivate: boolean('is_private').notNull().default(true),
+    externalId: text('external_id'),
+    htmlUrl: text('html_url'),
+
+    lastPushedAt: tsColumn('last_pushed_at'),
+    lastPushSha: text('last_push_sha'),
+    ...timestamps,
+    ...softDelete,
+  },
+  (table) => [
+    index('repository_connections_workspace_idx').on(table.workspaceId),
+    uniqueIndex('repository_connections_build_idx').on(table.buildProjectId),
+  ],
+);
+
+export const deployments = pgTable(
+  'deployments',
+  {
+    id: primaryId('deployment'),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    buildProjectId: text('build_project_id').references(() => buildProjects.id, {
+      onDelete: 'cascade',
+    }),
+    buildVersionId: text('build_version_id'),
+    connectionId: text('connection_id'),
+    triggeredById: text('triggered_by_id').references(() => users.id, { onDelete: 'set null' }),
+
+    provider: text('provider').notNull().default('vercel'),
+    externalId: text('external_id'),
+    status: deploymentStatusEnum('status').notNull().default('queued'),
+    statusDetail: text('status_detail'),
+
+    url: text('url'),
+    /** Set only for production deployments, which require explicit approval. */
+    productionUrl: text('production_url'),
+    isProduction: boolean('is_production').notNull().default(false),
+
+    /** Build log text or a storage key when large. Never contains secrets. */
+    buildLogs: text('build_logs'),
+    buildLogsKey: text('build_logs_key'),
+    errorMessage: text('error_message'),
+
+    /** Names only — values live encrypted with the provider, never here. */
+    environmentVariableKeys: jsonb('environment_variable_keys')
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+
+    startedAt: tsColumn('started_at'),
+    completedAt: tsColumn('completed_at'),
+    jobId: text('job_id'),
+    ...timestamps,
+    ...softDelete,
+  },
+  (table) => [
+    index('deployments_workspace_idx').on(table.workspaceId),
+    index('deployments_build_idx').on(table.buildProjectId),
+    index('deployments_status_idx').on(table.status),
+  ],
+);
+
+export const buildProjectsRelations = relations(buildProjects, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [buildProjects.workspaceId], references: [workspaces.id] }),
+  project: one(projects, { fields: [buildProjects.projectId], references: [projects.id] }),
+  versions: many(buildVersions),
+  sandboxes: many(sandboxes),
+  deployments: many(deployments),
+}));
+
+export const buildVersionsRelations = relations(buildVersions, ({ one, many }) => ({
+  buildProject: one(buildProjects, {
+    fields: [buildVersions.buildProjectId],
+    references: [buildProjects.id],
+  }),
+  files: many(buildFiles),
+}));
+
+export const buildFilesRelations = relations(buildFiles, ({ one }) => ({
+  version: one(buildVersions, {
+    fields: [buildFiles.buildVersionId],
+    references: [buildVersions.id],
+  }),
+}));
+
+export type BuildProject = typeof buildProjects.$inferSelect;
+export type NewBuildProject = typeof buildProjects.$inferInsert;
+export type BuildVersion = typeof buildVersions.$inferSelect;
+export type BuildFile = typeof buildFiles.$inferSelect;
+export type Sandbox = typeof sandboxes.$inferSelect;
+export type Deployment = typeof deployments.$inferSelect;
