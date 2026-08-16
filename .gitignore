@@ -4,7 +4,11 @@ node_modules/
 .next/
 out/
 dist/
-build/
+# Anchored to the repo root on purpose. An unanchored `build/` matches ANY
+# directory named build at ANY depth — which silently excluded packages/build,
+# apps/web/src/app/(app)/build and apps/web/src/components/build from every
+# commit. The Build feature was absent from production for that reason alone.
+/build/
 .turbo/
 *.tsbuildinfo
 
