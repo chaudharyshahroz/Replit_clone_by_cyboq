@@ -573,13 +573,15 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 496 unit tests
+pnpm test                        # 506 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
 pnpm verify:build                # 24 live checks
 pnpm verify:preview              # 14 live checks
 pnpm verify:production-config    # 17 checks on .env.production.example
+pnpm verify:repo                 # a fresh clone contains what the build needs
+pnpm verify:e2b                  # live microVM checks (needs E2B_API_KEY)
 ```
 
 ---
@@ -627,6 +629,8 @@ Targets a Hostinger VPS running Dokploy alongside other applications, at
 | `Dockerfile` — one image, `web`/`worker`/`migrate` entrypoints | ✅ | image builds on the host; `next build` compiles and typechecks inside it |
 | `scripts/docker-entrypoint.sh` | ✅ | all three roles run; migrate completes and exits 0 |
 | `docker-compose.yml` — non-invasive Dokploy stack | ✅ | deployed alongside existing apps; no host ports, no existing service touched |
+| E2B sandbox driver — isolated microVM execution | 🚧 | typechecks against the real SDK; selection, isolation claim and config reporting tested. **No live microVM yet** — `pnpm verify:e2b` |
+| `docker` sandbox driver | ⬜ | still declared and still throws; points operators at e2b |
 | Live health check | ✅ | `GET https://reklu.app/api/health` → 200, `status: ok`, pgvector enabled, queue reachable |
 | HTTPS via Traefik + Let's Encrypt | ✅ | certificate issued; homepage and health both 200 |
 | `.dockerignore` excludes `.env` and host `node_modules` | ✅ | asserted by inspection; `.env` is also git-ignored |
@@ -658,8 +662,13 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
 4. **`DATABASE_URL` default in `.env.example` names the `postgres` role**, which
    does not exist on a Homebrew install — Homebrew uses the OS username. The
    local `.env` was corrected; `setup.sh` should detect this.
-5. **Build is the only major subsystem not exercised in production.** It is off
-   by design (`BUILD_ENABLED=false`) pending an isolated sandbox.
+5. **Build is off in production** (`BUILD_ENABLED=false`) until an E2B key is
+   set. The isolated driver now exists; enabling it is `SANDBOX_DRIVER=e2b`
+   plus `E2B_API_KEY`, then `BUILD_ENABLED=true`.
+9. **The E2B driver has never talked to a live microVM.** It typechecks against
+   the real SDK types and its selection/configuration logic is unit-tested, but
+   creating a sandbox, writing to it and running a command in it is unverified.
+   `pnpm verify:e2b` performs exactly that and needs a key.
 8. **`.gitignore` once excluded a whole package.** An unanchored `build/` matched
    `packages/build` and both Build UI directories, so all of M5 was absent from
    every deploy while working locally. Guarded by `pnpm verify:repo`; run it

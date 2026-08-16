@@ -1,11 +1,13 @@
 import { resolve } from 'node:path';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { createLocalSandboxDriver } from './drivers/local';
+import { e2bDriverFromEnv } from './drivers/e2b';
 import { SandboxError, type SandboxDriver } from './types';
 
 export * from './types';
 export * from './paths';
 export { createLocalSandboxDriver } from './drivers/local';
+export { createE2bSandboxDriver, e2bDriverFromEnv } from './drivers/e2b';
 
 let cached: SandboxDriver | undefined;
 
@@ -44,13 +46,19 @@ export function sandbox(): SandboxDriver {
       return cached;
     }
 
+    case 'e2b': {
+      cached = e2bDriverFromEnv();
+      logger.info('Using the E2B sandbox driver. Generated code runs in an isolated microVM.');
+      return cached;
+    }
+
     case 'docker':
-    case 'e2b':
       throw new SandboxError(
         'NOT_CONFIGURED',
-        `SANDBOX_DRIVER=${env.SANDBOX_DRIVER} is reserved but not implemented yet. ` +
+        'SANDBOX_DRIVER=docker is reserved but not implemented yet. ' +
           'Reklu will not fall back to the non-isolated local driver, because that ' +
           'would run untrusted generated code on the application server. ' +
+          'Use SANDBOX_DRIVER=e2b, which is implemented. ' +
           'See docs/BUILD_ARCHITECTURE.md.',
       );
 
@@ -87,6 +95,21 @@ export function sandboxStatus(): {
       isolated: false,
       detail:
         'Generated code runs as a local subprocess with no isolation. Development only.',
+    };
+  }
+
+  if (env.SANDBOX_DRIVER === 'e2b') {
+    // Configured is not the same as working, and the difference matters here:
+    // a missing key must read as "an operator has not finished setup", never as
+    // a build failure the user caused.
+    const configured = Boolean(env.E2B_API_KEY);
+    return {
+      driver: 'e2b',
+      available: configured,
+      isolated: true,
+      detail: configured
+        ? 'Generated code runs in an isolated E2B microVM, separate from Reklu.'
+        : 'SANDBOX_DRIVER=e2b requires E2B_API_KEY. Set it to enable builds.',
     };
   }
 
