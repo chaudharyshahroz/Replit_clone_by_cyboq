@@ -11,6 +11,10 @@
 #     Reklu's data.
 #   * Every volume and container name is prefixed `reklu`.
 #
+# All three application services declare the same `build:` and the same image
+# tag. Compose resolves that to one build, and — unlike `image:` alone — it
+# never tries to *pull* `reklu-app:latest` from a registry that has no such tag.
+#
 # Configure the domain in Dokploy: Application → Domains → service `web`,
 # container port 3000. Dokploy writes the Traefik labels and provisions the
 # Let's Encrypt certificate.
@@ -41,6 +45,9 @@ services:
   # Web — the only service Traefik routes to.
   # ---------------------------------------------------------------------------
   web:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: reklu-app:latest
     command: ["web"]
     restart: unless-stopped
@@ -66,6 +73,9 @@ services:
   # Worker — background jobs. No inbound network exposure at all.
   # ---------------------------------------------------------------------------
   worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: reklu-app:latest
     command: ["worker"]
     restart: unless-stopped
