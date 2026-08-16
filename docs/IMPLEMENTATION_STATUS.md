@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (eighth increment — M4 core)
+**Last updated:** 2026-08-16 (ninth increment — M4 complete)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -313,7 +313,7 @@ them **unapproved** so the existing approval gate governs them.
 
 ---
 
-## Milestone 4 — Research engine 🚧 (pipeline + citations done; §26 conversions remain)
+## Milestone 4 — Research engine ✅ (§127 complete)
 
 ### `@reklu/research` ✅ — 77 tests
 
@@ -339,16 +339,49 @@ Two real bugs found by the citation tests: removing a marker left `"grew ."`
 and a trailing space at line end. Both removal paths now share one tidy-up
 routine, because having two was how they diverged.
 
+### Sources panel ✅ (spec §25)
+
+Every retrieved source with its citation index, domain, snippet, and — expandable
+— the claims it supports with the **passage backing each one**. Sources that
+failed to retrieve are listed separately with their reason rather than hidden.
+
+### Research history ✅
+
+List and detail screens, scoped to the author *and* workspace.
+
+### Research → execution ✅ (spec §26)
+
+Document, presentation and project conversions. Each preserves provenance:
+verified live that a converted document carries
+`derived_from_artifact_id → research_report`, so "where did this come from?"
+has an answer. Starting a project carries the findings in as project
+instructions, so subsequent work inherits them.
+
+### Exact passage locating ✅ — 15 tests
+
+Sliding-window term overlap finds the span of a source that actually supports a
+claim. Returns **nothing below an overlap threshold** rather than an arbitrary
+passage: an exhibit that does not support the claim is worse than no exhibit,
+because it looks like evidence.
+
+### Deep Research as a queued job ✅
+
+Deep mode returns **202 with a session id** and runs on the worker, so a
+multi-round run over up to 32 sources is not bound to a request. Stages land in
+both the `jobs` row and the `research_sessions` row, so a reconnecting client
+sees where the worker actually is.
+
+Verified live: job reached **11/11 stages**, session completed with a report and
+artifact, and the AI spend is traceable to the job id.
+
 ### Remaining in M4 ⬜
 
-- **Sources panel UI** — sources persist with provenance; no panel renders them yet
-- **Research history** — sessions persist; no list screen
-- **Research → Document / Presentation / Project** conversions (spec §26) —
-  `deriveArtifact` exists and the report is already an artifact
-- **Deep Research as a queued job** — runs inline today, so a long run is bound
-  to the request; the `deep_research` job contract and stages already exist
-- **Exact passage locating** — citations store the source's opening rather than
-  the precise supporting span
+Nothing from §127. Two improvements deferred deliberately:
+
+- **Contradiction detection** — `contradicted_by` is modelled and stored but
+  always empty; corroboration scoring is implemented, contradiction is not
+- **Academic / news source adapters** — the `SourceAdapter` interface and the
+  `source_type` enum support them; only web and workspace adapters exist
 
 ### Honest limits
 

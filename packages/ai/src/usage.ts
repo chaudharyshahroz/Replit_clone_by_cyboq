@@ -73,6 +73,8 @@ export interface RecordUsageInput {
   readonly status?: 'succeeded' | 'failed' | 'cancelled';
   readonly errorCode?: string | null;
   readonly requestId?: string | null;
+  /** Set when the call originated in a background job, so spend is traceable to it. */
+  readonly jobId?: string | null;
   readonly periodStart: Date;
 }
 
@@ -112,6 +114,7 @@ export async function recordUsage(input: RecordUsageInput): Promise<void> {
           status: input.status ?? 'succeeded',
           errorCode: input.errorCode ?? null,
           requestId: input.requestId ?? null,
+          jobId: input.jobId ?? null,
         })
         .returning({ id: aiRequests.id });
 
@@ -129,6 +132,7 @@ export async function recordUsage(input: RecordUsageInput): Promise<void> {
         billableUnits: units.toFixed(4),
         periodStart: input.periodStart,
         aiRequestId: request?.id ?? null,
+        jobId: input.jobId ?? null,
       });
     });
   } catch (error) {

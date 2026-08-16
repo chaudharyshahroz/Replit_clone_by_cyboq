@@ -20,6 +20,7 @@ import {
 } from '@reklu/queue';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { maintenanceHandler } from './handlers/maintenance';
+import { deepResearchHandler } from './handlers/research';
 
 const log = logger.child({ service: 'worker' });
 
@@ -45,15 +46,28 @@ async function main(): Promise<void> {
     vectorEnabled: database.vectorEnabled,
   });
 
-  const registrations: readonly WorkerRegistration<JobKind>[] = [
-    { kind: 'maintenance', handler: maintenanceHandler as WorkerRegistration<JobKind>['handler'] },
-  ];
-
   const workers = [
     startWorker({
       queueName: 'maintenance',
-      registrations,
+      registrations: [
+        {
+          kind: 'maintenance',
+          handler: maintenanceHandler as WorkerRegistration<JobKind>['handler'],
+        },
+      ],
       concurrency: 1,
+    }),
+    startWorker({
+      queueName: 'research',
+      registrations: [
+        {
+          kind: 'deep_research',
+          handler: deepResearchHandler as WorkerRegistration<JobKind>['handler'],
+        },
+      ],
+      // Deep research is the most expensive operation in the product; bounding
+      // concurrency is a cost control, not just a throughput knob (spec §109).
+      concurrency: 2,
     }),
   ];
 

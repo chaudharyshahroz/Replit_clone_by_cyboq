@@ -33,6 +33,7 @@ import {
   runResearch,
   type ResearchStage,
 } from '@reklu/research';
+import { enqueue } from '@reklu/queue';
 import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
 
@@ -139,6 +140,33 @@ export async function POST(request: Request): Promise<Response> {
 
     const sessionId = created!.id;
     const periodStart = quota?.periodStart ?? new Date();
+
+    // Deep mode runs two rounds over up to RESEARCH_MAX_SOURCES sources, which
+    // can outlast a request. Hand it to the worker so the user can close the
+    // tab, and return immediately with the session to poll.
+    if (body.mode === 'deep') {
+      const jobId = await enqueue({
+        kind: 'deep_research',
+        payload: {
+          researchSessionId: sessionId,
+          workspaceId: access.workspaceId,
+          userId: user.id,
+          query: body.query,
+          mode: 'deep',
+          projectId: body.projectId ?? null,
+        },
+        workspaceId: access.workspaceId,
+        userId: user.id,
+        projectId: body.projectId ?? null,
+        resourceType: 'research_session',
+        resourceId: sessionId,
+      });
+
+      return NextResponse.json(
+        { sessionId, jobId, queued: true, href: `/research/${sessionId}` },
+        { status: 202 },
+      );
+    }
     const encoder = new TextEncoder();
     const startedAt = Date.now();
 

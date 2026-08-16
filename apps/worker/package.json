@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@reklu/ai": "workspace:*",
+    "@reklu/artifacts": "workspace:*",
     "@reklu/database": "workspace:*",
     "@reklu/queue": "workspace:*",
+    "@reklu/research": "workspace:*",
     "@reklu/shared": "workspace:*",
     "@reklu/storage": "workspace:*",
     "drizzle-orm": "^0.45.2"

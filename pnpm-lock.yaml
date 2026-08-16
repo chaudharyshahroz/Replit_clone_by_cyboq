@@ -99,12 +99,18 @@ importers:
       '@reklu/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@reklu/artifacts':
+        specifier: workspace:*
+        version: link:../../packages/artifacts
       '@reklu/database':
         specifier: workspace:*
         version: link:../../packages/database
       '@reklu/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@reklu/research':
+        specifier: workspace:*
+        version: link:../../packages/research
       '@reklu/shared':
         specifier: workspace:*
         version: link:../../packages/shared

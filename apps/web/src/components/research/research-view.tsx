@@ -30,8 +30,6 @@ const STAGE_LABELS: Record<string, string> = {
   writing_report: 'Writing the report',
 };
 
-const STAGE_ORDER = Object.keys(STAGE_LABELS);
-
 interface StageEntry {
   readonly stage: string;
   readonly detail?: string;
@@ -101,6 +99,16 @@ export function ResearchView({
         body: JSON.stringify({ query: query.trim(), mode }),
         signal: controller.signal,
       });
+
+      // Deep mode is queued to the worker (202) rather than streamed, because
+      // it can outlast a request. Send the user to the session page to watch it.
+      if (response.status === 202) {
+        const queued = (await response.json()) as { href?: string };
+        if (queued.href) {
+          window.location.href = queued.href;
+          return;
+        }
+      }
 
       if (!response.ok || !response.body) {
         const payload = (await response.json().catch(() => null)) as

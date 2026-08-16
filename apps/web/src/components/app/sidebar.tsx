@@ -47,7 +47,7 @@ const LIBRARY: readonly NavItem[] = [
 const PLATFORM: readonly NavItem[] = [
   { href: '/skills', label: 'Skills', icon: Boxes, available: true },
   { href: '/connections', label: 'Connections', icon: Plug, available: false },
-  { href: '/history', label: 'History', icon: History, available: false },
+  { href: '/research/history', label: 'History', icon: History, available: true },
 ];
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {

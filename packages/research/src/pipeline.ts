@@ -17,6 +17,7 @@ import {
   validateCitations,
 } from './citations';
 import { fetchSources } from './fetch';
+import { locatePassage } from './passages';
 import type {
   DiscoveredSource,
   EvidenceItem,
@@ -323,13 +324,19 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
     });
   }
 
+  // Locate the span of each source that actually supports its claim. A passage
+  // that does not support the claim is worse than none, so `locatePassage`
+  // returns undefined below its overlap threshold and the citation is stored
+  // without an exhibit rather than with a misleading one.
   const citations: EvidenceItem[] = claims.map((claim) => {
     const source = ranked[claim.sourceIndex - 1];
+    const located = source?.content
+      ? locatePassage(claim.claim, source.content)
+      : undefined;
+
     return {
       claim: claim.claim,
-      // The specific passage is what makes a citation checkable. Approximated
-      // here by the source's opening; a future pass can locate the exact span.
-      passage: (source?.content ?? '').slice(0, 500),
+      passage: located?.passage ?? '',
       sourceIndex: claim.sourceIndex,
     };
   });
