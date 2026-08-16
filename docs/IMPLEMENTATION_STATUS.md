@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (thirteenth increment — deployment packaging)
+**Last updated:** 2026-08-17 (fourteenth increment — M6 integrations)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -573,7 +573,7 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 431 unit tests
+pnpm test                        # 475 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
@@ -581,6 +581,30 @@ pnpm verify:build                # 24 live checks
 pnpm verify:preview              # 14 live checks
 pnpm verify:production-config    # 17 checks on .env.production.example
 ```
+
+---
+
+## Milestone 6 — Integrations 🚧
+
+`@reklu/integrations` — 37 tests. GitHub, Vercel and Supabase OAuth.
+
+| Item | State | Verified by |
+| ---- | ----- | ----------- |
+| Provider adapter interface + registry | ✅ | one shape for three providers; adding one is an adapter, not a code path |
+| OAuth state — AEAD-sealed, cookie-bound, expiring | ✅ | CSRF, tamper, replay, cross-provider and foreign-key cases all tested |
+| PKCE (S256) for providers that support it | ✅ | Supabase; verifier stays in the cookie and never reaches the provider |
+| `safeReturnTo` open-redirect guard | ✅ | absolute, protocol-relative, backslash and CRLF cases tested |
+| Token storage, AAD-bound to `connection:<id>` | ✅ | encryption centralised in `connections.ts`; no adapter can bypass it |
+| Refresh with rotation handling | ✅ | Supabase only — the other two issue non-expiring tokens and say so |
+| `/api/integrations/[provider]/start` + `/callback` | ✅ | both routes build; every failure redirects with a readable message |
+| Settings → Connections UI | ✅ | three distinct states: not configured, available, connected |
+| Unconfigured providers name their env vars + callback URL | ✅ | spec §25 — no dead buttons |
+| Deployment adapters (push to GitHub, deploy to Vercel) | ⬜ | not started; needs Build enabled to be useful |
+
+**Not exercised against a live provider.** No OAuth credentials are registered
+yet, so no authorization has completed end to end. The flows are covered by
+unit tests; the round trip is not. Registering one GitHub OAuth app is what
+turns that from tested to verified.
 
 ---
 

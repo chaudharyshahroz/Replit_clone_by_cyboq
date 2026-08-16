@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { eq } from 'drizzle-orm';
-import { Check, Minus } from 'lucide-react';
+import Link from 'next/link';
+import { Check, ChevronRight, Minus, Plug } from 'lucide-react';
 import { checkDatabaseHealth, db, plans, subscriptions, type PlanLimits } from '@reklu/database';
+import { describeAllProviders, listConnections } from '@reklu/integrations';
 import { features } from '@reklu/shared';
 import { Button } from '@/components/ui/button';
 import { getAppContext } from '@/lib/auth-context';
@@ -41,6 +43,11 @@ function limitText(value: number | null): string {
 export default async function SettingsPage() {
   const { user, workspace } = await getAppContext();
   const available = features();
+
+  const providerConfigs = describeAllProviders();
+  const configuredProviders = providerConfigs.filter((entry) => entry.configured).length;
+  const totalProviders = providerConfigs.length;
+  const connectionCount = (await listConnections(workspace.workspaceId)).length;
 
   const [planRow, health] = await Promise.all([
     db
@@ -109,6 +116,30 @@ export default async function SettingsPage() {
           </dl>
         </section>
       ) : null}
+
+      {/* ---- Connections ---------------------------------------------------- */}
+      <section className="mt-12">
+        <h2 className="text-sm font-medium text-text">Connections</h2>
+        <p className="mt-1.5 text-sm text-text-secondary">
+          Services Reklu can act on your behalf with. Tokens are encrypted at rest.
+        </p>
+
+        <Link
+          href="/settings/connections"
+          className="mt-4 flex items-center justify-between rounded-xl border border-border bg-surface/40 px-4 py-3.5 transition-colors hover:bg-surface-hover"
+        >
+          <span className="flex items-center gap-3">
+            <Plug className="h-4 w-4 text-text-secondary" strokeWidth={1.5} />
+            <span className="text-sm text-text">Manage connections</span>
+          </span>
+          <span className="flex items-center gap-2 text-xs text-text-muted">
+            {connectionCount > 0
+              ? `${connectionCount} connected`
+              : `${configuredProviders} of ${totalProviders} available`}
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+          </span>
+        </Link>
+      </section>
 
       {/* ---- System status -------------------------------------------------- */}
       <section className="mt-12">

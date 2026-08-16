@@ -17,6 +17,7 @@
     "@reklu/auth": "workspace:*",
     "@reklu/build": "workspace:*",
     "@reklu/database": "workspace:*",
+    "@reklu/integrations": "workspace:*",
     "@reklu/projects": "workspace:*",
     "@reklu/queue": "workspace:*",
     "@reklu/research": "workspace:*",
