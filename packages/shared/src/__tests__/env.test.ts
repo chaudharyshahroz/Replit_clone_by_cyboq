@@ -317,3 +317,46 @@ describe('featuresFor', () => {
     expect(f.googleSignIn).toBe(true);
   });
 });
+
+/**
+ * Regression: a real deploy pasted a documented template verbatim, leaving
+ * `POSTGRES_PASSWORD=<KEEP YOUR EXISTING VALUE>` and `ANTHROPIC_API_KEY=<your
+ * key>`. Both are valid *strings*, so the schema accepted them and the failure
+ * surfaced much later as a database authentication error — pointing at the
+ * database rather than at the template that caused it.
+ */
+describe('unedited template placeholders', () => {
+  beforeEach(() => resetServerEnvCache());
+
+  it.each([
+    ['ANTHROPIC_API_KEY', '<your key>'],
+    ['POSTGRES_PASSWORD', '<KEEP YOUR EXISTING VALUE — DO NOT CHANGE>'],
+    ['APP_URL', '<your domain>'],
+  ])('rejects %s left as a placeholder', (name, value) => {
+    expect(() => loadServerEnv(base({ [name]: value }))).toThrow(/still the placeholder/);
+  });
+
+  it('names the variable and shows the value, so the fix is obvious', () => {
+    expect(() => loadServerEnv(base({ ANTHROPIC_API_KEY: '<your key>' }))).toThrow(
+      /ANTHROPIC_API_KEY is still the placeholder <your key>/,
+    );
+  });
+
+  it('reports every unfilled placeholder at once', () => {
+    try {
+      loadServerEnv(base({ ANTHROPIC_API_KEY: '<a>', S3_BUCKET: '<b>' }));
+      throw new Error('should have thrown');
+    } catch (error) {
+      expect((error as EnvironmentError).problems).toHaveLength(2);
+    }
+  });
+
+  // Angle brackets are the signal; a value that merely contains one is fine.
+  it('does not reject a real value containing an angle bracket', () => {
+    expect(() => loadServerEnv(base({ ANTHROPIC_API_KEY: 'sk-ant-a<b' }))).not.toThrow();
+  });
+
+  it('leaves an unset variable alone', () => {
+    expect(() => loadServerEnv(base({ S3_BUCKET: '' }))).not.toThrow();
+  });
+});

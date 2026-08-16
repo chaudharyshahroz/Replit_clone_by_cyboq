@@ -332,6 +332,42 @@ export class EnvironmentError extends Error {
   }
 }
 
+/**
+ * Values that are obviously an unedited placeholder from a template.
+ *
+ * Real deployments hit this: an operator copies a documented example, fills in
+ * some values and misses others. Without this check the failures are baffling —
+ * `POSTGRES_PASSWORD=<your password>` is a perfectly valid *string*, so schema
+ * validation passes and the deploy fails much later with "password
+ * authentication failed", pointing at the database rather than the template.
+ *
+ * Angle brackets are the giveaway. No legitimate secret, URL or key is wrapped
+ * in them, so this cannot reject a value someone meant.
+ */
+function unfilledPlaceholders(source: NodeJS.ProcessEnv): string[] {
+  /**
+   * Variables Reklu's deployment templates define but Reklu itself never reads
+   * — they configure infrastructure around it. They belong here because the
+   * operator fills them in from the same template, and gets them wrong in the
+   * same way. `POSTGRES_PASSWORD` is on this list because a real deploy left it
+   * as a placeholder: Compose built a DATABASE_URL around it and the failure
+   * arrived as "password authentication failed", far from the cause.
+   */
+  const templateOnly = ['POSTGRES_PASSWORD'];
+
+  const problems: string[] = [];
+  for (const name of [...Object.keys(serverSchema.shape), ...templateOnly]) {
+    const value = source[name];
+    if (value !== undefined && /^<.*>$/.test(value.trim())) {
+      problems.push(
+        `${name} is still the placeholder ${value.trim()} from the configuration ` +
+          'template. Replace it with a real value.',
+      );
+    }
+  }
+  return problems;
+}
+
 let cached: ServerEnv | undefined;
 
 /**
@@ -347,6 +383,9 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
     cached = serverSchema.partial().parse(source) as ServerEnv;
     return cached;
   }
+
+  const unfilled = unfilledPlaceholders(source);
+  if (unfilled.length > 0) throw new EnvironmentError(unfilled);
 
   const parsed = serverSchema.safeParse(source);
   if (!parsed.success) {
