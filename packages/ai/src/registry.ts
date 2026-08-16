@@ -9,7 +9,13 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { aiModels, aiProviders, db } from '@reklu/database';
 import type { PlanLimits } from '@reklu/database';
-import { configuredProviderKeys, DEV_ECHO_MODEL_KEY, DEV_ECHO_PROVIDER_KEY, shouldUseDevelopmentMock } from './providers';
+import {
+  configuredProviderKeys,
+  DEV_ECHO_MODEL_KEY,
+  DEV_ECHO_PROVIDER_KEY,
+  DEV_ECHO_SLOW_MODEL_KEY,
+  shouldUseDevelopmentMock,
+} from './providers';
 
 export interface RegisteredModel {
   readonly key: string;
@@ -41,12 +47,16 @@ export interface RegisteredModel {
   readonly isDevelopmentMock: boolean;
 }
 
-/** The development mock, shaped as a registry row so nothing downstream branches. */
-const DEV_ECHO_MODEL: RegisteredModel = {
-  key: DEV_ECHO_MODEL_KEY,
-  modelIdentifier: DEV_ECHO_MODEL_KEY,
-  displayName: 'Development Mock',
-  description: 'Echoes your request. Not a real model — no provider key is configured.',
+/**
+ * The development mock, shaped as registry rows so nothing downstream branches.
+ * Two variants exist purely so Compare Mode (which needs two models) is
+ * exercisable without provider keys.
+ */
+const devEchoModel = (key: string, displayName: string, description: string): RegisteredModel => ({
+  key,
+  modelIdentifier: key,
+  displayName,
+  description,
   providerKey: DEV_ECHO_PROVIDER_KEY,
   providerName: 'Development Mock',
   contextWindow: 128_000,
@@ -64,7 +74,20 @@ const DEV_ECHO_MODEL: RegisteredModel = {
   sortOrder: 9_999,
   isConfigured: true,
   isDevelopmentMock: true,
-};
+});
+
+const DEV_ECHO_MODELS: readonly RegisteredModel[] = [
+  devEchoModel(
+    DEV_ECHO_MODEL_KEY,
+    'Development Mock',
+    'Echoes your request. Not a real model — no provider key is configured.',
+  ),
+  devEchoModel(
+    DEV_ECHO_SLOW_MODEL_KEY,
+    'Development Mock (slow)',
+    'A second mock that streams more slowly, so Compare Mode is testable without keys.',
+  ),
+];
 
 /**
  * Every enabled model, annotated with whether this instance can actually call
@@ -131,7 +154,7 @@ export async function loadRegistry(): Promise<readonly RegisteredModel[]> {
       isDevelopmentMock: false,
     }));
 
-  if (shouldUseDevelopmentMock()) models.push(DEV_ECHO_MODEL);
+  if (shouldUseDevelopmentMock()) models.push(...DEV_ECHO_MODELS);
   return models;
 }
 

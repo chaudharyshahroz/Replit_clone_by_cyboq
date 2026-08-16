@@ -15,7 +15,7 @@ import type { AIProvider, ProviderCapabilities } from '../types';
 import { createVendorAdapter } from './vendor';
 import { createDevEchoProvider, DEV_ECHO_PROVIDER_KEY } from './dev-echo';
 
-export { DEV_ECHO_MODEL_KEY, DEV_ECHO_PROVIDER_KEY } from './dev-echo';
+export { DEV_ECHO_MODEL_KEY, DEV_ECHO_PROVIDER_KEY, DEV_ECHO_SLOW_MODEL_KEY } from './dev-echo';
 
 const FULL: ProviderCapabilities = {
   streaming: true,

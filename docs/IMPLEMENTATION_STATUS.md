@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (third increment — M2 partial)
+**Last updated:** 2026-08-16 (fourth increment — M0/M1/M2 audit + closure)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -29,11 +29,11 @@ is therefore a greenfield build, not a migration. No existing work was destroyed
 | TypeScript strict base config | ✅ | `tsc --noEmit` exits 0 |
 | `.env.example` (grouped, spec §151) | ✅ | parsed by a test that asserts it validates |
 | `scripts/setup.sh` one-command setup | 🚧 | written; end-to-end run not yet exercised from clean |
-| Architecture docs | 🚧 | `ARCHITECTURE.md`, `IMPLEMENTATION_STATUS.md`, `DECISIONS.md`, `LOCAL_SETUP.md` written; the four deep-dive docs are outlines |
+| Architecture docs (§150) | ✅ | All 7 required docs present; every cross-link resolves. RESEARCH/BUILD/MCP docs are marked **design, not implementation** at the top |
 
 ---
 
-## Milestone 1 — Foundation 🚧 (data, auth and shell done; storage/queue/worker remain)
+## Milestone 1 — Foundation ✅
 
 ### `@reklu/shared` ✅ — 69 tests passing
 
@@ -101,16 +101,40 @@ implemented directly against the (Auth.js-shaped) schema. See DECISIONS.md D14.
 | Onboarding flow | ⬜ | spec §70 |
 | Mobile navigation | ⬜ | sidebar hides below `md`; no drawer yet |
 
-### Remaining in M1 ⬜
+### `@reklu/storage` ✅ — 36 tests
 
-- `@reklu/storage` — S3/local driver abstraction
-- `@reklu/queue` — BullMQ definitions, job contracts, progress reporting
-- `@reklu/ui` — extract the design system out of `apps/web`
-- `apps/worker` — worker process
+S3 (AWS/R2/MinIO) + local drivers. Keys are server-generated from workspace and
+file ids; user filenames are metadata only, so traversal is structurally
+impossible. Upload validation sniffs MIME from magic bytes and never trusts the
+client's Content-Type — HTML uploaded as `image/png` is detected and forced to
+download, which is what stops it becoming stored XSS.
+
+### `@reklu/queue` + `apps/worker` ✅ — 10 tests + 14 live checks
+
+Durable `jobs` row written before enqueue; Postgres id doubles as the BullMQ job
+id, making a retried enqueue idempotent. Stage reporting is validated against
+per-kind declared stages. Cooperative cancellation. Payloads validated at the
+worker boundary. Worker verifies Postgres and Redis before accepting work and
+drains in-flight jobs on SIGTERM.
+
+Verified live: worker boots, runs a maintenance job to completion, cancels a
+queued job, shuts down gracefully.
+
+### `/api/health` ✅
+
+Real dependency status; 503 when Postgres is down, `degraded` when only Redis is.
+
+### Deferred from M1 (deliberate, not forgotten)
+
+- `@reklu/ui` — the design system lives in `apps/web` and is used consistently.
+  Extraction is worthwhile only when a second app consumes it.
+- Onboarding flow (§70) and the full Settings sections (§77) — Settings has
+  Account, Plan and System status; Appearance/AI/Security remain.
+- Mobile navigation drawer.
 
 ---
 
-## Milestone 2 — Multi-model chat 🚧 (core done; Compare, history UI and attachments remain)
+## Milestone 2 — Multi-model chat 🚧 (attachments and branching remain)
 
 ### `@reklu/ai` ✅ — 42 tests
 
@@ -135,15 +159,35 @@ implemented directly against the (Auth.js-shaped) schema. See DECISIONS.md D14.
 | Streaming UI, stop button, retry on error | ✅ | rendered |
 | Authorization + quota before any write | ✅ | route ordering |
 
+### Compare Mode ✅ (spec §13)
+
+Fans one prompt to 2–4 models concurrently over a single SSE connection, each
+event tagged with its `modelKey`. One model failing reports in its own column
+while the others continue.
+
+Verified live: 347 events, 171 deltas per model, **139 interleave switches**
+(proving genuine concurrency rather than sequential fan-out), both assistant
+messages persisted under one `compareGroupId`, per-model usage rows written.
+
+### Conversation history ✅
+
+Thread list, resume by URL, server-rendered transcript restore, auto title from
+the first message. Scoped to author **and** workspace — a conversation is private
+to its author even among workspace members.
+
+### Markdown rendering ✅
+
+Dependency-free renderer covering headings, lists, code blocks, inline code,
+bold, italic, links, blockquotes. Parses to **React elements**, never
+`dangerouslySetInnerHTML`, so model output cannot inject markup. Link hrefs
+restricted to http/https/mailto, blocking `javascript:`.
+
 ### Remaining in M2 ⬜
 
-- **Compare Mode** (spec §13) — schema ready (`compareModelKeys`, `compareGroupId`); not built
-- **Conversation history UI** — turns persist and reload correctly, but there is no
-  sidebar list or resume-a-thread screen yet
-- **File attachments** — blocked on `@reklu/storage` (M1)
-- **Markdown rendering** — assistant text currently renders as plain text, so
-  `**bold**` and code fences show as literal characters
-- **Auto-generated conversation titles** — currently the truncated first message
+- **File attachments in chat** — `@reklu/storage` now exists; the upload route
+  and composer attachment UI are not wired up
+- **Conversation branching / edit-and-regenerate** (spec §14)
+- **Archive, favourite, rename, search history**
 
 A real bug was found by testing in the browser and fixed: the Free plan's model
 allowlist filtered out the development mock, so Chat reported itself

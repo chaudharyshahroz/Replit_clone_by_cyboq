@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowUp, Check, ChevronDown, Loader2, Sparkles, Square } from 'lucide-react';
+import { Markdown } from './markdown';
 
 export interface SelectableModel {
   readonly key: string;
@@ -180,6 +182,7 @@ export function ChatView({
   const [error, setError] = useState<StreamError | undefined>();
   const [conversationId, setConversationId] = useState(initialConversationId);
 
+  const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -206,6 +209,7 @@ export function ChatView({
       abortRef.current = controller;
       let assembled = '';
       let usedModelKey: string | undefined;
+      let createdConversationId: string | undefined;
 
       try {
         const response = await fetch('/api/chat', {
@@ -220,7 +224,10 @@ export function ChatView({
         });
 
         const returnedId = response.headers.get('X-Conversation-Id');
-        if (returnedId) setConversationId(returnedId);
+        if (returnedId) {
+          createdConversationId = returnedId;
+          setConversationId(returnedId);
+        }
 
         if (!response.ok || !response.body) {
           const payload = (await response.json().catch(() => null)) as
@@ -293,9 +300,17 @@ export function ChatView({
         setStreaming(false);
         setStreamText('');
         abortRef.current = null;
+
+        // A first message creates the thread server-side. Move to its URL and
+        // refresh so the sidebar shows it, without re-rendering the transcript
+        // we already hold in state.
+        if (!conversationId && createdConversationId) {
+          window.history.replaceState(null, '', `/chat/${createdConversationId}`);
+          router.refresh();
+        }
       }
     },
-    [conversationId, modelKey, streaming],
+    [conversationId, modelKey, router, streaming],
   );
 
   const stop = () => abortRef.current?.abort();
@@ -336,7 +351,7 @@ export function ChatView({
                   </p>
                 ) : null}
                 {streamText ? (
-                  <p className="whitespace-pre-wrap leading-relaxed text-text">{streamText}</p>
+                  <Markdown content={streamText} />
                 ) : (
                   <p className="flex items-center gap-2 text-sm text-text-muted">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
@@ -473,7 +488,7 @@ function Bubble({
           ) : null}
         </p>
       ) : null}
-      <p className="whitespace-pre-wrap leading-relaxed text-text">{message.text}</p>
+      <Markdown content={message.text} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Boxes,
+  Columns2,
   History,
   Home,
   Layers,
@@ -33,6 +34,7 @@ interface NavItem {
 const PRIMARY: readonly NavItem[] = [
   { href: '/home', label: 'Home', icon: Home, available: true },
   { href: '/chat', label: 'Chat', icon: MessageSquare, available: true },
+  { href: '/compare', label: 'Compare', icon: Columns2, available: true },
   { href: '/research', label: 'Research', icon: Telescope, available: false },
   { href: '/build', label: 'Build', icon: Wrench, available: false },
 ];

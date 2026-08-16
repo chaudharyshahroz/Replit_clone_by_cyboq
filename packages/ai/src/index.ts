@@ -6,6 +6,7 @@ export {
   configuredProviderKeys,
   DEV_ECHO_MODEL_KEY,
   DEV_ECHO_PROVIDER_KEY,
+  DEV_ECHO_SLOW_MODEL_KEY,
   getProvider,
   resetProviderCache,
   shouldUseDevelopmentMock,

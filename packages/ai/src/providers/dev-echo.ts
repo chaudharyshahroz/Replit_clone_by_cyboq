@@ -23,6 +23,21 @@ import type {
 export const DEV_ECHO_PROVIDER_KEY = 'dev-echo';
 export const DEV_ECHO_MODEL_KEY = 'dev-echo-1';
 
+/**
+ * A second mock variant, so Compare Mode (which requires two models) can be
+ * exercised on an instance with no provider keys. It streams at a different
+ * rate from the first, which makes concurrent fan-out visibly concurrent
+ * rather than something that merely looks right in a screenshot.
+ *
+ * Both variants are labelled "Development Mock" everywhere and bill zero units.
+ */
+export const DEV_ECHO_SLOW_MODEL_KEY = 'dev-echo-2';
+
+const CHUNK_DELAY_MS: Record<string, number> = {
+  [DEV_ECHO_MODEL_KEY]: 8,
+  [DEV_ECHO_SLOW_MODEL_KEY]: 22,
+};
+
 const CAPABILITIES: ProviderCapabilities = {
   streaming: true,
   tools: false,
@@ -103,6 +118,7 @@ export function createDevEchoProvider(): AIProvider {
 
     async *stream(options: GenerateOptions): AsyncIterable<StreamEvent> {
       const text = describeRequest(options);
+      const delay = CHUNK_DELAY_MS[options.modelIdentifier] ?? 8;
 
       // Emit in chunks so the client's incremental rendering is genuinely
       // exercised rather than receiving one blob.
@@ -113,7 +129,7 @@ export function createDevEchoProvider(): AIProvider {
           return;
         }
         yield { type: 'text-delta', text: token };
-        await new Promise((resolve) => setTimeout(resolve, 8));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
 
       yield { type: 'finish', usage: usageFor(options, text), finishReason: 'stop' };
