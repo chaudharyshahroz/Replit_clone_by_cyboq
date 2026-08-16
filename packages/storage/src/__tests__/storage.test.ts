@@ -258,3 +258,21 @@ describe('local driver', () => {
     expect(url).toContain('download=');
   });
 });
+
+describe('resolveLocalStorageRoot', () => {
+  it('anchors a relative path at the monorepo root, not the process cwd', async () => {
+    const { resolveLocalStorageRoot } = await import('../root');
+    const fromRepoRoot = resolveLocalStorageRoot('./.storage');
+
+    // The bug this guards: web (cwd apps/web) and worker (cwd apps/worker)
+    // resolving './.storage' to two different directories.
+    expect(fromRepoRoot.endsWith('/.storage')).toBe(true);
+    expect(fromRepoRoot).not.toContain('/apps/');
+    expect(fromRepoRoot.startsWith('/')).toBe(true);
+  });
+
+  it('leaves an absolute path alone', async () => {
+    const { resolveLocalStorageRoot } = await import('../root');
+    expect(resolveLocalStorageRoot('/var/reklu/storage')).toBe('/var/reklu/storage');
+  });
+});

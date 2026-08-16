@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowUp, Check, ChevronDown, Loader2, Sparkles, Square } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Loader2,
+  Paperclip,
+  Sparkles,
+  Square,
+  X,
+} from 'lucide-react';
 import { Markdown } from './markdown';
 
 export interface SelectableModel {
@@ -20,6 +30,23 @@ export interface ChatMessage {
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly modelKey?: string | null;
+  readonly attachments?: readonly string[];
+}
+
+export interface UploadedFile {
+  readonly id: string;
+  readonly filename: string;
+  readonly sizeBytes: number;
+  readonly status: string;
+  readonly statusDetail?: string | null;
+  /** False when the file was stored but its text could not be read. */
+  readonly usableInChat: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
 interface StreamError {
@@ -181,11 +208,14 @@ export function ChatView({
   const [routingReason, setRoutingReason] = useState<string | undefined>();
   const [error, setError] = useState<StreamError | undefined>();
   const [conversationId, setConversationId] = useState(initialConversationId);
+  const [attachments, setAttachments] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -200,10 +230,13 @@ export function ChatView({
       setInput('');
       setStreaming(true);
       setStreamText('');
+      const attachedNames = attachments.map((file) => file.filename);
       setMessages((prev) => [
         ...prev,
-        { id: `local-${Date.now()}`, role: 'user', text: text.trim() },
+        { id: `local-${Date.now()}`, role: 'user', text: text.trim(), attachments: attachedNames },
       ]);
+      // Cleared immediately: a file belongs to the turn that sent it.
+      setAttachments([]);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -219,6 +252,7 @@ export function ChatView({
             message: text.trim(),
             conversationId,
             modelKey: modelKey === 'auto' ? undefined : modelKey,
+            fileIds: attachments.map((file) => file.id),
           }),
           signal: controller.signal,
         });
@@ -310,8 +344,41 @@ export function ChatView({
         }
       }
     },
-    [conversationId, modelKey, router, streaming],
+    [attachments, conversationId, modelKey, router, streaming],
   );
+
+  const upload = useCallback(async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    setError(undefined);
+
+    for (const file of Array.from(fileList)) {
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const response = await fetch('/api/files/upload', { method: 'POST', body: form });
+        const payload = (await response.json()) as
+          | { file: UploadedFile }
+          | { error: { message: string } };
+
+        if (!response.ok || !('file' in payload)) {
+          setError({
+            message:
+              'error' in payload ? payload.error.message : `Could not upload ${file.name}.`,
+            retryable: false,
+          });
+          continue;
+        }
+        setAttachments((prev) => [...prev, payload.file]);
+      } catch {
+        setError({ message: `Could not upload ${file.name}.`, retryable: false });
+      }
+    }
+
+    setUploading(false);
+    // Reset so re-selecting the same file fires a change event again.
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
 
   const stop = () => abortRef.current?.abort();
 
@@ -416,7 +483,66 @@ export function ChatView({
               className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
             />
 
+            {attachments.length > 0 ? (
+              <ul className="flex flex-wrap gap-2 px-3 pb-1">
+                {attachments.map((file) => (
+                  <li
+                    key={file.id}
+                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
+                      file.usableInChat
+                        ? 'border-border-strong text-text-secondary'
+                        : 'border-warning/40 bg-warning/5 text-warning'
+                    }`}
+                  >
+                    <Paperclip className="h-3 w-3 shrink-0" strokeWidth={1.75} />
+                    <span className="max-w-[14rem] truncate">{file.filename}</span>
+                    <span className="text-text-muted">{formatBytes(file.sizeBytes)}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAttachments((prev) => prev.filter((f) => f.id !== file.id))
+                      }
+                      aria-label={`Remove ${file.filename}`}
+                      className="rounded text-text-muted hover:text-text"
+                    >
+                      <X className="h-3 w-3" strokeWidth={2} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {/* Honest about files that were stored but could not be read. */}
+            {attachments.some((f) => !f.usableInChat) ? (
+              <p className="px-3 pb-1 text-[11px] leading-relaxed text-warning">
+                {attachments.find((f) => !f.usableInChat)?.statusDetail ??
+                  'Some attachments could not be read and will be described to the model rather than included.'}
+              </p>
+            ) : null}
+
             <div className="flex items-center gap-2 px-3 pb-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="sr-only"
+                onChange={(event) => void upload(event.target.files)}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={streaming || uploading}
+                aria-label="Attach files"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-2.5 text-xs text-text-secondary transition-colors hover:text-text disabled:opacity-40"
+              >
+                {uploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+                ) : (
+                  <Paperclip className="h-3.5 w-3.5" strokeWidth={1.75} />
+                )}
+                Attach
+              </button>
+
               <ModelSelector
                 models={models}
                 value={modelKey}
@@ -466,7 +592,20 @@ function Bubble({
 }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1.5">
+        {message.attachments && message.attachments.length > 0 ? (
+          <ul className="flex flex-wrap justify-end gap-1.5">
+            {message.attachments.map((name) => (
+              <li
+                key={name}
+                className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-text-muted"
+              >
+                <Paperclip className="h-3 w-3" strokeWidth={1.75} />
+                {name}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-surface-raised px-4 py-2.5 leading-relaxed text-text">
           {message.text}
         </p>

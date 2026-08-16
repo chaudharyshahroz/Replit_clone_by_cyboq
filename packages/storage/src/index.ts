@@ -8,6 +8,7 @@ export * from './keys';
 export { createLocalDriver } from './drivers/local';
 export { createS3Driver } from './drivers/s3';
 export * from './validation';
+export { resolveLocalStorageRoot } from './root';
 
 let cached: StorageDriver | undefined;
 

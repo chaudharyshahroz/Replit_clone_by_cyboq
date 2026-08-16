@@ -26,6 +26,7 @@ import { requireWorkspace } from '@reklu/auth';
 import {
   conversations,
   db,
+  messageAttachments,
   messages as messagesTable,
   plans,
   subscriptions,
@@ -33,6 +34,8 @@ import {
 } from '@reklu/database';
 import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
+import { loadAttachments } from '@/lib/files';
+import { buildAttachmentParts } from '@/lib/attachment-parts';
 
 export const runtime = 'nodejs';
 // Streaming must never be cached or statically optimized.
@@ -43,6 +46,8 @@ const BodySchema = z.object({
   message: z.string().trim().min(1, 'Message must not be empty.').max(100_000),
   /** Omit or pass "auto" to let Reklu Auto choose. */
   modelKey: z.string().optional(),
+  /** Files already uploaded via /api/files/upload. */
+  fileIds: z.array(z.string()).max(10).optional(),
 });
 
 const SYSTEM_PROMPT = [
@@ -121,10 +126,16 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
+    const attachments = await loadAttachments(access.workspaceId, body.fileIds ?? []);
+    const attachmentParts = await buildAttachmentParts(attachments);
+
     const history = conversation ? await loadHistory(conversation.id) : [];
     const modelMessages: ModelMessage[] = [
       ...history,
-      { role: 'user', content: [{ type: 'text', text: body.message }] },
+      {
+        role: 'user',
+        content: [{ type: 'text', text: body.message }, ...attachmentParts],
+      },
     ];
 
     let model: RegisteredModel;
@@ -177,14 +188,27 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const nextSequence = conversation.messageCount;
-    await db.insert(messagesTable).values({
-      conversationId: conversation.id,
-      workspaceId: access.workspaceId,
-      role: 'user',
-      content: [{ type: 'text', text: body.message }],
-      contentText: body.message,
-      sequence: nextSequence,
-    });
+    const [userMessage] = await db
+      .insert(messagesTable)
+      .values({
+        conversationId: conversation.id,
+        workspaceId: access.workspaceId,
+        role: 'user',
+        content: [{ type: 'text', text: body.message }],
+        contentText: body.message,
+        sequence: nextSequence,
+      })
+      .returning({ id: messagesTable.id });
+
+    if (attachments.length > 0 && userMessage) {
+      await db.insert(messageAttachments).values(
+        attachments.map((file) => ({
+          messageId: userMessage.id,
+          workspaceId: access.workspaceId,
+          fileId: file.id,
+        })),
+      );
+    }
 
     const conversationId = conversation.id;
     const periodStart = quota?.periodStart ?? new Date();

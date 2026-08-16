@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (fourth increment — M0/M1/M2 audit + closure)
+**Last updated:** 2026-08-16 (fifth increment — M0/M1/M2 closed)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -134,7 +134,7 @@ Real dependency status; 503 when Postgres is down, `degraded` when only Redis is
 
 ---
 
-## Milestone 2 — Multi-model chat 🚧 (attachments and branching remain)
+## Milestone 2 — Multi-model chat ✅ (§125 complete; §14 extras remain)
 
 ### `@reklu/ai` ✅ — 42 tests
 
@@ -182,12 +182,38 @@ bold, italic, links, blockquotes. Parses to **React elements**, never
 `dangerouslySetInnerHTML`, so model output cannot inject markup. Link hrefs
 restricted to http/https/mailto, blocking `javascript:`.
 
+### File attachments ✅ (spec §59, §60)
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Upload route | ✅ | plan-aware size limit; rejects on declared size before buffering |
+| Content validation | ✅ | MIME sniffed from magic bytes; the client's Content-Type is never trusted |
+| Text extraction | ✅ | text/code inline; PDF via `unpdf`; scanned PDFs say so rather than attaching nothing |
+| Images → vision | ✅ | passed as image parts; Reklu Auto then filters to a vision-capable model |
+| Untrusted-content fencing | ✅ | file text enters as user-role data inside `<document>` fences, never as instruction |
+| Authorized serving | ✅ | `/api/files/*` re-checks workspace membership; `CSP: default-src 'none'; sandbox` |
+| Deduplication | ✅ | same bytes in one workspace resolve to one record |
+| Composer UI | ✅ | attach, chips, remove, honest warning for unreadable files |
+
+Verified live: text/PDF/image upload, **HTML spoofed as `image/png` stored as
+`text/plain`** (not as an image), unrecognised binary and empty files rejected
+400, attachment linked to its message, document content reaching the model.
+
+Two real bugs found and fixed while verifying:
+1. `STORAGE_LOCAL_PATH=./.storage` resolved against each process's cwd, so the
+   web app wrote to `apps/web/.storage` while the worker would read
+   `apps/worker/.storage` — an uploaded file would have been invisible to the
+   job meant to index it. Now anchored at the monorepo root, with a regression
+   test.
+2. A synchronous `buildAttachmentParts` variant silently dropped images. Removed
+   rather than fixed — near-identical pairs are how that bug recurs.
+
 ### Remaining in M2 ⬜
 
-- **File attachments in chat** — `@reklu/storage` now exists; the upload route
-  and composer attachment UI are not wired up
 - **Conversation branching / edit-and-regenerate** (spec §14)
-- **Archive, favourite, rename, search history**
+- **Archive, favourite, rename, search history** (spec §14)
+- **Office format extraction** (docx/xlsx) — stored and reported honestly as
+  not-yet-extractable; needs the `embed_file` worker handler
 
 A real bug was found by testing in the browser and fixed: the Free plan's model
 allowlist filtered out the development mock, so Chat reported itself

@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { assertSafeKey, safeDisplayFilename } from '../keys';
+import { resolveLocalStorageRoot } from '../root';
 import { StorageError, type GetResult, type PutOptions, type SignedUrlOptions, type StorageDriver, type StoredObject } from '../types';
 
 interface LocalDriverOptions {
@@ -22,7 +23,8 @@ interface LocalDriverOptions {
 }
 
 export function createLocalDriver(options: LocalDriverOptions): StorageDriver {
-  const root = resolve(options.root);
+  // Anchored at the monorepo root, not the process cwd — see root.ts.
+  const root = resolveLocalStorageRoot(options.root);
 
   /** Resolve a key to an absolute path, proving it stays under the root. */
   function pathFor(key: string): string {
