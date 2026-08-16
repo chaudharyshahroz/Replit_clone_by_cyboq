@@ -113,10 +113,16 @@ by the container command via [`scripts/docker-entrypoint.sh`](../scripts/docker-
 | --------- | ------------------------------------------ |
 | `web`     | Next.js server on `$PORT` (default 3000)   |
 | `worker`  | BullMQ consumer                            |
-| `migrate` | Applies migrations, then exits             |
+| `migrate` | Applies migrations, seeds reference data, exits |
 
 Web and worker share every workspace package, so building them as separate
 images would compile the same tree twice.
+
+`migrate` also seeds reference data — plans, AI providers, models, built-in
+skills. That is not sample data: with no `free` plan row, registration fails
+and nobody can create an account. The seed is idempotent (every write upserts
+on a business key) and leaves admin-owned fields such as `enabled` and pricing
+alone, so it runs safely on every deploy.
 
 `migrate` is its own role rather than something each container runs on boot:
 several containers starting together would otherwise race to apply the same

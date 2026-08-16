@@ -49,10 +49,25 @@ case "$role" in
     run ./node_modules/.bin/tsx src/index.ts
     ;;
 
+  # Prepares the database: schema, then the reference data the product cannot
+  # run without. Plans, AI providers and models are not sample data — with no
+  # `free` plan row, registration fails and nobody can create an account. The
+  # seed is idempotent (every write is an upsert on a business key) and leaves
+  # admin-owned fields alone, so running it on every deploy is safe.
   migrate)
-    echo "reklu: running migrations"
     cd "${REKLU_APP_ROOT:-/app}/packages/database"
-    run ./node_modules/.bin/tsx src/migrate.ts
+    tsx=./node_modules/.bin/tsx
+    if [ ! -x "$tsx" ]; then
+      echo "reklu: expected executable not found: $(pwd)/$tsx" >&2
+      exit 1
+    fi
+
+    echo "reklu: running migrations"
+    "$tsx" src/migrate.ts
+
+    # set -e above means a failed migration never reaches the seed.
+    echo "reklu: seeding reference data"
+    exec "$tsx" src/seed/index.ts
     ;;
 
   # Anything else runs verbatim, so `docker run … sh` still works for debugging.
