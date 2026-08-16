@@ -27,7 +27,11 @@
     "redis": "redis-server scripts/redis.conf",
     "redis:start": "redis-server scripts/redis.conf --daemonize yes",
     "redis:stop": "redis-cli shutdown nosave || true",
-    "worker": "pnpm --filter @reklu/worker dev"
+    "worker": "pnpm --filter @reklu/worker dev",
+    "verify:auth": "pnpm --filter @reklu/auth exec tsx scripts/verify.mts",
+    "verify:projects": "pnpm --filter @reklu/projects exec tsx scripts/verify.mts",
+    "verify:queue": "pnpm --filter @reklu/worker exec tsx scripts/verify.mts",
+    "verify": "pnpm verify:auth && pnpm verify:projects"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
