@@ -584,26 +584,31 @@ pnpm verify:production-config    # 17 checks on .env.production.example
 
 ---
 
-## Deployment packaging 🚧
+## Deployment ✅ — live at https://reklu.app
 
 Targets a Hostinger VPS running Dokploy alongside other applications, at
 `reklu.app`. See [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 | Item | State | Verified by |
 | ---- | ----- | ----------- |
-| `Dockerfile` — one image, `web`/`worker`/`migrate` entrypoints | 🚧 | written; **never built** — no Docker daemon available |
-| `scripts/docker-entrypoint.sh` | 🚧 | written; never executed |
-| `docker-compose.yml` — non-invasive Dokploy stack | 🚧 | written; never run |
+| `Dockerfile` — one image, `web`/`worker`/`migrate` entrypoints | ✅ | image builds on the host; `next build` compiles and typechecks inside it |
+| `scripts/docker-entrypoint.sh` | ✅ | all three roles run; migrate completes and exits 0 |
+| `docker-compose.yml` — non-invasive Dokploy stack | ✅ | deployed alongside existing apps; no host ports, no existing service touched |
+| Live health check | ✅ | `GET https://reklu.app/api/health` → 200, `status: ok`, pgvector enabled, queue reachable |
+| HTTPS via Traefik + Let's Encrypt | ✅ | certificate issued; homepage and health both 200 |
 | `.dockerignore` excludes `.env` and host `node_modules` | ✅ | asserted by inspection; `.env` is also git-ignored |
 | `.env.production.example` | ✅ | `pnpm verify:production-config` — 17 checks pass |
 | Production guard escape hatches (D18) | ✅ | 11 new tests in `packages/shared/src/__tests__/env.test.ts` |
 | `web` production build | ✅ | `pnpm --filter @reklu/web build` succeeds |
 
-**The container layer is unverified.** The image has not been built or started,
-because the development machine has no Docker daemon. Everything the image
-*runs* — the Next build, migrations, env validation, health endpoint — is
-exercised locally. The packaging around it is not. The first deploy is the
-verification step for that layer, and it should be treated as one.
+Deployed 2026-08-16 to a Hostinger VPS running Dokploy. Five failed attempts
+preceded the successful one; every failure was configuration rather than code,
+and two produced permanent fixes: startup now rejects unedited template
+placeholders, and the container startup path no longer depends on pnpm.
+
+**Postgres initialises its password only once.** Changing `POSTGRES_PASSWORD`
+after the volume exists does nothing — the database keeps the original. This
+cost two deploy cycles. Recreate the volume, or keep the original value.
 
 ---
 
@@ -620,10 +625,8 @@ verification step for that layer, and it should be treated as one.
 4. **`DATABASE_URL` default in `.env.example` names the `postgres` role**, which
    does not exist on a Homebrew install — Homebrew uses the OS username. The
    local `.env` was corrected; `setup.sh` should detect this.
-5. **The Docker image has never been built.** No Docker daemon on the
-   development machine. `Dockerfile`, `docker-compose.yml` and the entrypoint
-   are written against the documented behaviour of their tools, not against an
-   observed run.
+5. **Build is the only major subsystem not exercised in production.** It is off
+   by design (`BUILD_ENABLED=false`) pending an isolated sandbox.
 6. **Build is off in the shipped production configuration** (`BUILD_ENABLED=false`).
    Enabling it needs an isolated sandbox — E2B, or a Docker host separate from
    the app server. Neither the `docker` nor the `e2b` sandbox driver is
