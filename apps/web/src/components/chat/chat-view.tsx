@@ -8,7 +8,9 @@ import {
   Check,
   ChevronDown,
   Loader2,
+  ExternalLink,
   Paperclip,
+  PanelRightClose,
   Sparkles,
   Square,
   X,
@@ -60,6 +62,7 @@ type ServerEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'reasoning-delta'; text: string }
   | { type: 'status'; stage: string; detail?: string }
+  | { type: 'artifact'; artifact: { id: string; title: string; type: string } }
   | { type: 'finish'; finishReason: string; messageId?: string }
   | { type: 'error'; code: string; message: string; retryable: boolean };
 
@@ -210,6 +213,9 @@ export function ChatView({
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [artifact, setArtifact] = useState<
+    { id: string; title: string; type: string } | undefined
+  >(undefined);
 
   const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
@@ -304,6 +310,9 @@ export function ChatView({
             } else if (event.type === 'text-delta') {
               assembled += event.text;
               setStreamText(assembled);
+            } else if (event.type === 'artifact') {
+              // Spec §20: a substantial output opens beside the chat.
+              setArtifact(event.artifact);
             } else if (event.type === 'error') {
               setError({ message: event.message, retryable: event.retryable });
             }
@@ -385,7 +394,8 @@ export function ChatView({
   const isEmpty = messages.length === 0 && !streaming;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full">
+      <div className="flex min-w-0 flex-1 flex-col">
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-6 py-10">
           {isEmpty ? (
@@ -579,6 +589,52 @@ export function ChatView({
           </p>
         </div>
       </div>
+      </div>
+
+      {/* Artifact workspace beside the chat (spec §20). */}
+      {artifact ? (
+        <aside className="hidden w-96 shrink-0 flex-col border-l border-border bg-surface/30 lg:flex">
+          <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-text">
+                {artifact.title}
+              </span>
+              <span className="block text-[11px] text-text-muted">
+                {artifact.type.replace(/_/g, ' ')} · saved to Artifacts
+              </span>
+            </span>
+            <a
+              href={`/artifacts/${artifact.id}`}
+              aria-label="Open artifact in full view"
+              className="rounded p-1 text-text-muted transition-colors hover:text-text"
+            >
+              <ExternalLink className="h-4 w-4" strokeWidth={1.75} />
+            </a>
+            <button
+              type="button"
+              onClick={() => setArtifact(undefined)}
+              aria-label="Close artifact panel"
+              className="rounded p-1 text-text-muted transition-colors hover:text-text"
+            >
+              <PanelRightClose className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          </header>
+
+          <div className="flex-1 overflow-y-auto p-4 text-sm">
+            <p className="text-text-secondary">
+              Reklu saved this response as an artifact. Open it to edit, revise, or view its
+              version history.
+            </p>
+            <a
+              href={`/artifacts/${artifact.id}`}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-xs text-text transition-colors hover:bg-surface-hover"
+            >
+              Open artifact
+              <ExternalLink className="h-3 w-3" strokeWidth={2} />
+            </a>
+          </div>
+        </aside>
+      ) : null}
     </div>
   );
 }

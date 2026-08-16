@@ -58,22 +58,64 @@ function describeRequest(options: GenerateOptions): string {
       .map((p) => p.text)
       .join(' ') ?? '(no text)';
 
+  // Any non-text parts (images, documents) the request carried.
+  const attachmentSummary = options.messages
+    .flatMap((message) => message.content)
+    .reduce(
+      (counts, part) => {
+        if (part.type === 'image') counts.images++;
+        else if (part.type === 'file') counts.files++;
+        return counts;
+      },
+      { images: 0, files: 0 },
+    );
+
+  // Any fenced <document> blocks Reklu assembled into the prompt.
+  const documents = [
+    ...options.messages
+      .flatMap((message) => message.content)
+      .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+      .flatMap((part) => [...part.text.matchAll(/<document filename="([^"]*)">([\s\S]*?)<\/document>/g)]),
+  ];
+
+  // Markdown headings, not bold lines: the echo should be shaped like a real
+  // reply so the whole pipeline — including artifact detection — is exercised.
   return [
-    'This response came from the **Development Mock** provider, not a real model.',
+    '## Development Mock response',
     '',
-    'No AI provider key is configured on this instance, so Reklu cannot produce a',
-    'genuine answer. This adapter exists only to exercise the streaming pipeline',
-    'end to end — routing, persistence, usage accounting and rendering.',
+    'This came from the **Development Mock** provider, not a real model. No AI provider',
+    'key is configured on this instance, so Reklu cannot produce a genuine answer.',
+    'This adapter exists to exercise the pipeline end to end: routing, persistence,',
+    'usage accounting, artifact detection and rendering.',
     '',
-    '**What Reklu received**',
+    '## What Reklu received',
     '',
     `- Messages in context: ${options.messages.length}`,
     `- System instruction: ${options.system ? `${estimateTokens(options.system)} tokens` : 'none'}`,
     `- Tools offered: ${options.tools?.length ?? 0}`,
+    `- Images attached: ${attachmentSummary.images}`,
+    `- Documents in context: ${documents.length}`,
     `- Your message: "${userText.slice(0, 300)}${userText.length > 300 ? '…' : ''}"`,
     '',
-    'Add `ANTHROPIC_API_KEY` (or another provider key) to `.env` and restart to',
-    'get real answers.',
+    ...(documents.length > 0
+      ? [
+          '## Document content received',
+          '',
+          'Reklu passed the following to the model as fenced, untrusted document content.',
+          'A real model would answer from it; this mock only reports that it arrived.',
+          '',
+          ...documents.flatMap(([, filename, body]) => [
+            `### ${filename ?? 'document'}`,
+            '',
+            (body ?? '').trim().slice(0, 1_500),
+            '',
+          ]),
+        ]
+      : []),
+    '## Next step',
+    '',
+    'Add `ANTHROPIC_API_KEY` (or another provider key) to `.env` and restart to get',
+    'real answers instead of this echo.',
   ].join('\n');
 }
 

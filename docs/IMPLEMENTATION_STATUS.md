@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (sixth increment — M3)
+**Last updated:** 2026-08-16 (seventh increment — M3 complete)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -221,7 +221,7 @@ unconfigured even though the mock was available. Covered by a regression test.
 
 ---
 
-## Milestone 3 — Projects, memory, artifacts ✅ (§126)
+## Milestone 3 — Projects, memory, artifacts ✅ (§126 complete)
 
 Verified by **40 live checks** against the real database, plus 11 unit tests.
 
@@ -270,15 +270,46 @@ Two real bugs found while verifying:
 2. `touch()` built `ARRAY['a','b']` via `sql.raw` string interpolation. Safe with
    our own ids, but the wrong habit — replaced with parameter-binding `inArray`.
 
+### Artifact detection ✅ (spec §19–20) — 25 tests
+
+Deterministic heuristics, not a model call: a model would be slow, costly, and
+inconsistent between identical replies. Thresholds are deliberately
+conservative — **false positives are worse than false negatives**, because
+clutter trains users to ignore the panel.
+
+- Long *and* structured prose → document (length alone catches rambling)
+- A substantial fenced block that outweighs its prose → code (stores the block,
+  not the surrounding chatter)
+- A table that essentially *is* the reply → spreadsheet; a report containing a
+  table stays a document
+
+Verified end-to-end in the browser: document uploaded → fenced into the prompt →
+reply qualified → artifact created → `artifact` stream event → panel opens
+beside the chat → row persisted with `sourceMessageId`, and the assistant
+message links back to it.
+
+Three real bugs found by these tests: title derivation picked a line of code
+from inside a fence; a document containing a table was misclassified as a
+spreadsheet because branch order was wrong; and a fixture sat just under the
+threshold, which the test now guards against explicitly.
+
+### Memory extraction 🚧 — parsing tested, live call unverified
+
+`extractMemories()` runs after a turn, proposes at most 5 memories, and lands
+them **unapproved** so the existing approval gate governs them.
+
+- Parsing is covered by 17 tests: fenced JSON, prose-wrapped JSON, partial
+  salvage of a batch containing one bad entry, and 8 malformed inputs that must
+  return `[]` rather than throw.
+- **Skipped entirely under the development mock**, which cannot do structured
+  extraction — inventing memories from it would fill the review queue with
+  nonsense. So the live model call is written but **never executed**.
+
 ### Remaining in M3 ⬜
 
-- **Automatic memory extraction** — Reklu proposing memories from conversation
-  (the approval gate and UI are built and waiting for it)
-- **Artifact creation from chat** — the artifact system is complete, but nothing
-  yet detects "this response is substantial, make it an artifact"
-- **Side-by-side artifact viewer beside chat** (spec §20 layout) — the viewer is
-  a full page today
-- **Project members UI** — schema and authorization exist
+- **Project members UI** — schema and authorization exist; no screen yet
+- **Artifact editing in place** — viewer and version history are built; editing
+  currently means asking in chat
 
 ---
 

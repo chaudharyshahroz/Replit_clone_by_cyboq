@@ -36,7 +36,8 @@ import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared
 import { getSession } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { buildAttachmentParts } from '@/lib/attachment-parts';
-import { assembleProjectContext, touchProject } from '@reklu/projects';
+import { assembleProjectContext, extractMemories, touchProject } from '@reklu/projects';
+import { createArtifact, detectArtifact } from '@reklu/artifacts';
 
 export const runtime = 'nodejs';
 // Streaming must never be cached or statically optimized.
@@ -297,8 +298,69 @@ export async function POST(request: Request): Promise<Response> {
             .set({ lastMessageAt: new Date(), messageCount: nextSequence + 2 })
             .where(eq(conversations.id, conversationId));
 
-          if (projectId) await touchProject(projectId);
+          if (projectId) {
+            await touchProject(projectId);
 
+            // Propose memories from this turn. Runs after the user already has
+            // their answer, lands unapproved, and never surfaces as an error —
+            // it is an enhancement, not part of the request's success.
+            void extractMemories({
+              projectId,
+              workspaceId: access.workspaceId,
+              model,
+              userMessage: body.message,
+              assistantMessage: text,
+              sourceMessageId: assistant?.id ?? '',
+            }).catch((error: unknown) => {
+              log.error('Memory extraction failed', { error });
+            });
+          }
+
+          // Spec §19–20: a substantial reply becomes an artifact the user can
+          // revise, version and export. Detection is deterministic (see
+          // packages/artifacts/src/detect.ts) and conservative — most replies
+          // are conversation and produce nothing.
+          let artifactSummary: { id: string; title: string; type: string } | undefined;
+          const candidate = detectArtifact(text);
+          if (candidate) {
+            try {
+              const { artifact } = await createArtifact({
+                workspaceId: access.workspaceId,
+                projectId,
+                userId: user.id,
+                type: candidate.type,
+                title: candidate.title,
+                contentText: candidate.content,
+                modelKey: model.key,
+                sourceConversationId: conversationId,
+                sourceMessageId: assistant?.id ?? null,
+                metadata: candidate.language ? { language: candidate.language } : {},
+              });
+              artifactSummary = {
+                id: artifact.id,
+                title: artifact.title,
+                type: artifact.type,
+              };
+              if (assistant) {
+                await db
+                  .update(messagesTable)
+                  .set({ artifactIds: [artifact.id] })
+                  .where(eq(messagesTable.id, assistant.id));
+              }
+              log.info('Artifact created from reply', {
+                artifactId: artifact.id,
+                reason: candidate.reason,
+              });
+            } catch (error) {
+              // An artifact failing must never lose the answer the user has
+              // already read.
+              log.error('Could not create artifact from reply', { error });
+            }
+          }
+
+          if (artifactSummary) {
+            send({ type: 'artifact', artifact: artifactSummary });
+          }
           send({ type: 'finish', usage, finishReason: 'stop', messageId: assistant?.id });
         } catch (error) {
           const rekluError = toRekluError(error);

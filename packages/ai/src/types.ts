@@ -148,6 +148,11 @@ export type StreamEvent =
   | { readonly type: 'tool-result'; readonly toolResult: ToolResultPart }
   | { readonly type: 'status'; readonly stage: string; readonly detail?: string }
   | {
+      /** A substantial reply was saved as an artifact; the client opens it beside the chat. */
+      readonly type: 'artifact';
+      readonly artifact: { readonly id: string; readonly title: string; readonly type: string };
+    }
+  | {
       readonly type: 'finish';
       readonly usage: TokenUsage;
       readonly finishReason: FinishReason;
