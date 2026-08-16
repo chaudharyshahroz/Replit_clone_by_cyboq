@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (ninth increment — M4 complete)
+**Last updated:** 2026-08-16 (tenth increment — M5 foundations)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -393,11 +393,59 @@ Nothing from §127. Two improvements deferred deliberately:
 
 ---
 
-## Milestones 5–11 ⬜
+## Milestone 5 — Build 🚧 (sandbox, codegen parsing and checkpoints done)
+
+### `@reklu/sandbox` ✅ — 34 tests
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Driver abstraction | ✅ | `local` / `docker` / `e2b` behind one interface |
+| Path containment | ✅ | traversal, absolute paths, `.git`/`.env`/`.ssh`/`.aws` rejected; resolved path re-checked against root |
+| Environment isolation | ✅ | Reklu's `process.env` is **never** spread in; verified through a real `env` subprocess that a canary secret does not appear |
+| No shell | ✅ | args passed as an array, so `; rm -rf /` in a filename is an argument |
+| Timeout + output cap | ✅ | SIGKILL on timeout; output truncated at a byte cap |
+| Batch atomicity | ✅ | every path validated before any file is written |
+| Destroy guard | ✅ | refuses to delete a path outside its own root |
+| `docker` / `e2b` drivers | ⬜ | **not implemented** — selecting them throws rather than falling back to the non-isolated local driver |
+
+### `@reklu/build` ✅ — 21 tests
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Codegen parsing | ✅ | accepts path-comment, fence-info and heading forms; unlabelled fences are treated as illustration, not files |
+| Path rejection | ✅ | generated paths are attacker-influenced; rejected ones are **recorded with a reason**, and valid files in the same response still land |
+| Checkpoints | ✅ | every change stores the **whole tree**, not a diff, so recovery never depends on replaying diffs that may themselves be wrong |
+| Changed-path detection | ✅ | diffed against the previous tree, so the list is real |
+| Restore | ✅ | creates a new version carrying the old tree, so the restore is undoable |
+
+### Remaining in M5 ⬜
+
+- **Build brief** (spec §29) — schema field exists, generation not written
+- **Build chat and file generation loop** — parser and checkpoints exist; the
+  orchestration that drives them does not
+- **Build workspace UI** — file explorer, code view, console, preview panel
+- **Preview engine** — the local driver can start a dev server; nothing calls it
+- **Mobile build architecture** (spec §37)
+
+### The isolation caveat, stated plainly
+
+This machine has **no Docker and no E2B key**, so the only driver that can run
+here is `local`, which provides **no real isolation**. It enforces path
+containment, withholds Reklu's environment, caps output and kills on timeout —
+all verified — but a determined process could still read the developer's
+filesystem.
+
+Production is protected by refusing to start with `SANDBOX_DRIVER=local`, and
+selecting `docker`/`e2b` now throws rather than silently falling back. But the
+isolation guarantee itself is **unverifiable in this environment**, and no
+amount of further work here will change that.
+
+---
+
+## Milestones 6–11 ⬜
 
 | # | Milestone | Notes |
 | - | --------- | ----- |
-| 5 | Build workspace, sandbox, preview, checkpoints | Schema ready |
 | 6 | GitHub / Vercel / Supabase, deployment | Schema ready |
 | 7 | Skills | Schema ready |
 | 8 | MCP + Connections + permission engine | Schema ready |
