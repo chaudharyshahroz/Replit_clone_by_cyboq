@@ -254,3 +254,49 @@ rather than imitating an answer.
 **Consequence.** It is exempt from plan model-allowlists. Gating it behind one
 left developers with no selectable model at all — a real bug, now covered by a
 regression test.
+
+---
+
+### D18 — Production guards get named escape hatches, never silent fallbacks
+
+**Decision.** Three startup guards refuse a production boot: non-durable
+storage, a non-isolated sandbox, and a missing embedding key. Each now has
+exactly one documented way past it, and each is an explicit operator statement
+naming what is conceded:
+
+| Guard | Escape hatch | The concession it states |
+| --- | --- | --- |
+| `STORAGE_DRIVER=local` | `STORAGE_LOCAL_SINGLE_NODE_ACK=true` | The path is a mounted volume and exactly one web replica runs |
+| `SANDBOX_DRIVER=local` | `BUILD_ENABLED=false` | The Build workspace is off, so no generated code executes |
+| `EMBEDDING_PROVIDER` without a key | `EMBEDDING_PROVIDER=none` | Retrieval is lexical only, deliberately |
+
+**Why.** The guards were written to prevent a deploy that cannot honestly serve
+the product, and they were right to. But "cannot deploy at all" was the wrong
+outcome for a single-node install with a mounted volume, an operator holding an
+Anthropic-only key, or anyone who wants Chat and Research before Build exists.
+
+The distinction that matters is not *whether* a constraint can be relaxed but
+*who decides and whether they are told*. A fallback Reklu chooses silently is
+the failure mode the guards exist to prevent. A flag the operator sets, whose
+name states the condition being accepted, is a decision — and it is recorded in
+the environment where it can be audited.
+
+**Why `BUILD_ENABLED` rather than relaxing the sandbox guard.** Build is the
+only subsystem that executes model-generated code, so it is the only one needing
+isolation. Turning the feature off removes the hazard entirely; weakening the
+guard would have left it in place with a smaller warning. Spec §36 is
+unconditional, and this keeps it that way.
+
+**Guards on the guards.** `sandbox()` throws when `BUILD_ENABLED=false`, so a
+stale form post or a direct server-action call cannot reach a driver the UI has
+already disabled. `featuresFor()` reports `build: false` in production without
+isolation even if called with a hand-built env, independently of
+`loadServerEnv`. Both paths are covered by tests, as is each escape hatch and
+each guard it does *not* disable.
+
+**Consequence.** `pnpm verify:production-config` loads the shipped
+`.env.production.example` through the real schema and asserts both directions:
+that the configuration boots, and that removing any operator-supplied value
+still fails loudly. This caught a real bug — values annotated with trailing
+`# comments`, which Docker Compose has not always stripped, producing an
+`APP_URL` that carried its own comment into URL validation.

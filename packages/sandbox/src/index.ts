@@ -22,6 +22,15 @@ export function sandbox(): SandboxDriver {
   if (cached) return cached;
   const env = loadServerEnv();
 
+  // Checked here as well as in the UI: a disabled Build must not be reachable
+  // by any path, including a stale form post or a direct server-action call.
+  if (!env.BUILD_ENABLED) {
+    throw new SandboxError(
+      'NOT_CONFIGURED',
+      'The Build workspace is turned off on this instance (BUILD_ENABLED=false).',
+    );
+  }
+
   switch (env.SANDBOX_DRIVER) {
     case 'local': {
       // loadServerEnv() already refuses production with this driver.
@@ -58,6 +67,18 @@ export function sandboxStatus(): {
   detail: string;
 } {
   const env = loadServerEnv();
+
+  if (!env.BUILD_ENABLED) {
+    return {
+      driver: env.SANDBOX_DRIVER,
+      available: false,
+      isolated: false,
+      detail:
+        'The Build workspace is turned off on this instance. An operator can enable it ' +
+        'by setting BUILD_ENABLED=true together with an isolated sandbox — ' +
+        'SANDBOX_DRIVER=e2b (with E2B_API_KEY) or SANDBOX_DRIVER=docker.',
+    };
+  }
 
   if (env.SANDBOX_DRIVER === 'local') {
     return {

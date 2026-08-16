@@ -48,6 +48,7 @@ export async function GET(): Promise<Response> {
       webSearch: available.webSearch,
       durableStorage: available.durableStorage,
       isolatedSandbox: available.isolatedSandbox,
+      build: available.build,
       billing: available.billing,
     },
     environment: env.NODE_ENV,

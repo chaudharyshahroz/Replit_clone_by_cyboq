@@ -112,6 +112,17 @@ const serverSchema = z.object({
   // ---- Storage -------------------------------------------------------------
   STORAGE_DRIVER: enumWithDefault(['local', 's3'], 'local'),
   STORAGE_LOCAL_PATH: z.string().trim().default('./.storage'),
+  /**
+   * Operator acknowledgement that STORAGE_LOCAL_PATH is a durable mounted
+   * volume and that the deployment runs a single web replica.
+   *
+   * The production guard on `STORAGE_DRIVER=local` exists because a container
+   * filesystem is ephemeral and because two replicas do not share one. Neither
+   * is true of a single-node deploy with a mounted volume, but Reklu cannot
+   * detect that from inside the container — so the operator states it, and
+   * states it for the exact reason the guard would otherwise fire.
+   */
+  STORAGE_LOCAL_SINGLE_NODE_ACK: booleanish(false),
   S3_BUCKET: optionalString,
   S3_REGION: z.string().trim().default('auto'),
   S3_ENDPOINT: optionalString,
@@ -126,7 +137,13 @@ const serverSchema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: optionalString,
   XAI_API_KEY: optionalString,
   DEEPSEEK_API_KEY: optionalString,
-  EMBEDDING_PROVIDER: enumWithDefault(['openai', 'google'], 'openai'),
+  /**
+   * `none` is an explicit choice to run without semantic retrieval: project
+   * memory and file search fall back to lexical matching, which is implemented
+   * and tested. It is offered so an operator with an Anthropic-only key can
+   * deploy without Reklu pretending semantic recall works.
+   */
+  EMBEDDING_PROVIDER: enumWithDefault(['openai', 'google', 'none'], 'openai'),
   EMBEDDING_MODEL: z.string().trim().default('text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: intWithDefault(1536),
   IMAGE_PROVIDER: enumWithDefault(['openai', 'google'], 'openai'),
@@ -153,6 +170,16 @@ const serverSchema = z.object({
   SUPABASE_OAUTH_REDIRECT_URI: optionalString,
 
   // ---- Sandbox -------------------------------------------------------------
+  /**
+   * Master switch for the Build workspace.
+   *
+   * Build is the only subsystem that executes model-generated code, so it is
+   * the only one that needs an isolated sandbox. Turning it off is what makes a
+   * production deploy possible before an isolated sandbox exists: the feature
+   * reports itself unavailable (spec §25) rather than running untrusted code on
+   * the app server (spec §36).
+   */
+  BUILD_ENABLED: booleanish(true),
   SANDBOX_DRIVER: enumWithDefault(['local', 'e2b', 'docker'], 'local'),
   SANDBOX_ROOT: z.string().trim().default('./.sandbox'),
   E2B_API_KEY: optionalString,
@@ -240,16 +267,23 @@ function crossFieldProblems(env: ServerEnv): string[] {
           'GOOGLE_GENERATIVE_AI_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY.',
       );
     }
-    if (env.STORAGE_DRIVER === 'local') {
+    if (env.STORAGE_DRIVER === 'local' && !env.STORAGE_LOCAL_SINGLE_NODE_ACK) {
       problems.push(
-        'STORAGE_DRIVER=local is a development-only driver and is not durable. ' +
-          'Set STORAGE_DRIVER=s3 in production.',
+        'STORAGE_DRIVER=local is not durable on an ephemeral container filesystem ' +
+          'and is not shared between replicas. Either set STORAGE_DRIVER=s3, or — if ' +
+          `STORAGE_LOCAL_PATH (${env.STORAGE_LOCAL_PATH}) is a mounted volume and you ` +
+          'run exactly one web replica — set STORAGE_LOCAL_SINGLE_NODE_ACK=true to ' +
+          'accept that constraint. Uploads are lost if either condition stops holding.',
       );
     }
-    if (env.SANDBOX_DRIVER === 'local') {
+    // Only Build executes model-generated code, so only Build needs isolation.
+    // With Build off, a non-isolated driver is never handed anything untrusted.
+    if (env.BUILD_ENABLED && env.SANDBOX_DRIVER === 'local') {
       problems.push(
         'SANDBOX_DRIVER=local does not provide real isolation and must not run ' +
-          'untrusted generated code in production. Use e2b or docker.',
+          'untrusted generated code in production. Set SANDBOX_DRIVER=e2b (with ' +
+          'E2B_API_KEY) or SANDBOX_DRIVER=docker, or set BUILD_ENABLED=false to ' +
+          'deploy with the Build workspace turned off.',
       );
     }
     if (env.APP_URL.startsWith('http://')) {
@@ -257,20 +291,22 @@ function crossFieldProblems(env: ServerEnv): string[] {
     }
 
     // EMBEDDING_PROVIDER carries a default, so a missing key is not an explicit
-    // contradiction the way SEARCH_PROVIDER=brave without a Brave key is. In
-    // development it simply reports embeddings as unavailable
-    // (`features().embeddings === false`); in production, shipping without
-    // semantic retrieval would silently degrade project memory and file search,
-    // so it is a hard failure.
-    const embeddingKey =
-      env.EMBEDDING_PROVIDER === 'openai' ? env.OPENAI_API_KEY : env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!embeddingKey) {
-      const required =
-        env.EMBEDDING_PROVIDER === 'openai' ? 'OPENAI_API_KEY' : 'GOOGLE_GENERATIVE_AI_API_KEY';
-      problems.push(
-        `EMBEDDING_PROVIDER=${env.EMBEDDING_PROVIDER} requires ${required}. ` +
-          'Without it, project memory and file search cannot retrieve semantically.',
-      );
+    // contradiction the way SEARCH_PROVIDER=brave without a Brave key is —
+    // it is far more likely to be an oversight. Shipping it silently would
+    // degrade project memory and file search to lexical matching without anyone
+    // deciding to. `none` is how an operator decides to, on purpose.
+    if (env.EMBEDDING_PROVIDER !== 'none') {
+      const embeddingKey =
+        env.EMBEDDING_PROVIDER === 'openai' ? env.OPENAI_API_KEY : env.GOOGLE_GENERATIVE_AI_API_KEY;
+      if (!embeddingKey) {
+        const required =
+          env.EMBEDDING_PROVIDER === 'openai' ? 'OPENAI_API_KEY' : 'GOOGLE_GENERATIVE_AI_API_KEY';
+        problems.push(
+          `EMBEDDING_PROVIDER=${env.EMBEDDING_PROVIDER} requires ${required}. ` +
+            'Without it, project memory and file search cannot retrieve semantically. ' +
+            'Set EMBEDDING_PROVIDER=none to run on lexical retrieval deliberately.',
+        );
+      }
     }
   }
 
@@ -356,6 +392,12 @@ export interface FeatureAvailability {
   readonly billing: boolean;
   readonly durableStorage: boolean;
   readonly isolatedSandbox: boolean;
+  /**
+   * Whether the Build workspace can accept work. False when the operator turned
+   * it off, and false in production without an isolated sandbox — generated code
+   * must never execute on the app server (spec §36).
+   */
+  readonly build: boolean;
 }
 
 export function featuresFor(env: ServerEnv): FeatureAvailability {
@@ -372,7 +414,12 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
     xai,
     deepseek,
     anyModelProvider: anthropic || openai || google || xai || deepseek,
-    embeddings: env.EMBEDDING_PROVIDER === 'openai' ? openai : google,
+    embeddings:
+      env.EMBEDDING_PROVIDER === 'none'
+        ? false
+        : env.EMBEDDING_PROVIDER === 'openai'
+          ? openai
+          : google,
     webSearch: Boolean(env.SEARCH_PROVIDER),
     imageGeneration: env.IMAGE_PROVIDER === 'openai' ? openai : google,
     videoGeneration: Boolean(env.VIDEO_PROVIDER),
@@ -382,8 +429,11 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
     vercelIntegration: Boolean(env.VERCEL_CLIENT_ID && env.VERCEL_CLIENT_SECRET),
     supabaseIntegration: Boolean(env.SUPABASE_CLIENT_ID && env.SUPABASE_CLIENT_SECRET),
     billing: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET),
-    durableStorage: env.STORAGE_DRIVER === 's3',
+    durableStorage: env.STORAGE_DRIVER === 's3' || env.STORAGE_LOCAL_SINGLE_NODE_ACK,
     isolatedSandbox: env.SANDBOX_DRIVER !== 'local',
+    build:
+      env.BUILD_ENABLED &&
+      (env.SANDBOX_DRIVER !== 'local' || env.NODE_ENV !== 'production'),
   };
 }
 

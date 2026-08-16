@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (twelfth increment — M5 complete)
+**Last updated:** 2026-08-16 (thirteenth increment — deployment packaging)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -573,11 +573,37 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test              # 230 unit tests
-pnpm verify:auth       # 13 live checks
-pnpm verify:projects   # 40 live checks
-pnpm verify:queue      # 15 live checks (worker must be running)
+pnpm test                        # 431 unit tests
+pnpm verify:auth                 # 13 live checks
+pnpm verify:projects             # 40 live checks
+pnpm verify:queue                # 15 live checks (worker must be running)
+pnpm verify:build                # 24 live checks
+pnpm verify:preview              # 14 live checks
+pnpm verify:production-config    # 17 checks on .env.production.example
 ```
+
+---
+
+## Deployment packaging 🚧
+
+Targets a Hostinger VPS running Dokploy alongside other applications, at
+`reklu.app`. See [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+| Item | State | Verified by |
+| ---- | ----- | ----------- |
+| `Dockerfile` — one image, `web`/`worker`/`migrate` entrypoints | 🚧 | written; **never built** — no Docker daemon available |
+| `scripts/docker-entrypoint.sh` | 🚧 | written; never executed |
+| `docker-compose.yml` — non-invasive Dokploy stack | 🚧 | written; never run |
+| `.dockerignore` excludes `.env` and host `node_modules` | ✅ | asserted by inspection; `.env` is also git-ignored |
+| `.env.production.example` | ✅ | `pnpm verify:production-config` — 17 checks pass |
+| Production guard escape hatches (D18) | ✅ | 11 new tests in `packages/shared/src/__tests__/env.test.ts` |
+| `web` production build | ✅ | `pnpm --filter @reklu/web build` succeeds |
+
+**The container layer is unverified.** The image has not been built or started,
+because the development machine has no Docker daemon. Everything the image
+*runs* — the Next build, migrations, env validation, health endpoint — is
+exercised locally. The packaging around it is not. The first deploy is the
+verification step for that layer, and it should be treated as one.
 
 ---
 
@@ -594,3 +620,13 @@ pnpm verify:queue      # 15 live checks (worker must be running)
 4. **`DATABASE_URL` default in `.env.example` names the `postgres` role**, which
    does not exist on a Homebrew install — Homebrew uses the OS username. The
    local `.env` was corrected; `setup.sh` should detect this.
+5. **The Docker image has never been built.** No Docker daemon on the
+   development machine. `Dockerfile`, `docker-compose.yml` and the entrypoint
+   are written against the documented behaviour of their tools, not against an
+   observed run.
+6. **Build is off in the shipped production configuration** (`BUILD_ENABLED=false`).
+   Enabling it needs an isolated sandbox — E2B, or a Docker host separate from
+   the app server. Neither the `docker` nor the `e2b` sandbox driver is
+   implemented; both currently throw rather than falling back. See D18.
+7. **`STORAGE_DRIVER=local` in production is single-node only.** Scaling `web`
+   past one replica silently breaks uploads. Move to S3/R2 before scaling.

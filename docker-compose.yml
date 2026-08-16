@@ -1,0 +1,136 @@
+# =============================================================================
+# Reklu — Dokploy deployment
+#
+# Designed to sit alongside existing applications on a shared Dokploy host:
+#
+#   * No host ports are published. Traefik reaches `web` over the shared
+#     `dokploy-network`. Nothing can collide with a port another app already
+#     holds, and Postgres/Redis are unreachable from the public internet.
+#   * Postgres and Redis are Reklu's own containers on Reklu's own volumes.
+#     No existing database is touched, and removing this stack removes only
+#     Reklu's data.
+#   * Every volume and container name is prefixed `reklu`.
+#
+# Configure the domain in Dokploy: Application → Domains → service `web`,
+# container port 3000. Dokploy writes the Traefik labels and provisions the
+# Let's Encrypt certificate.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Migrations. Runs to completion before web or worker start, so replicas never
+  # race to apply the same migration.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reklu-app:latest
+    command: ["migrate"]
+    restart: "no"
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://reklu:${POSTGRES_PASSWORD}@postgres:5432/reklu
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [reklu-internal]
+
+  # ---------------------------------------------------------------------------
+  # Web — the only service Traefik routes to.
+  # ---------------------------------------------------------------------------
+  web:
+    image: reklu-app:latest
+    command: ["web"]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://reklu:${POSTGRES_PASSWORD}@postgres:5432/reklu
+      REDIS_URL: redis://redis:6379
+      PORT: 3000
+    expose:
+      - "3000"
+    volumes:
+      # Only meaningful when STORAGE_DRIVER=local. Named, so uploads survive a
+      # redeploy — which is the condition STORAGE_LOCAL_SINGLE_NODE_ACK asserts.
+      - reklu-storage:/app/.storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks: [reklu-internal, dokploy-network]
+
+  # ---------------------------------------------------------------------------
+  # Worker — background jobs. No inbound network exposure at all.
+  # ---------------------------------------------------------------------------
+  worker:
+    image: reklu-app:latest
+    command: ["worker"]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://reklu:${POSTGRES_PASSWORD}@postgres:5432/reklu
+      REDIS_URL: redis://redis:6379
+    volumes:
+      # The worker reads files the web service wrote, so with the local storage
+      # driver both must see the same volume.
+      - reklu-storage:/app/.storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks: [reklu-internal]
+
+  # ---------------------------------------------------------------------------
+  # Postgres with pgvector. The extension is created by the migration runner.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reklu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: reklu
+    volumes:
+      - reklu-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reklu -d reklu"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [reklu-internal]
+
+  # ---------------------------------------------------------------------------
+  # Redis — queue transport. Durable job state lives in Postgres (decision D9),
+  # so an appendonly file is a convenience, not the source of truth.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - reklu-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [reklu-internal]
+
+volumes:
+  reklu-postgres:
+  reklu-redis:
+  reklu-storage:
+
+networks:
+  # Private to this stack: Postgres and Redis are reachable only by Reklu.
+  reklu-internal:
+  # Dokploy's shared proxy network, created by Dokploy itself. `external` means
+  # Compose attaches to it rather than creating it — it must not be managed
+  # here, because other applications depend on it.
+  dokploy-network:
+    external: true

@@ -33,7 +33,8 @@
     "verify:queue": "pnpm --filter @reklu/worker exec tsx scripts/verify.mts",
     "verify": "pnpm verify:auth && pnpm verify:projects",
     "verify:build": "pnpm --filter @reklu/build exec tsx scripts/verify.mts",
-    "verify:preview": "pnpm --filter @reklu/build exec tsx scripts/verify-preview.mts"
+    "verify:preview": "pnpm --filter @reklu/build exec tsx scripts/verify-preview.mts",
+    "verify:production-config": "pnpm --filter @reklu/database exec tsx ../shared/scripts/verify-production-config.mts"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

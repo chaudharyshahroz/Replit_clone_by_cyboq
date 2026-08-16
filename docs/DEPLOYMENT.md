@@ -1,9 +1,14 @@
 # Deployment
 
-> **Status: partially implemented.** The health endpoint, graceful shutdown,
-> migration runner, and startup configuration validation are built and verified.
-> Dockerfiles are **not written yet**; the topology and requirements below are
-> the target.
+> **Status: implemented, not yet deployed.** The health endpoint, graceful
+> shutdown, migration runner, startup configuration validation, Dockerfile,
+> entrypoint and Compose stack are all written, and the configuration is
+> verified by `pnpm verify:production-config`.
+>
+> **Not yet verified on a live host.** The image has not been built or run —
+> there is no Docker daemon on the development machine. Treat the first deploy
+> as the verification step for the container layer specifically; everything
+> below it has been exercised locally.
 
 ---
 
@@ -99,15 +104,106 @@ Give orchestrators a `terminationGracePeriodSeconds` above 30.
 
 ---
 
-## Containers `[PLANNED]`
+## Containers
 
-Target: a multi-stage build on `node:20-alpine`, non-root user, `pnpm deploy`
-for a pruned production tree, one image with `web` and `worker` entrypoints.
+[`Dockerfile`](../Dockerfile) builds one image with three entrypoints, selected
+by the container command via [`scripts/docker-entrypoint.sh`](../scripts/docker-entrypoint.sh):
 
-Postgres **must** have pgvector — use `pgvector/pgvector:pg16` or a managed
-provider offering it. Do not compile it in the image; the local build in
+| Command   | Process                                    |
+| --------- | ------------------------------------------ |
+| `web`     | Next.js server on `$PORT` (default 3000)   |
+| `worker`  | BullMQ consumer                            |
+| `migrate` | Applies migrations, then exits             |
+
+Web and worker share every workspace package, so building them as separate
+images would compile the same tree twice.
+
+`migrate` is its own role rather than something each container runs on boot:
+several containers starting together would otherwise race to apply the same
+migration. `docker-compose.yml` gates `web` and `worker` behind
+`service_completed_successfully`.
+
+Base image is `node:20-bookworm-slim`, not Alpine — Next 16,
+`@tailwindcss/oxide` and sharp all ship native binaries, and glibc is the
+well-trodden path for them. Runs as the non-root `node` user.
+
+Dev dependencies are deliberately **not** pruned: the worker runs TypeScript
+source through `tsx`, and migrations run through `drizzle-kit`. Pruning them
+would break both roles.
+
+**`.env` is in [`.dockerignore`](../.dockerignore)** and must stay there.
+Deleting a secret in a later `RUN` does not remove it — the layer that added it
+remains in the image history.
+
+Postgres **must** have pgvector — `docker-compose.yml` uses
+`pgvector/pgvector:pg16`. Do not compile it in the image; the local build in
 [LOCAL_SETUP.md](./LOCAL_SETUP.md) is a development convenience and does not
 survive an upgrade ([DECISIONS.md D13](./DECISIONS.md)).
+
+---
+
+## Deploying to Dokploy
+
+[`docker-compose.yml`](../docker-compose.yml) is written for a Dokploy host that
+is **already running other applications**. It is deliberately non-invasive:
+
+- **No host ports are published.** Traefik reaches `web` over the shared
+  `dokploy-network`, so nothing can collide with a port another app holds — and
+  Postgres and Redis are unreachable from the public internet.
+- **`dokploy-network` is declared `external`.** Compose attaches to it rather
+  than creating or modifying it, because other applications depend on it.
+- **Postgres and Redis are Reklu's own containers on Reklu's own volumes.** No
+  existing database is touched; removing the stack removes only Reklu's data.
+- Every container, volume and network name is prefixed `reklu`.
+
+### Runbook
+
+1. Push this repository to your Git remote.
+2. In Dokploy: **Create Application → Compose**, point it at the repository and
+   branch, with Compose path `docker-compose.yml`.
+3. **Environment tab:** paste [`.env.production.example`](../.env.production.example)
+   and fill in the blanks. Generate `POSTGRES_PASSWORD`, `AUTH_SECRET` and
+   `ENCRYPTION_KEY` separately with `openssl rand -base64 32`; add at least one
+   AI provider key.
+4. **Domains tab:** add the domain, service `web`, container port `3000`,
+   HTTPS on with Let's Encrypt. Dokploy writes the Traefik labels.
+5. Point the domain's DNS `A` record at the VPS before deploying, or
+   certificate issuance fails.
+6. **Deploy.** First run builds the image and applies migrations.
+7. Verify: `GET https://<domain>/api/health` returns `200` with
+   `"status": "ok"` and a `capabilities` block reporting what is actually
+   configured.
+
+### Before deploying
+
+```bash
+pnpm verify:production-config
+```
+
+This loads `.env.production.example` through the real environment schema and
+asserts it is a configuration Reklu will boot on — catching drift between the
+example and the schema here rather than as a crash-looping container on the
+host. It also enforces that no value carries a trailing `# comment`: Docker
+Compose's handling of those has varied between versions, and an `APP_URL` read
+with its own comment appended fails validation in a way that is hard to see.
+
+### What is switched off in this configuration, and why
+
+Three production guards would otherwise refuse to boot. Each has exactly one
+documented way past it, and each is an explicit statement by the operator about
+what is being given up — never a silent fallback.
+
+| Guard | Setting | What it concedes |
+| --- | --- | --- |
+| `STORAGE_DRIVER=local` is not durable | `STORAGE_LOCAL_SINGLE_NODE_ACK=true` | Asserts `/app/.storage` is a mounted volume and exactly **one** `web` replica runs. Scale past one and uploads become invisible to half the requests. |
+| `SANDBOX_DRIVER=local` is not isolated | `BUILD_ENABLED=false` | The Build workspace is off. It reports itself unavailable and names what is missing, rather than running model-generated code on the app server (spec §36). |
+| `EMBEDDING_PROVIDER` needs a key | `EMBEDDING_PROVIDER=none` | Project memory and file search fall back to lexical retrieval. Recall is weaker; the UI says so. Pick this only if you have no embedding-capable key — Anthropic does not serve embeddings. |
+
+To turn Build on later, set `BUILD_ENABLED=true` together with either
+`SANDBOX_DRIVER=e2b` and `E2B_API_KEY`, or `SANDBOX_DRIVER=docker` **on a
+Docker host that is not this one**. Mounting the host Docker socket into the
+Reklu container is not an acceptable substitute: it grants root on the host,
+which is strictly worse than the local driver this guard exists to prevent.
 
 ---
 

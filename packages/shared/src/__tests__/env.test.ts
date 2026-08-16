@@ -181,6 +181,68 @@ describe('loadServerEnv', () => {
         ),
       ).toThrow(/OPENAI_API_KEY/);
     });
+
+    /**
+     * Each production guard has exactly one documented way past it, and each
+     * one is an explicit statement by the operator about what they are giving
+     * up. None of them is a silent fallback — that distinction is the whole
+     * point, so it is tested rather than assumed.
+     */
+    describe('documented escape hatches', () => {
+      it('permits the local storage driver once single-node durability is acknowledged', () => {
+        expect(() =>
+          loadServerEnv(
+            prod({
+              STORAGE_DRIVER: 'local',
+              S3_BUCKET: '',
+              S3_ACCESS_KEY_ID: '',
+              S3_SECRET_ACCESS_KEY: '',
+              STORAGE_LOCAL_SINGLE_NODE_ACK: 'true',
+            }),
+          ),
+        ).not.toThrow();
+      });
+
+      it('still names the volume and the replica count when the ack is absent', () => {
+        expect(() => loadServerEnv(prod({ STORAGE_DRIVER: 'local' }))).toThrow(
+          /STORAGE_LOCAL_SINGLE_NODE_ACK/,
+        );
+      });
+
+      it('permits a non-isolated sandbox only when Build is turned off', () => {
+        expect(() =>
+          loadServerEnv(prod({ SANDBOX_DRIVER: 'local', E2B_API_KEY: '', BUILD_ENABLED: 'false' })),
+        ).not.toThrow();
+      });
+
+      // The guard protects against executing generated code, so it must key on
+      // Build being reachable — not on the driver alone.
+      it('refuses a non-isolated sandbox the moment Build is turned back on', () => {
+        expect(() =>
+          loadServerEnv(prod({ SANDBOX_DRIVER: 'local', E2B_API_KEY: '', BUILD_ENABLED: 'true' })),
+        ).toThrow(/does not provide real isolation/);
+      });
+
+      it('permits an Anthropic-only deploy when lexical retrieval is chosen deliberately', () => {
+        expect(() =>
+          loadServerEnv(
+            prod({
+              OPENAI_API_KEY: '',
+              ANTHROPIC_API_KEY: 'sk-ant-x',
+              EMBEDDING_PROVIDER: 'none',
+            }),
+          ),
+        ).not.toThrow();
+      });
+
+      it('names `none` as the deliberate alternative when the key is merely missing', () => {
+        expect(() =>
+          loadServerEnv(
+            prod({ OPENAI_API_KEY: '', ANTHROPIC_API_KEY: 'sk-ant-x' }),
+          ),
+        ).toThrow(/EMBEDDING_PROVIDER=none/);
+      });
+    });
   });
 
   it('skips validation when SKIP_ENV_VALIDATION=1', () => {
@@ -201,6 +263,44 @@ describe('featuresFor', () => {
     expect(f.githubIntegration).toBe(false);
     expect(f.durableStorage).toBe(false);
     expect(f.isolatedSandbox).toBe(false);
+  });
+
+  it('reports embeddings as unavailable when retrieval is deliberately lexical', () => {
+    resetServerEnvCache();
+    const f = featuresFor(loadServerEnv(base({ EMBEDDING_PROVIDER: 'none' })));
+    expect(f.embeddings).toBe(false);
+  });
+
+  it('counts an acknowledged single-node volume as durable storage', () => {
+    resetServerEnvCache();
+    const f = featuresFor(loadServerEnv(base({ STORAGE_LOCAL_SINGLE_NODE_ACK: 'true' })));
+    expect(f.durableStorage).toBe(true);
+  });
+
+  describe('build availability', () => {
+    it('is available in development on the local driver', () => {
+      resetServerEnvCache();
+      expect(featuresFor(loadServerEnv(base())).build).toBe(true);
+    });
+
+    it('is unavailable wherever the operator turned it off', () => {
+      resetServerEnvCache();
+      expect(featuresFor(loadServerEnv(base({ BUILD_ENABLED: 'false' }))).build).toBe(false);
+    });
+
+    /**
+     * Belt and braces: `loadServerEnv` already refuses this combination, but
+     * `featuresFor` is a pure function that other code may call with an env it
+     * built itself. It must never report Build as available in production
+     * without isolation.
+     */
+    it('is unavailable in production without an isolated sandbox', () => {
+      resetServerEnvCache();
+      const env = loadServerEnv(base());
+      expect(
+        featuresFor({ ...env, NODE_ENV: 'production', SANDBOX_DRIVER: 'local' }).build,
+      ).toBe(false);
+    });
   });
 
   it('requires both halves of an OAuth pair', () => {
