@@ -76,7 +76,9 @@ export function resolveInside(root: string, candidate: string): string {
  * provider keys, the database URL and the encryption key, and generated code
  * has no business seeing any of them (spec §36).
  */
-export function isolatedEnv(extra: Readonly<Record<string, string>> = {}): Record<string, string> {
+export function isolatedEnv(
+  extra: Readonly<Record<string, string>> = {},
+): NodeJS.ProcessEnv & { NODE_ENV: string } {
   return {
     PATH: '/usr/local/bin:/usr/bin:/bin',
     HOME: '/tmp',

@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (tenth increment — M5 foundations)
+**Last updated:** 2026-08-16 (eleventh increment — M5)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -393,7 +393,7 @@ Nothing from §127. Two improvements deferred deliberately:
 
 ---
 
-## Milestone 5 — Build 🚧 (sandbox, codegen parsing and checkpoints done)
+## Milestone 5 — Build 🚧 (§128 done except preview wiring; isolation unverifiable here)
 
 ### `@reklu/sandbox` ✅ — 34 tests
 
@@ -418,14 +418,52 @@ Nothing from §127. Two improvements deferred deliberately:
 | Changed-path detection | ✅ | diffed against the previous tree, so the list is real |
 | Restore | ✅ | creates a new version carrying the old tree, so the restore is undoable |
 
+### Build brief ✅ (spec §29) — 25 tests
+
+Reklu interprets the product before writing code, and the brief is persisted so
+later edits reason against intent rather than the original prompt string. The
+prompt states spec §38 explicitly: **an example is not the scope** — three
+exercises in a request does not mean a three-exercise product.
+
+Shown, not asked as a questionnaire. A malformed brief falls back to heuristics
+rather than aborting the build, and target inference covers website / web_app /
+dashboard / api / mobile_app. Mobile targets Expo + React Native for both stores
+(spec §37).
+
+### Generation orchestration ✅
+
+Brief → plan → generate → merge → checkpoint, each stage announced as entered.
+`mergeTree` is the property that protects a user's work: **an edit emitting
+three files does not delete the other forty**, verified live.
+
+### Build workspace UI ✅ (spec §30–31)
+
+File explorer with a real nested tree and changed-file indicators, code view,
+console showing actual install/build output including failures, preview panel,
+and checkpoint history. The non-isolation warning is shown **before** anything
+can be built, not discovered afterwards.
+
+### Verified live — 24 checks (`pnpm verify:build`)
+
+Whole-tree checkpoints, changed-path diffing against the previous version,
+append-only restore that recovers old content while retaining every version,
+cross-workspace isolation, edit-preserves-untouched-files, and unsafe generated
+paths rejected while safe files in the same response still land.
+
 ### Remaining in M5 ⬜
 
-- **Build brief** (spec §29) — schema field exists, generation not written
-- **Build chat and file generation loop** — parser and checkpoints exist; the
-  orchestration that drives them does not
-- **Build workspace UI** — file explorer, code view, console, preview panel
-- **Preview engine** — the local driver can start a dev server; nothing calls it
-- **Mobile build architecture** (spec §37)
+- **Preview engine wiring** — the local driver can start a dev server and the
+  panel renders; nothing calls `startPreview` yet
+- **Visual selection** (spec §35) — component metadata for click-to-edit
+
+### The isolation caveat, unchanged
+
+No Docker, no E2B key. The only driver that runs here is `local`, which provides
+**no real isolation**. Path containment, environment withholding, output caps and
+timeout kills are all verified — but a determined process could still read the
+developer's filesystem. Production refuses to boot with `SANDBOX_DRIVER=local`,
+and selecting `docker`/`e2b` throws rather than falling back. **The isolation
+guarantee itself remains unverifiable in this environment.**
 
 ### The isolation caveat, stated plainly
 

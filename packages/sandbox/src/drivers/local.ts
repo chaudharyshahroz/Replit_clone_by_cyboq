@@ -129,7 +129,7 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
           // No shell: arguments are passed as an array, so a filename
           // containing `; rm -rf /` is an argument, not a command.
           shell: false,
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['ignore', 'pipe', 'pipe'] as const,
         });
 
         let stdout = '';
@@ -188,7 +188,7 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
         cwd: handle.externalId,
         env: isolatedEnv({ PORT: String(port) }),
         shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'] as const,
         detached: true,
       });
 

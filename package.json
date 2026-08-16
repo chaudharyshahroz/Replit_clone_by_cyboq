@@ -31,7 +31,8 @@
     "verify:auth": "pnpm --filter @reklu/auth exec tsx scripts/verify.mts",
     "verify:projects": "pnpm --filter @reklu/projects exec tsx scripts/verify.mts",
     "verify:queue": "pnpm --filter @reklu/worker exec tsx scripts/verify.mts",
-    "verify": "pnpm verify:auth && pnpm verify:projects"
+    "verify": "pnpm verify:auth && pnpm verify:projects",
+    "verify:build": "pnpm --filter @reklu/build exec tsx scripts/verify.mts"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

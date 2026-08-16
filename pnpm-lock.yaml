@@ -32,6 +32,9 @@ importers:
       '@reklu/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@reklu/build':
+        specifier: workspace:*
+        version: link:../../packages/build
       '@reklu/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -44,6 +47,9 @@ importers:
       '@reklu/research':
         specifier: workspace:*
         version: link:../../packages/research
+      '@reklu/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@reklu/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -254,6 +260,9 @@ importers:
       '@types/node':
         specifier: ^22.10.5
         version: 22.20.1
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

@@ -36,7 +36,7 @@ const PRIMARY: readonly NavItem[] = [
   { href: '/chat', label: 'Chat', icon: MessageSquare, available: true },
   { href: '/compare', label: 'Compare', icon: Columns2, available: true },
   { href: '/research', label: 'Research', icon: Telescope, available: true },
-  { href: '/build', label: 'Build', icon: Wrench, available: false },
+  { href: '/build', label: 'Build', icon: Wrench, available: true },
 ];
 
 const LIBRARY: readonly NavItem[] = [
