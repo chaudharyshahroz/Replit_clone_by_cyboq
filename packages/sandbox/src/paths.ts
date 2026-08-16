@@ -78,9 +78,21 @@ export function resolveInside(root: string, candidate: string): string {
  */
 export function isolatedEnv(
   extra: Readonly<Record<string, string>> = {},
+  options: { readonly extraPathEntries?: readonly string[] } = {},
 ): NodeJS.ProcessEnv & { NODE_ENV: string } {
+  // The toolchain must be reachable or nothing can run — an early version used
+  // a fixed minimal PATH and every `npm install` failed with exit 127. Widening
+  // PATH is safe in a way that spreading process.env is not: the *location* of
+  // node is not a secret, whereas ANTHROPIC_API_KEY and DATABASE_URL are.
+  const pathEntries = [
+    ...(options.extraPathEntries ?? []),
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+  ];
+
   return {
-    PATH: '/usr/local/bin:/usr/bin:/bin',
+    PATH: pathEntries.join(':'),
     HOME: '/tmp',
     // Keeps npm from writing to the real user's cache or reading their config.
     NPM_CONFIG_CACHE: '/tmp/.npm-cache',

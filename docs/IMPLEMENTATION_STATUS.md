@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (eleventh increment — M5)
+**Last updated:** 2026-08-16 (twelfth increment — M5 complete)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -393,7 +393,7 @@ Nothing from §127. Two improvements deferred deliberately:
 
 ---
 
-## Milestone 5 — Build 🚧 (§128 done except preview wiring; isolation unverifiable here)
+## Milestone 5 — Build ✅ (§128 complete; isolation unverifiable in this environment)
 
 ### `@reklu/sandbox` ✅ — 34 tests
 
@@ -450,11 +450,46 @@ append-only restore that recovers old content while retaining every version,
 cross-workspace isolation, edit-preserves-untouched-files, and unsafe generated
 paths rejected while safe files in the same response still land.
 
-### Remaining in M5 ⬜
+### Preview engine ✅ (spec §34)
 
-- **Preview engine wiring** — the local driver can start a dev server and the
-  panel renders; nothing calls `startPreview` yet
-- **Visual selection** (spec §35) — component metadata for click-to-edit
+Materializes the tree into a sandbox, installs, starts a dev server, and tracks
+it as a `sandboxes` row so idle previews can be reaped. Ports are allocated by
+asking the OS rather than guessing, from a range well away from Reklu's own.
+
+Served from a **separate origin** and rendered in a sandboxed iframe: same-origin
+would give generated code access to the session cookie, which is the escape the
+sandbox exists to prevent.
+
+**Verified live** (`pnpm verify:preview`): install succeeded, a real dev server
+answered **HTTP 200 on port 43000** with the generated content, the preview was
+tracked as running, and after stopping, the port no longer served.
+
+### Visual selection ✅ (spec §35) — 16 tests
+
+Stable `data-reklu-id` attributes are injected into generated JSX at
+**generation time**, with a source map from id → file + line persisted alongside
+the tree. Retrofitting this later would mean regenerating every existing
+project, which is why §35 asks for the architecture up front.
+
+Alt+click in the preview posts only the element id; the id is validated against
+Reklu's own source map server-side before it can influence an edit, so a
+generated app cannot steer the editor. The resolved selection becomes a prompt
+naming the file, line and surrounding code — "make this card smaller" reaches a
+specific place rather than a search.
+
+Instrumentation is deliberately conservative: ambiguous lines are skipped. A
+missed element costs a click-to-edit opportunity; a corrupted generated file
+costs the whole build.
+
+A real bug was found by the live run: the sandbox's fixed minimal `PATH`
+excluded the Node toolchain, so **every `npm install` failed with exit 127** —
+isolated to the point of uselessness. `PATH` now includes the running node's
+directory (a location, not a secret), with a regression test proving both that
+`npm` runs and that Reklu's secrets still do not leak.
+
+### M5 remaining ⬜
+
+Nothing from §128.
 
 ### The isolation caveat, unchanged
 

@@ -11,6 +11,7 @@
  * this cannot reach a deployment.
  */
 import { spawn } from 'node:child_process';
+import { dirname as pathDirname } from 'node:path';
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { logger } from '@reklu/shared';
@@ -38,6 +39,13 @@ export interface LocalDriverOptions {
 
 export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDriver {
   const rootFor = (sandboxId: string): string => join(options.root, sandboxId);
+
+  // The directory holding the running node binary — and therefore npm. Under a
+  // version manager this is not on the default PATH, so it must be added
+  // explicitly or every install fails with "command not found".
+  const toolchainDir = pathDirname(process.execPath);
+  const childEnv = (extra: Readonly<Record<string, string>> = {}) =>
+    isolatedEnv(extra, { extraPathEntries: [toolchainDir] });
 
   return {
     name: 'local',
@@ -125,7 +133,7 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
         const child = spawn(execOptions.command, [...(execOptions.args ?? [])], {
           cwd,
           // Reklu's own environment is withheld — see isolatedEnv.
-          env: isolatedEnv(execOptions.env),
+          env: childEnv(execOptions.env),
           // No shell: arguments are passed as an array, so a filename
           // containing `; rm -rf /` is an argument, not a command.
           shell: false,
@@ -186,7 +194,7 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
     async startPreview(handle: SandboxHandle, port: number): Promise<PreviewHandle> {
       const child = spawn('npm', ['run', 'dev', '--', '--port', String(port)], {
         cwd: handle.externalId,
-        env: isolatedEnv({ PORT: String(port) }),
+        env: childEnv({ PORT: String(port) }),
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'] as const,
         detached: true,
