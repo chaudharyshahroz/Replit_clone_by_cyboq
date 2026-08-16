@@ -1,0 +1,26 @@
+{
+  "name": "@reklu/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo node_modules"
+  },
+  "dependencies": {
+    "@reklu/ai": "workspace:*",
+    "@reklu/database": "workspace:*",
+    "@reklu/queue": "workspace:*",
+    "@reklu/shared": "workspace:*",
+    "@reklu/storage": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

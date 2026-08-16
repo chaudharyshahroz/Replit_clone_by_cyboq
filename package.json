@@ -2,7 +2,7 @@
   "name": "reklu",
   "private": true,
   "version": "0.1.0",
-  "description": "Reklu — One AI Workspace. Every Model. Every Tool. From Idea to Execution.",
+  "description": "Reklu \u2014 One AI Workspace. Every Model. Every Tool. From Idea to Execution.",
   "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=20.9.0"
@@ -23,7 +23,11 @@
     "db:seed": "pnpm --filter @reklu/database db:seed",
     "db:reset": "pnpm --filter @reklu/database db:reset",
     "setup": "bash scripts/setup.sh",
-    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "redis": "redis-server scripts/redis.conf",
+    "redis:start": "redis-server scripts/redis.conf --daemonize yes",
+    "redis:stop": "redis-cli shutdown nosave || true",
+    "worker": "pnpm --filter @reklu/worker dev"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
