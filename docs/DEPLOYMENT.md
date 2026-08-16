@@ -131,6 +131,13 @@ Dev dependencies are deliberately **not** pruned: the worker runs TypeScript
 source through `tsx`, and migrations run through `drizzle-kit`. Pruning them
 would break both roles.
 
+Each role invokes its package's own `node_modules/.bin/*` binary directly
+rather than going through `pnpm --filter … exec`. The runtime stage copies
+`/app` from the build stage, but corepack's downloaded pnpm lives *outside*
+`/app` — so `pnpm` at container start would try to fetch itself again, as the
+non-root `node` user, over a network the container may not have. Calling the
+binaries directly removes corepack, the network and pnpm from the startup path.
+
 **`.env` is in [`.dockerignore`](../.dockerignore)** and must stay there.
 Deleting a secret in a later `RUN` does not remove it — the layer that added it
 remains in the image history.
