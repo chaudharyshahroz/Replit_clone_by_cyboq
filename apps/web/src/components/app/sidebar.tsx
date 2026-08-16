@@ -40,8 +40,8 @@ const PRIMARY: readonly NavItem[] = [
 ];
 
 const LIBRARY: readonly NavItem[] = [
-  { href: '/projects', label: 'Projects', icon: Layers, available: false },
-  { href: '/artifacts', label: 'Artifacts', icon: Boxes, available: false },
+  { href: '/projects', label: 'Projects', icon: Layers, available: true },
+  { href: '/artifacts', label: 'Artifacts', icon: Boxes, available: true },
 ];
 
 const PLATFORM: readonly NavItem[] = [

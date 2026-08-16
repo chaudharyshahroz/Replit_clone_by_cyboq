@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@reklu/ai": "workspace:*",
+    "@reklu/artifacts": "workspace:*",
     "@reklu/auth": "workspace:*",
     "@reklu/database": "workspace:*",
+    "@reklu/projects": "workspace:*",
     "@reklu/queue": "workspace:*",
     "@reklu/shared": "workspace:*",
     "@reklu/storage": "workspace:*",

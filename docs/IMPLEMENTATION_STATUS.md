@@ -1,6 +1,6 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-16 (fifth increment — M0/M1/M2 closed)
+**Last updated:** 2026-08-16 (sixth increment — M3)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
@@ -221,13 +221,71 @@ unconfigured even though the mock was available. Covered by a regression test.
 
 ---
 
-## Milestones 3–11 ⬜
+## Milestone 3 — Projects, memory, artifacts ✅ (§126)
 
-All not started. Scope is unchanged from the specification:
+Verified by **40 live checks** against the real database, plus 11 unit tests.
+
+### `@reklu/projects` ✅
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Project CRUD | ✅ | creator membership created in the same transaction |
+| Project instructions | ✅ | applied to every request in the project |
+| Memory model | ✅ | discrete, provenance-carrying, individually removable |
+| Approval gate | ✅ | **inferred memories are excluded from context until a human approves** |
+| Expiry | ✅ | time-bounded facts stop being recalled rather than misleading later |
+| Semantic recall | ✅ | pgvector cosine, weighted by importance |
+| Lexical fallback | ✅ | Postgres full-text when no embedding provider is configured |
+| Chunking | ✅ | prefers paragraph → sentence → whitespace boundaries; never splits a word |
+| Indexing | ✅ | idempotent — re-indexing replaces rather than duplicating |
+| Context assembly | ✅ | token-budgeted, priority-ordered, reports truncation honestly |
+
+### `@reklu/artifacts` ✅
+
+| Item | State | Notes |
+| ---- | ----- | ----- |
+| Universal artifact | ✅ | one table, `type` discriminator (DECISIONS.md D6) |
+| Append-only versions | ✅ | every edit adds a version |
+| Restore | ✅ | creates a **new** version carrying old content, so restore is itself undoable |
+| Derivation | ✅ | `derivedFromArtifactId` preserves the research → doc → deck chain |
+| Workspace scoping | ✅ | verified not loadable from another workspace |
+
+### UI ✅
+
+Projects list + empty state, project detail, instructions panel, **memory
+inspection panel** with approve/discard for unapproved inferences, files list,
+artifacts list, artifact viewer with version history and restore.
+
+### Chat integration ✅
+
+A chat inside a project inherits its instructions, approved memories and
+retrieved file passages, prepended as a **user** message (project instructions
+are user instruction, not system authority). Verified: context reached the
+model, conversation attached to the project, project activity bumped.
+
+Two real bugs found while verifying:
+1. A raw `Date` interpolated into a `sql` template — postgres.js cannot bind it.
+   Typechecked cleanly, failed at runtime. Replaced with Drizzle's typed
+   operators throughout.
+2. `touch()` built `ARRAY['a','b']` via `sql.raw` string interpolation. Safe with
+   our own ids, but the wrong habit — replaced with parameter-binding `inArray`.
+
+### Remaining in M3 ⬜
+
+- **Automatic memory extraction** — Reklu proposing memories from conversation
+  (the approval gate and UI are built and waiting for it)
+- **Artifact creation from chat** — the artifact system is complete, but nothing
+  yet detects "this response is substantial, make it an artifact"
+- **Side-by-side artifact viewer beside chat** (spec §20 layout) — the viewer is
+  a full page today
+- **Project members UI** — schema and authorization exist
+
+---
+
+## Milestones 4–11 ⬜
 
 | # | Milestone | Notes |
 | - | --------- | ----- |
-| 3 | Projects, memory, artifacts | Schema ready |
 | 4 | Research engine + citations | Schema ready |
 | 5 | Build workspace, sandbox, preview, checkpoints | Schema ready |
 | 6 | GitHub / Vercel / Supabase, deployment | Schema ready |

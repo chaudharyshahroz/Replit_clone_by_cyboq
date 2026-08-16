@@ -15,6 +15,8 @@ const config: NextConfig = {
     '@reklu/ai',
     '@reklu/queue',
     '@reklu/storage',
+    '@reklu/projects',
+    '@reklu/artifacts',
   ],
 
   // postgres.js and other node-native deps must not be bundled for the server.

@@ -36,6 +36,7 @@ import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared
 import { getSession } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { buildAttachmentParts } from '@/lib/attachment-parts';
+import { assembleProjectContext, touchProject } from '@reklu/projects';
 
 export const runtime = 'nodejs';
 // Streaming must never be cached or statically optimized.
@@ -48,6 +49,8 @@ const BodySchema = z.object({
   modelKey: z.string().optional(),
   /** Files already uploaded via /api/files/upload. */
   fileIds: z.array(z.string()).max(10).optional(),
+  /** Run this turn inside a project, inheriting its instructions and memory. */
+  projectId: z.string().optional(),
 });
 
 const SYSTEM_PROMPT = [
@@ -129,8 +132,28 @@ export async function POST(request: Request): Promise<Response> {
     const attachments = await loadAttachments(access.workspaceId, body.fileIds ?? []);
     const attachmentParts = await buildAttachmentParts(attachments);
 
+    // Project context: instructions, approved memories, and retrieved file
+    // passages, assembled within a token budget. Prepended as a *user* message
+    // — project instructions are user instruction, not system authority.
+    const projectId = body.projectId ?? conversation?.projectId ?? null;
+    const projectContext = projectId
+      ? await assembleProjectContext({
+          projectId,
+          workspaceId: access.workspaceId,
+          query: body.message,
+        })
+      : undefined;
+
     const history = conversation ? await loadHistory(conversation.id) : [];
     const modelMessages: ModelMessage[] = [
+      ...(projectContext?.contextBlock
+        ? [
+            {
+              role: 'user' as const,
+              content: [{ type: 'text' as const, text: projectContext.contextBlock }],
+            },
+          ]
+        : []),
       ...history,
       {
         role: 'user',
@@ -176,6 +199,7 @@ export async function POST(request: Request): Promise<Response> {
         .values({
           workspaceId: access.workspaceId,
           userId: user.id,
+          projectId,
           mode: 'chat',
           // A real title is generated later; until then show the prompt itself.
           title: body.message.slice(0, 60),
@@ -272,6 +296,8 @@ export async function POST(request: Request): Promise<Response> {
             .update(conversations)
             .set({ lastMessageAt: new Date(), messageCount: nextSequence + 2 })
             .where(eq(conversations.id, conversationId));
+
+          if (projectId) await touchProject(projectId);
 
           send({ type: 'finish', usage, finishReason: 'stop', messageId: assistant?.id });
         } catch (error) {

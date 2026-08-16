@@ -2,6 +2,7 @@ export * from './types';
 export * from './registry';
 export * from './router';
 export * from './usage';
+export * from './embeddings';
 export {
   configuredProviderKeys,
   DEV_ECHO_MODEL_KEY,
