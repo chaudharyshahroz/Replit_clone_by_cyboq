@@ -41,6 +41,9 @@ importers:
       '@reklu/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@reklu/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@reklu/projects':
         specifier: workspace:*
         version: link:../../packages/projects

@@ -156,6 +156,23 @@ export default async function ConnectionsPage({
         Reklu&rsquo;s access at the source as well, remove the authorization in the provider&rsquo;s
         own settings.
       </p>
-    </div>
+    
+      {/* MCP servers live alongside OAuth connections: both are "things Reklu
+          may act through", and both are managed here. */}
+      <section className="mt-10">
+        <h2 className="text-sm font-medium text-text">MCP servers</h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">
+          Connect a Model Context Protocol server to give Reklu access to its tools.
+          Every tool arrives disabled and is reviewed before it can run.
+        </p>
+        <Link
+          href="/settings/mcp"
+          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-text hover:bg-surface-hover"
+        >
+          <Plug className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Manage MCP servers
+        </Link>
+      </section>
+</div>
   );
 }

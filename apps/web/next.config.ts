@@ -22,8 +22,10 @@ const config: NextConfig = {
     '@reklu/build',
     '@reklu/integrations',
     '@reklu/skills',
+    '@reklu/mcp',
     '@reklu/integrations',
     '@reklu/skills',
+    '@reklu/mcp',
   ],
 
   // postgres.js and other node-native deps must not be bundled for the server.

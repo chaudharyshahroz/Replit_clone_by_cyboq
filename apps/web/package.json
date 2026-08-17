@@ -18,6 +18,7 @@
     "@reklu/build": "workspace:*",
     "@reklu/database": "workspace:*",
     "@reklu/integrations": "workspace:*",
+    "@reklu/mcp": "workspace:*",
     "@reklu/projects": "workspace:*",
     "@reklu/queue": "workspace:*",
     "@reklu/research": "workspace:*",
