@@ -1,7 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
-import { resetServerEnvCache } from '@reklu/shared';
+import { mcpAllowedHosts, resetServerEnvCache } from '@reklu/shared';
 import {
   classifyTool,
   deriveRiskClass,
@@ -527,5 +527,64 @@ describe('connection failure messages', () => {
     const message = await messageFor(status);
     expect(message.length).toBeGreaterThan(30);
     expect(message).not.toBe(`The server returned HTTP ${status}.`);
+  });
+});
+
+/**
+ * A co-located MCP sidecar is a legitimate deployment that resolves to a
+ * private address — exactly what the SSRF guard refuses. The exception is an
+ * operator-named host list rather than a blanket "allow private ranges"
+ * switch, so it stays as narrow as the thing it permits.
+ */
+describe('MCP_ALLOWED_HOSTS', () => {
+  const withAllowlist = (value: string | undefined): void => {
+    resetServerEnvCache();
+    if (value === undefined) delete process.env.MCP_ALLOWED_HOSTS;
+    else process.env.MCP_ALLOWED_HOSTS = value;
+  };
+
+  afterEach(() => withAllowlist(undefined));
+
+  it('is empty by default', () => {
+    withAllowlist(undefined);
+    expect(mcpAllowedHosts().size).toBe(0);
+  });
+
+  it('parses a comma-separated list, lowercased and trimmed', () => {
+    withAllowlist(' MCP-Filesystem , tools.internal ');
+    expect([...mcpAllowedHosts()]).toEqual(['mcp-filesystem', 'tools.internal']);
+  });
+
+  it('ignores empty entries', () => {
+    withAllowlist('a,,b,');
+    expect([...mcpAllowedHosts()]).toEqual(['a', 'b']);
+  });
+
+  /**
+   * The exception must not become a way to reach the metadata service. It
+   * matches on hostname, so an IP literal is not covered unless an operator
+   * names that exact literal — a deliberate act, not an accident.
+   */
+  it('does not permit an unlisted private host', async () => {
+    withAllowlist('mcp-filesystem');
+    await expect(listTools({ endpoint: 'http://10.0.0.5/mcp' })).rejects.toThrow(/not allowed/i);
+  });
+
+  it('does not permit the metadata address unless named exactly', async () => {
+    withAllowlist('mcp-filesystem');
+    await expect(
+      listTools({ endpoint: 'http://169.254.169.254/latest/meta-data/' }),
+    ).rejects.toThrow(/not allowed/i);
+  });
+
+  // The case it exists for: a named host gets past the address check and fails
+  // on connection instead, proving the guard let it through.
+  it('permits a named host to reach the network', async () => {
+    withAllowlist('mcp-sidecar-test.invalid');
+    await expect(
+      listTools({ endpoint: 'http://mcp-sidecar-test.invalid:8000/mcp' }),
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof McpError && error.code !== 'BLOCKED',
+    );
   });
 });

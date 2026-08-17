@@ -12,7 +12,7 @@
  * schemas, results. Nothing here interprets any of it as instruction.
  */
 import { resolveSafeAddress } from '@reklu/research';
-import { isProduction, logger } from '@reklu/shared';
+import { isProduction, logger, mcpAllowedHosts } from '@reklu/shared';
 
 export class McpError extends Error {
   readonly code: 'UNREACHABLE' | 'PROTOCOL' | 'BLOCKED' | 'TIMEOUT' | 'SERVER_ERROR';
@@ -84,7 +84,24 @@ async function safeEndpoint(endpoint: string): Promise<URL> {
    * it is credential disclosure. Loopback is the actual requirement, so
    * loopback is the actual exemption.
    */
-  if (!isProduction() && LOOPBACK_HOSTS.has(url.hostname.toLowerCase())) {
+  const hostname = url.hostname.toLowerCase();
+
+  if (!isProduction() && LOOPBACK_HOSTS.has(hostname)) {
+    return url;
+  }
+
+  /**
+   * An operator-named host may resolve to a private address.
+   *
+   * This is how a co-located MCP sidecar works: a service on the same Docker
+   * network is reachable only at a private address, which the guard below
+   * refuses by design. Naming the host individually keeps the exception as
+   * narrow as the thing it permits — unlike a blanket "allow private ranges"
+   * switch, which would reopen the metadata-service hole for every URL a user
+   * can type.
+   */
+  if (mcpAllowedHosts().has(hostname)) {
+    logger.debug('MCP endpoint permitted by MCP_ALLOWED_HOSTS', { hostname });
     return url;
   }
 

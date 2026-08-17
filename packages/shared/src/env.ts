@@ -169,6 +169,23 @@ const serverSchema = z.object({
   SUPABASE_CLIENT_SECRET: optionalString,
   SUPABASE_OAUTH_REDIRECT_URI: optionalString,
 
+  // ---- MCP -----------------------------------------------------------------
+  /**
+   * Hosts an MCP endpoint may use despite resolving to a private address.
+   *
+   * Reklu refuses private and link-local addresses by default, because an
+   * endpoint URL is user-supplied and `http://169.254.169.254/` reaches cloud
+   * metadata. But a co-located MCP sidecar — a service on the same Docker
+   * network — is a legitimate deployment and resolves to exactly such an
+   * address.
+   *
+   * Resolving that with a blanket "allow private ranges" switch would undo the
+   * protection entirely. Instead the operator names the hosts, so the exception
+   * is as narrow as the thing it permits. Comma-separated hostnames, matched
+   * exactly and case-insensitively: `mcp-filesystem,tools.internal`.
+   */
+  MCP_ALLOWED_HOSTS: optionalString,
+
   // ---- Sandbox -------------------------------------------------------------
   /**
    * Master switch for the Build workspace.
@@ -496,6 +513,22 @@ export function absoluteAppUrl(path = '/'): string {
 /** Whether Reklu is served over TLS, judged by APP_URL rather than the request. */
 export function servedOverHttps(): boolean {
   return loadServerEnv().APP_URL.startsWith('https:');
+}
+
+/**
+ * Hosts explicitly permitted to resolve to a private address, lowercased.
+ *
+ * Empty by default — the exception exists only where an operator created it.
+ */
+export function mcpAllowedHosts(): ReadonlySet<string> {
+  const raw = loadServerEnv().MCP_ALLOWED_HOSTS;
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 /** Convenience accessors for server code. */
