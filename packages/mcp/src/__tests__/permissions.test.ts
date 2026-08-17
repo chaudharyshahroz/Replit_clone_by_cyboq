@@ -423,3 +423,48 @@ describe('endpoint guard exemption is loopback only', () => {
     },
   );
 });
+
+/**
+ * The chat integration offers tools to the model, but the filter that chooses
+ * them is a courtesy — `executeTool` re-runs the full engine on every call.
+ * These assert the properties that filter must have, since a mistake there
+ * shows up as a tool the model is offered and then always refused.
+ */
+describe('what may be offered to a model', () => {
+  const offerable = (over: Partial<PermissionRequest> = {}): PermissionRequest => ({
+    toolName: 'list_files',
+    toolId: 'mct_1',
+    riskClass: 'read_only',
+    enabled: true,
+    autoApproveReads: false,
+    schemaApproved: true,
+    serverStatus: 'connected',
+    ...over,
+  });
+
+  // Offering one would produce a tool the model calls and is always refused.
+  it('a disabled tool is never runnable', () => {
+    expect(decidePermission(offerable({ enabled: false })).outcome).toBe('deny');
+  });
+
+  it('an unapproved schema is never runnable', () => {
+    expect(decidePermission(offerable({ schemaApproved: false })).outcome).toBe('deny');
+  });
+
+  it('a disconnected server is never runnable', () => {
+    expect(decidePermission(offerable({ serverStatus: 'disconnected' })).outcome).toBe('deny');
+  });
+
+  /**
+   * The reverse: everything the filter DOES offer must be at least askable,
+   * never a hard denial. A tool offered and then denied is a dead end the user
+   * cannot resolve from the conversation.
+   */
+  it('an enabled, approved tool on a healthy server is never hard-denied', () => {
+    for (const riskClass of [
+      'read_only', 'create', 'update', 'delete', 'financial', 'security_sensitive',
+    ] as const) {
+      expect(decidePermission(offerable({ riskClass })).outcome).not.toBe('deny');
+    }
+  });
+});

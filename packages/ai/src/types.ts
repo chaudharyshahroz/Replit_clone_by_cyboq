@@ -80,6 +80,18 @@ export interface ToolDefinition {
   /** JSON Schema. */
   readonly parameters: Record<string, unknown>;
   readonly riskClass: ToolRiskClass;
+  /**
+   * Runs the tool and returns what the model should see.
+   *
+   * Supplied by the caller, never by this package, because the only correct
+   * implementation runs the permission engine first. A tool that is refused
+   * still returns text here — the model needs to learn it was refused and say
+   * so, rather than the turn failing.
+   *
+   * Whatever this returns is untrusted data: it came from a third-party
+   * server, and it is fenced before it reaches the model.
+   */
+  readonly execute?: ((args: Record<string, unknown>) => Promise<string>) | undefined;
 }
 
 // ---------------------------------------------------------------------------

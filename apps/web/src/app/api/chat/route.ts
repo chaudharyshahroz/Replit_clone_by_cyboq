@@ -44,6 +44,7 @@ import {
   resolveInvocation,
   stripMention,
 } from '@reklu/skills';
+import { executeTool, usableTools } from '@reklu/mcp';
 
 export const runtime = 'nodejs';
 // Streaming must never be cached or statically optimized.
@@ -202,6 +203,42 @@ export async function POST(request: Request): Promise<Response> {
       },
     ];
 
+    /**
+     * MCP tools (spec §49).
+     *
+     * Only tools that are enabled, on a healthy server whose definitions a
+     * human approved, are offered — `usableTools` filters those. That filter
+     * is a courtesy, not the control: `executeTool` re-runs the full
+     * permission engine on every call, so a tool that slipped through would
+     * still be refused.
+     *
+     * A refused call returns TEXT rather than throwing. The model needs to
+     * learn it was refused so it can tell the user, and a thrown error would
+     * end the turn with nothing useful said.
+     */
+    const availableTools = await usableTools(access.workspaceId);
+    const toolDefinitions = availableTools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? tool.name,
+      parameters: { type: 'object', properties: {}, additionalProperties: true },
+      riskClass: tool.riskClass,
+      execute: async (args: Record<string, unknown>): Promise<string> => {
+        const result = await executeTool({
+          toolId: tool.id,
+          workspaceId: access.workspaceId,
+          userId: session.user.id,
+          args,
+          conversationId: conversation?.id,
+        });
+
+        if (result.status === 'succeeded') return result.output ?? '';
+        if (result.status === 'pending_approval') {
+          return `This tool was not run: ${result.reason} Ask the user to approve it.`;
+        }
+        return `This tool was not run: ${result.reason}`;
+      },
+    }));
+
     let model: RegisteredModel;
     let routingReason: string | null = null;
     const autoRouted = !body.modelKey || body.modelKey === 'auto';
@@ -306,6 +343,12 @@ export async function POST(request: Request): Promise<Response> {
             messages: modelMessages,
             system: SYSTEM_PROMPT,
             maxOutputTokens: Math.min(model.maxOutputTokens, 8_000),
+            // Offered only when the model supports them and the workspace has
+            // approved some; an empty list is omitted entirely rather than
+            // sent as an empty object.
+            ...(toolDefinitions.length > 0 && model.supportsTools
+              ? { tools: toolDefinitions }
+              : {}),
             signal: request.signal,
           })) {
             if (event.type === 'text-delta') {
