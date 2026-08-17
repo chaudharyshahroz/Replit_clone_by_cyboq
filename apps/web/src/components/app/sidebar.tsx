@@ -46,7 +46,8 @@ const LIBRARY: readonly NavItem[] = [
 
 const PLATFORM: readonly NavItem[] = [
   { href: '/skills', label: 'Skills', icon: Boxes, available: true },
-  { href: '/connections', label: 'Connections', icon: Plug, available: false },
+  // Lives under Settings, where the OAuth flow and revoke controls are.
+  { href: '/settings/connections', label: 'Connections', icon: Plug, available: true },
   { href: '/research/history', label: 'History', icon: History, available: true },
 ];
 

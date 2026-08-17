@@ -144,6 +144,85 @@ check(
   unanchored.join(', '),
 );
 
+/**
+ * The sidebar advertises what the product can do. It drifted once: Connections
+ * shipped fully built — page, OAuth routes, revoke — while the nav still read
+ * "Soon" and pointed at /connections, a route that never existed. A working
+ * feature nobody can reach is the same as an unbuilt one.
+ */
+console.log('\n5. Sidebar navigation matches the routes that exist');
+const sidebar = readFileSync(
+  join(root, 'apps/web/src/components/app/sidebar.tsx'),
+  'utf8',
+);
+const navItems = [
+  ...sidebar.matchAll(/href: '([^']+)', label: '([^']+)'[^}]*?available: (true|false)/g),
+].map((match) => ({
+  href: match[1]!,
+  label: match[2]!,
+  available: match[3] === 'true',
+}));
+
+check('nav items were parsed', navItems.length > 0, `${navItems.length} entries`);
+
+/** Every page under the app shell, so "built somewhere else" is detectable. */
+const appPages: string[] = [];
+const collectPages = (dir: string, prefix: string): void => {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const child = join(dir, entry);
+    if (statSync(child).isDirectory()) {
+      collectPages(child, `${prefix}/${entry}`);
+    } else if (entry === 'page.tsx') {
+      appPages.push(prefix.replace(/^\//, ''));
+    }
+  }
+};
+collectPages(join(root, 'apps/web/src/app/(app)'), '');
+
+for (const item of navItems) {
+  const pagePath = join(root, 'apps/web/src/app/(app)', item.href.replace(/^\//, ''), 'page.tsx');
+  let hasPage = true;
+  try {
+    statSync(pagePath);
+  } catch {
+    hasPage = false;
+  }
+
+  if (item.available) {
+    check(
+      `${item.label} (${item.href})`,
+      hasPage,
+      hasPage ? '' : 'nav claims it is available but there is no page',
+    );
+    continue;
+  }
+
+  /**
+   * An item marked "Soon" whose href has no page is *self*-consistent, which
+   * is precisely how the real drift hid: Connections was fully built at
+   * /settings/connections while the nav pointed at /connections and said
+   * "Soon". Comparing href against available would have passed.
+   *
+   * So the check for unavailable items is different: does a page implementing
+   * this feature exist anywhere under the app, at any path?
+   */
+  const slug = item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const builtElsewhere = appPages.filter((page) => page.split('/').includes(slug));
+  check(
+    `${item.label} is genuinely unbuilt`,
+    builtElsewhere.length === 0,
+    builtElsewhere.length > 0
+      ? `marked "Soon" but a page exists at ${builtElsewhere.join(', ')}`
+      : '',
+  );
+}
+
 console.log(
   failures === 0
     ? '\nAll checks passed. A fresh clone contains everything the build needs.\n'
