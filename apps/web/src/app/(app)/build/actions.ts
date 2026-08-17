@@ -5,7 +5,9 @@ import { and, eq } from 'drizzle-orm';
 import { loadRegistry, selectableModels, type RegisteredModel } from '@reklu/ai';
 import {
   createCheckpoint,
+  deployToVercel,
   describeSelection,
+  exportToGitHub,
   fallbackBrief,
   generateBrief,
   generateFiles,
@@ -18,6 +20,7 @@ import {
   type SourceMap,
 } from '@reklu/build';
 import { buildProjects, db } from '@reklu/database';
+import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
 import { errors, isRekluError, logger, newId, slugify } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
@@ -238,4 +241,79 @@ export async function editSelectionAction(
 
   await generateBuildAction(buildId, prompt);
   return {};
+}
+
+export interface ExportState {
+  readonly url?: string;
+  readonly status?: string;
+  readonly detail?: string;
+  readonly error?: string;
+}
+
+/**
+ * Export a build to a connected service (spec §37–§38).
+ *
+ * Reports a missing connection as setup rather than failure: the user has not
+ * done something wrong, they have not connected the service yet, and the
+ * message says which one and where to go (spec §25).
+ */
+async function runExport(
+  buildId: string,
+  provider: 'github' | 'vercel',
+  run: (input: {
+    buildProjectId: string;
+    workspaceId: string;
+    userId: string;
+    connectionId: string;
+    name: string;
+  }) => Promise<{ url: string; status: string; detail: string }>,
+): Promise<ExportState> {
+  const { user, workspace } = await getAppContext();
+
+  const [project] = await db
+    .select({ name: buildProjects.name })
+    .from(buildProjects)
+    .where(
+      and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
+    )
+    .limit(1);
+
+  if (!project) return { error: 'That build no longer exists.' };
+
+  const connections = await listConnections(workspace.workspaceId);
+  const connection = connections.find(
+    (candidate) => candidate.provider === provider && candidate.status === 'connected',
+  );
+
+  if (!connection) {
+    const label = provider === 'github' ? 'GitHub' : 'Vercel';
+    return {
+      error: `No ${label} account is connected. Connect one in Settings → Connections, then try again.`,
+    };
+  }
+
+  try {
+    const result = await run({
+      buildProjectId: buildId,
+      workspaceId: workspace.workspaceId,
+      userId: user.id,
+      connectionId: connection.id,
+      name: project.name,
+    });
+    return { url: result.url, status: result.status, detail: result.detail };
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    // Provider messages ("repository already exists") are the useful part.
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Export failed', { error, buildId, provider });
+    return { error: message };
+  }
+}
+
+export async function exportToGitHubAction(buildId: string): Promise<ExportState> {
+  return runExport(buildId, 'github', exportToGitHub);
+}
+
+export async function deployToVercelAction(buildId: string): Promise<ExportState> {
+  return runExport(buildId, 'vercel', deployToVercel);
 }

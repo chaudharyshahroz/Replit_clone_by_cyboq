@@ -573,7 +573,7 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 506 unit tests
+pnpm test                        # 526 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
@@ -606,6 +606,9 @@ connection storage and deployment adapters.
 | Vercel deploy — inline file tree, no git repo required | ✅ | reports Vercel's own state; never claims READY on its own |
 | Supabase provisioning — project + one-time DB password | ✅ | weak passwords refused; async status polled, never assumed |
 | Unicode-safe repo/project naming | ✅ | regression: NFKD combining marks turned every accented letter into a hyphen |
+| Export panel in the Build workspace | ✅ | push to GitHub / deploy to Vercel; missing connection reads as setup, not failure |
+| `deployments` row written before the external call | ✅ | a crash mid-push leaves a failed record, not silence (D9) |
+| Honest deployment status | ✅ | only an explicit READY maps to `ready`; unknown states stay `deploying` |
 
 **Not exercised against a live provider.** No OAuth credentials are registered
 yet, so no authorization and no push has completed end to end. Deployment
@@ -613,9 +616,10 @@ adapters are tested against a stubbed `fetch`, which verifies request shape,
 ordering and what is *not* sent — not that GitHub accepts them. Registering one
 GitHub OAuth app is what turns this from tested to verified.
 
-**Export UI is not wired.** The adapters exist and are callable; no button in
-the Build workspace calls them yet, because Build is disabled in production
-until an isolated sandbox exists.
+**Export UI is wired.** The Build workspace has an Export panel that pushes to
+GitHub or deploys to Vercel, records a durable `deployments` row before the
+external call, and reports the provider's own state. It is reachable wherever
+Build is — which in production means once `BUILD_ENABLED=true`.
 
 ---
 

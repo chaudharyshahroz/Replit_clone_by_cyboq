@@ -247,6 +247,9 @@ importers:
       '@reklu/database':
         specifier: workspace:*
         version: link:../database
+      '@reklu/integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@reklu/sandbox':
         specifier: workspace:*
         version: link:../sandbox

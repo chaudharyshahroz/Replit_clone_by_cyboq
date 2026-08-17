@@ -8,6 +8,7 @@ import { sandboxStatus } from '@reklu/sandbox';
 import { BuildWorkspace } from '@/components/build/build-workspace';
 import { getAppContext } from '@/lib/auth-context';
 import { editSelectionAction, startPreviewAction } from '../actions';
+import { ExportPanel } from '@/components/build/export-panel';
 import { BriefPanel } from './brief-panel';
 
 export const dynamic = 'force-dynamic';
@@ -83,6 +84,10 @@ export default async function BuildDetailPage({
           <BriefPanel brief={project.brief as unknown as BuildBrief} buildId={buildId} />
         </div>
       ) : null}
+
+      <div className="border-b border-border px-6 py-4">
+        <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
+      </div>
 
       <div className="min-h-0 flex-1">
         <BuildWorkspace
