@@ -19,6 +19,7 @@ import {
   type WorkerRegistration,
 } from '@reklu/queue';
 import { loadServerEnv, logger } from '@reklu/shared';
+import { agentRunHandler } from './handlers/agent';
 import { maintenanceHandler } from './handlers/maintenance';
 import { deepResearchHandler } from './handlers/research';
 
@@ -67,6 +68,18 @@ async function main(): Promise<void> {
       ],
       // Deep research is the most expensive operation in the product; bounding
       // concurrency is a cost control, not just a throughput knob (spec §109).
+      concurrency: 2,
+    }),
+    startWorker({
+      queueName: 'agent',
+      registrations: [
+        {
+          kind: 'agent_run',
+          handler: agentRunHandler as WorkerRegistration<JobKind>['handler'],
+        },
+      ],
+      // An agent run is a loop of model calls, so the same cost reasoning
+      // applies as for research — more so, since one run makes many calls.
       concurrency: 2,
     }),
   ];

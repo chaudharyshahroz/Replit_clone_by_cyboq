@@ -117,6 +117,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@reklu/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@reklu/ai':
         specifier: workspace:*
         version: link:../../packages/ai
@@ -163,6 +166,9 @@ importers:
       '@reklu/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@reklu/queue':
+        specifier: workspace:*
+        version: link:../queue
       '@reklu/shared':
         specifier: workspace:*
         version: link:../shared

@@ -14,6 +14,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { getProvider, loadRegistry, selectableModels } from '@reklu/ai';
 import { agentApprovals, agentRuns, agentSteps, db } from '@reklu/database';
 import { executeTool, usableTools, type RiskClass } from '@reklu/mcp';
+import { enqueue } from '@reklu/queue';
 import { errors, logger, newId } from '@reklu/shared';
 import { APPROVAL_TTL_MS, checkApproval, describeAction, requiresApproval } from './approvals';
 import { checkBudget, clampCost, clampSteps, parseBudget, USD } from './budget';
@@ -142,6 +143,37 @@ export async function startRun(input: StartRunInput): Promise<RunProgress> {
         })
         .where(eq(agentRuns.id, runId));
     });
+
+    /**
+     * Hand the run to the worker.
+     *
+     * Planning happens inline because the user is waiting to see the plan;
+     * execution does not, because it is a loop of model calls that may pause
+     * for a day on an approval. A web request is the wrong place for it.
+     *
+     * A failure to enqueue does not fail the run: the row is durable and the
+     * UI can still drive it step by step, so degrading to manual is better
+     * than discarding a plan the user already has (D9).
+     */
+    try {
+      const jobId = await enqueue({
+        kind: 'agent_run',
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        payload: {
+          agentRunId: runId,
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          objective: plan.objective,
+        },
+      });
+      await db.update(agentRuns).set({ jobId }).where(eq(agentRuns.id, runId));
+    } catch (error) {
+      logger.warn('Agent run planned but could not be queued; it can be advanced manually', {
+        runId,
+        error,
+      });
+    }
 
     logger.info('Agent run planned', { runId, steps: capped.length });
 

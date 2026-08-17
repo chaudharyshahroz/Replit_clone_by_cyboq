@@ -632,8 +632,12 @@ step has a side effect.
 | Approval expiry | ✅ | consent does not survive indefinitely |
 | Durable runs | ✅ | a crash between steps loses nothing |
 | Audit | ✅ | inherits `tool_executions` via the MCP engine |
+| Autonomous execution | ✅ | worker drives runs on the `agent` queue |
+| Live verification | ✅ | `pnpm verify:agents` — 22 checks against the real database |
 
-**Not verified:** no run has been planned or executed against a live model.
+**Not verified:** no run has been planned against a live model. `verify:agents`
+seeds steps directly so it costs nothing, which means the planner itself — the
+one part that calls a model — is still only covered by unit tests.
 
 ---
 
@@ -702,6 +706,7 @@ pnpm verify:e2b                  # live microVM checks (needs E2B_API_KEY)
 pnpm verify:oauth                # sign-in account linking, against the real DB
 pnpm verify:skills               # authoring, versioning, cross-workspace isolation
 pnpm verify:mcp                  # live MCP server: discovery, permissions, schema drift
+pnpm verify:agents               # budgets, payload integrity through real jsonb, tenancy
 ```
 
 ---

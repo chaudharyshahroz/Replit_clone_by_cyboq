@@ -11,6 +11,7 @@
     "clean": "rm -rf .turbo node_modules"
   },
   "dependencies": {
+    "@reklu/agents": "workspace:*",
     "@reklu/ai": "workspace:*",
     "@reklu/artifacts": "workspace:*",
     "@reklu/database": "workspace:*",
