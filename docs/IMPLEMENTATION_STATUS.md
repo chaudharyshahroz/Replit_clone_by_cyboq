@@ -515,20 +515,118 @@ amount of further work here will change that.
 
 ---
 
-## Milestones 6–11 ⬜
+## Milestone 6 — Integrations ✅
+
+`@reklu/integrations` — 58 tests. GitHub, Vercel and Supabase: OAuth,
+connection storage and deployment adapters.
+
+| Item | State | Verified by |
+| ---- | ----- | ----------- |
+| Provider adapter interface + registry | ✅ | one shape for three providers; adding one is an adapter, not a code path |
+| OAuth state — AEAD-sealed, cookie-bound, expiring | ✅ | CSRF, tamper, replay, cross-provider and foreign-key cases all tested |
+| PKCE (S256) for providers that support it | ✅ | Supabase; verifier stays in the cookie and never reaches the provider |
+| `safeReturnTo` open-redirect guard | ✅ | absolute, protocol-relative, backslash and CRLF cases tested |
+| Token storage, AAD-bound to `connection:<id>` | ✅ | encryption centralised in `connections.ts`; no adapter can bypass it |
+| Refresh with rotation handling | ✅ | Supabase only — the other two issue non-expiring tokens and say so |
+| `/api/integrations/[provider]/start` + `/callback` | ✅ | both routes build; every failure redirects with a readable message |
+| Settings → Connections UI | ✅ | three distinct states: not configured, available, connected |
+| Unconfigured providers name their env vars + callback URL | ✅ | spec §25 — no dead buttons |
+| GitHub push — blobs → tree → commit → ref, one commit | ✅ | empty-repo and existing-branch paths both tested against a stubbed API |
+| Vercel deploy — inline file tree, no git repo required | ✅ | reports Vercel's own state; never claims READY on its own |
+| Supabase provisioning — project + one-time DB password | ✅ | weak passwords refused; async status polled, never assumed |
+| Unicode-safe repo/project naming | ✅ | regression: NFKD combining marks turned every accented letter into a hyphen |
+| Export panel in the Build workspace | ✅ | push to GitHub / deploy to Vercel; missing connection reads as setup, not failure |
+| `deployments` row written before the external call | ✅ | a crash mid-push leaves a failed record, not silence (D9) |
+| Honest deployment status | ✅ | only an explicit READY maps to `ready`; unknown states stay `deploying` |
+
+**Not exercised against a live provider.** No OAuth credentials are registered
+yet, so no authorization and no push has completed end to end. Deployment
+adapters are tested against a stubbed `fetch`, which verifies request shape,
+ordering and what is *not* sent — not that GitHub accepts them. Registering one
+GitHub OAuth app is what turns this from tested to verified.
+
+**Export UI is wired.** The Build workspace has an Export panel that pushes to
+GitHub or deploys to Vercel, records a durable `deployments` row before the
+external call, and reports the provider's own state. It is reachable wherever
+Build is — which in production means once `BUILD_ENABLED=true`.
+
+---
+
+---
+
+## Milestone 7 — Skills ✅
+
+`@reklu/skills` — authoring, append-only versioning, rollback, publishing,
+install with pinned versions, and `@handle` invocation in chat.
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Authoring, editing, duplication | ✅ | `/skills`, `/skills/[skillId]` |
+| Append-only versions + rollback | ✅ | rollback appends a version carrying old content |
+| Publish / withdraw, install pinning | ✅ | publishing a revision does not move an existing pin |
+| `@handle` invocation | ✅ | wired into `/api/chat` |
+| Untrusted-content boundary | ✅ | skill text is user-role, fenced, structurally neutralised |
+| Cross-workspace isolation | ✅ | `pnpm verify:skills` — private skill unreachable by known handle |
+
+**Not verified:** no skill has been invoked against a live model in production.
+
+---
+
+## Milestone 8 — MCP + permission engine ✅
+
+`@reklu/mcp` — connect servers, classify tools, decide every call, audit
+everything.
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Server connect, discovery, rediscovery | ✅ | `/settings/mcp` |
+| Tools discovered **disabled** | ✅ | connecting grants nothing |
+| Risk classification | ✅ | server hints may only raise a class, never lower it |
+| Schema-poisoning detection | ✅ | `pnpm verify:mcp` — change withdraws approval *and* re-classifies |
+| Audit trail incl. denials | ✅ | `tool_executions` row for every outcome |
+| SSRF guard | ✅ | asserts `BLOCKED`, not merely "failed" |
+| Co-located sidecar support | ✅ | `MCP_ALLOWED_HOSTS`, narrow by design |
+| Chat tool calling | ✅ | every call re-runs the engine |
+
+**Not implemented:** stdio transport (deliberate — see `docs/MCP_SIDECAR.md`),
+and OAuth-authenticated MCP servers. Bearer credentials only.
+
+**Not verified:** no MCP server connected through the production UI; no model
+has called a tool.
+
+---
+
+## Milestone 9 — Create ✅
+
+`@reklu/create` — documents, slide decks, images, and real Office exports.
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Documents → Markdown artifact | ✅ | `/create` |
+| Decks → structured data + HTML | ✅ | structure is the source of truth |
+| Images → stored, not linked | ✅ | base64 saved under a server-generated key |
+| Type-aware artifact rendering | ✅ | images display; decks render as slides |
+| PPTX / DOCX export | ✅ | real OOXML, asserted by ZIP signature |
+| Video | ⬜ | declared, unimplemented, states so in the UI |
+
+**Not verified:** nothing has been generated against a live model, so exports
+have only run on constructed decks.
+
+**PDF export** is deliberately absent: it needs a headless browser, and the
+exported HTML already carries print styles.
+
+---
+
+## Milestones 10–11 ⬜
 
 | # | Milestone | Notes |
 | - | --------- | ----- |
-| 6 | GitHub / Vercel / Supabase, deployment | Schema ready |
-| 7 | Skills | Schema ready |
-| 8 | MCP + Connections + permission engine | Schema ready |
-| 9 | Create: documents, slides, images, video | Schema ready |
 | 10 | Agents + approvals | Schema ready |
 | 11 | Billing, admin, analytics, QA | Schema ready |
 
-The database is deliberately ahead of the application layer so that features are
-built against a stable ownership and tenancy model rather than growing tables
-ad hoc.
+The database was deliberately built ahead of the application layer so features
+grow against a stable ownership and tenancy model rather than adding tables ad
+hoc. Milestones 0–9 have now caught up to it.
 
 ---
 
@@ -589,42 +687,6 @@ pnpm verify:mcp                  # live MCP server: discovery, permissions, sche
 
 ---
 
-## Milestone 6 — Integrations ✅
-
-`@reklu/integrations` — 58 tests. GitHub, Vercel and Supabase: OAuth,
-connection storage and deployment adapters.
-
-| Item | State | Verified by |
-| ---- | ----- | ----------- |
-| Provider adapter interface + registry | ✅ | one shape for three providers; adding one is an adapter, not a code path |
-| OAuth state — AEAD-sealed, cookie-bound, expiring | ✅ | CSRF, tamper, replay, cross-provider and foreign-key cases all tested |
-| PKCE (S256) for providers that support it | ✅ | Supabase; verifier stays in the cookie and never reaches the provider |
-| `safeReturnTo` open-redirect guard | ✅ | absolute, protocol-relative, backslash and CRLF cases tested |
-| Token storage, AAD-bound to `connection:<id>` | ✅ | encryption centralised in `connections.ts`; no adapter can bypass it |
-| Refresh with rotation handling | ✅ | Supabase only — the other two issue non-expiring tokens and say so |
-| `/api/integrations/[provider]/start` + `/callback` | ✅ | both routes build; every failure redirects with a readable message |
-| Settings → Connections UI | ✅ | three distinct states: not configured, available, connected |
-| Unconfigured providers name their env vars + callback URL | ✅ | spec §25 — no dead buttons |
-| GitHub push — blobs → tree → commit → ref, one commit | ✅ | empty-repo and existing-branch paths both tested against a stubbed API |
-| Vercel deploy — inline file tree, no git repo required | ✅ | reports Vercel's own state; never claims READY on its own |
-| Supabase provisioning — project + one-time DB password | ✅ | weak passwords refused; async status polled, never assumed |
-| Unicode-safe repo/project naming | ✅ | regression: NFKD combining marks turned every accented letter into a hyphen |
-| Export panel in the Build workspace | ✅ | push to GitHub / deploy to Vercel; missing connection reads as setup, not failure |
-| `deployments` row written before the external call | ✅ | a crash mid-push leaves a failed record, not silence (D9) |
-| Honest deployment status | ✅ | only an explicit READY maps to `ready`; unknown states stay `deploying` |
-
-**Not exercised against a live provider.** No OAuth credentials are registered
-yet, so no authorization and no push has completed end to end. Deployment
-adapters are tested against a stubbed `fetch`, which verifies request shape,
-ordering and what is *not* sent — not that GitHub accepts them. Registering one
-GitHub OAuth app is what turns this from tested to verified.
-
-**Export UI is wired.** The Build workspace has an Export panel that pushes to
-GitHub or deploys to Vercel, records a durable `deployments` row before the
-external call, and reports the provider's own state. It is reachable wherever
-Build is — which in production means once `BUILD_ENABLED=true`.
-
----
 
 ## Deployment ✅ — live at https://reklu.app
 
