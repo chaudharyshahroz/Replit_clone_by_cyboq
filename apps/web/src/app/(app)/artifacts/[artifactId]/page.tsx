@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { listVersions, loadArtifact } from '@reklu/artifacts';
 import { getAppContext } from '@/lib/auth-context';
-import { Markdown } from '@/components/chat/markdown';
+import { ArtifactContent } from '@/components/artifacts/artifact-content';
+import { availableFormats } from '@reklu/create';
 import { VersionHistory } from './version-history';
 
 export const dynamic = 'force-dynamic';
@@ -75,23 +76,30 @@ export default async function ArtifactPage({
         ) : null}
       </header>
 
-      <article className="mt-10 rounded-xl border border-border bg-surface/40 p-6">
-        {version.contentText ? (
-          <Markdown content={version.contentText} />
-        ) : version.storageKey ? (
-          <p className="text-sm text-text-secondary">
-            This artifact is stored as a file.{' '}
+      {/* Only formats this artifact can actually produce are offered. */}
+      {availableFormats(artifact.type).length > 0 ? (
+        <div className="mt-8 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-text-muted">Export as</span>
+          {availableFormats(artifact.type).map((format) => (
             <a
-              href={`/api/files/${version.storageKey}`}
-              className="rounded text-accent hover:text-accent-hover"
+              key={format}
+              href={`/api/artifacts/${artifactId}/export?format=${format}`}
+              className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium uppercase text-text transition-colors hover:bg-surface-hover"
             >
-              Download it
+              {format}
             </a>
-            .
-          </p>
-        ) : (
-          <p className="text-sm text-text-muted">This version has no content.</p>
-        )}
+          ))}
+        </div>
+      ) : null}
+
+      <article className="mt-10 rounded-xl border border-border bg-surface/40 p-6">
+        <ArtifactContent
+          type={artifact.type}
+          contentText={version.contentText}
+          content={version.content}
+          storageKey={version.storageKey}
+          title={artifact.title}
+        />
       </article>
 
       <section className="mt-10">

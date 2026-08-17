@@ -5,7 +5,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -17,7 +19,9 @@
     "@reklu/database": "workspace:*",
     "@reklu/shared": "workspace:*",
     "@reklu/storage": "workspace:*",
+    "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
+    "pptxgenjs": "^4.0.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
