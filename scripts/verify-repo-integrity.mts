@@ -223,6 +223,68 @@ for (const item of navItems) {
   );
 }
 
+/**
+ * Every surface that calls a model must meter it.
+ *
+ * Create and Agents both shipped without a quota check or a usage record.
+ * Image generation — the single most expensive operation in the product — was
+ * entirely unmetered, and one agent run is a loop of model calls, so an
+ * exhausted workspace could spend through a whole plan unnoticed. Nothing
+ * failed; the spend simply did not appear anywhere.
+ *
+ * A package that reaches a provider and does not record usage is a billing
+ * hole, so it is checked rather than remembered.
+ */
+console.log('\n6. Every model-calling package meters its usage');
+
+const readAll = (files: readonly string[]): string =>
+  files
+    .map((file) => {
+      try {
+        return readFileSync(join(root, file), 'utf8');
+      } catch {
+        return '';
+      }
+    })
+    .join('\n');
+
+/** Every tracked source file, so a package's callers can be found. */
+const allSources = [...tracked].filter((file) => /\.(ts|tsx|mts)$/.test(file));
+
+for (const dir of ['packages/create', 'packages/agents', 'packages/research']) {
+  const own = sourceFilesUnder(dir).filter((file) => !file.includes('__tests__'));
+  const ownText = readAll(own);
+
+  // Skipped when the package never reaches a provider.
+  if (!ownText.includes('provider.generate') && !ownText.includes('provider.stream')) continue;
+
+  /**
+   * Metering may live in the package OR in the entry points that drive it.
+   * Research is metered by its API route and worker handler rather than
+   * inside the package, and that is correct — the first version of this check
+   * called it a violation, which would have taught everyone to ignore the
+   * check.
+   */
+  const packageName = `@reklu/${dir.split('/')[1]}`;
+  const callers = allSources.filter(
+    (file) => !file.startsWith(`${dir}/`) && !file.includes('__tests__') &&
+      readAll([file]).includes(`from '${packageName}'`),
+  );
+  const combined = ownText + readAll(callers);
+
+  for (const [label, needle] of [
+    ['checks quota', 'checkQuota'],
+    ['records usage', 'recordUsage'],
+  ] as const) {
+    const met = combined.includes(needle);
+    check(
+      `${dir} ${label}`,
+      met,
+      met ? '' : `reaches a provider but neither it nor its ${callers.length} callers call ${needle}`,
+    );
+  }
+}
+
 console.log(
   failures === 0
     ? '\nAll checks passed. A fresh clone contains everything the build needs.\n'

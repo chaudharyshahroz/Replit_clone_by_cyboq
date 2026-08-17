@@ -5,7 +5,14 @@
  * history, restore, and the artifacts library for free. Create is a set of
  * shaped prompts and a parser; it is not a second content system.
  */
-import { getProvider, loadRegistry, selectableModels, type RegisteredModel } from '@reklu/ai';
+import {
+  checkQuota,
+  getProvider,
+  loadRegistry,
+  recordUsage,
+  selectableModels,
+  type RegisteredModel,
+} from '@reklu/ai';
 import { createArtifact } from '@reklu/artifacts';
 import { errors, logger } from '@reklu/shared';
 import { deckToText, parseDeck, renderDeckHtml, type Deck } from './deck';
@@ -26,6 +33,30 @@ export interface CreateResult {
   readonly title: string;
   readonly kind: CreateKind;
   readonly detail: string;
+}
+
+/**
+ * Refuse before spending, not after.
+ *
+ * Create was shipped without this: documents, decks and images all called a
+ * provider with no quota check at all. Image generation is the most expensive
+ * single operation in the product, so it was also the most expensive thing to
+ * leave unmetered.
+ */
+async function assertWithinQuota(workspaceId: string): Promise<Date> {
+  const quota = await checkQuota(workspaceId);
+
+  if (quota?.exceeded) {
+    throw errors.quotaExceeded({
+      resource: 'AI units',
+      used: Math.round(quota.used),
+      limit: quota.limit ?? 0,
+      resetsAt: quota.periodEnd,
+    });
+  }
+
+  // The period the resulting usage row counts against.
+  return quota?.periodStart ?? new Date();
 }
 
 async function pickModel(preferred?: string): Promise<RegisteredModel> {
@@ -77,6 +108,7 @@ presenter would say into "notes".`;
 
 /** Generate a Markdown document and save it as an artifact. */
 export async function createDocument(input: CreateInput): Promise<CreateResult> {
+  const periodStart = await assertWithinQuota(input.workspaceId);
   const model = await pickModel(input.modelKey);
   const provider = getProvider(model.providerKey);
   if (!provider) throw errors.providerUnavailable(model.providerKey, model.key);
@@ -86,6 +118,18 @@ export async function createDocument(input: CreateInput): Promise<CreateResult> 
     messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }] }],
     system: DOCUMENT_PROMPT,
     maxOutputTokens: 6_000,
+  });
+
+  await recordUsage({
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    projectId: input.projectId ?? null,
+    model,
+    usage: result.usage,
+    kind: 'chat',
+    operation: 'Document',
+    autoRouted: !input.modelKey,
+    periodStart,
   });
 
   const markdown = result.text.trim();
@@ -123,6 +167,7 @@ export async function createDocument(input: CreateInput): Promise<CreateResult> 
 
 /** Generate a deck and save both its structure and a rendered HTML version. */
 export async function createPresentation(input: CreateInput): Promise<CreateResult> {
+  const periodStart = await assertWithinQuota(input.workspaceId);
   const model = await pickModel(input.modelKey);
   const provider = getProvider(model.providerKey);
   if (!provider) throw errors.providerUnavailable(model.providerKey, model.key);
@@ -133,6 +178,18 @@ export async function createPresentation(input: CreateInput): Promise<CreateResu
     system: DECK_PROMPT,
     maxOutputTokens: 6_000,
     temperature: 0.4,
+  });
+
+  await recordUsage({
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    projectId: input.projectId ?? null,
+    model,
+    usage: result.usage,
+    kind: 'chat',
+    operation: 'Presentation',
+    autoRouted: !input.modelKey,
+    periodStart,
   });
 
   const deck: Deck | undefined = parseDeck(result.text, input.prompt.slice(0, 60));
@@ -165,6 +222,8 @@ export async function createPresentation(input: CreateInput): Promise<CreateResu
 export async function createImage(
   input: CreateInput & { size?: '1024x1024' | '1536x1024' | '1024x1536' },
 ): Promise<CreateResult> {
+  await assertWithinQuota(input.workspaceId);
+
   const image = await generateImage({
     workspaceId: input.workspaceId,
     prompt: input.prompt,

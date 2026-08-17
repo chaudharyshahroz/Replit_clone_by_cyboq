@@ -11,7 +11,7 @@
  * steps loses nothing, because the next call reads the row and continues.
  */
 import { and, asc, eq } from 'drizzle-orm';
-import { getProvider, loadRegistry, selectableModels } from '@reklu/ai';
+import { checkQuota, getProvider, loadRegistry, recordUsage, selectableModels } from '@reklu/ai';
 import { agentApprovals, agentRuns, agentSteps, db } from '@reklu/database';
 import { executeTool, usableTools, type RiskClass } from '@reklu/mcp';
 import { enqueue } from '@reklu/queue';
@@ -37,6 +37,30 @@ export interface RunProgress {
   readonly detail: string;
   /** Set when the run is blocked on a person. */
   readonly awaitingApprovalId?: string | undefined;
+}
+
+/**
+ * Refuse before spending, not after.
+ *
+ * Agents were shipped without this, and they are the worst place to omit it:
+ * one run is a loop of model calls, so an exhausted workspace could spend its
+ * way through an entire plan before anything noticed. Checked on every step,
+ * not only at planning, because the quota can be consumed by something else
+ * while a run is paused on an approval.
+ */
+async function assertWithinQuota(workspaceId: string): Promise<Date> {
+  const quota = await checkQuota(workspaceId);
+
+  if (quota?.exceeded) {
+    throw errors.quotaExceeded({
+      resource: 'AI units',
+      used: Math.round(quota.used),
+      limit: quota.limit ?? 0,
+      resetsAt: quota.periodEnd,
+    });
+  }
+
+  return quota?.periodStart ?? new Date();
 }
 
 async function pickModel() {
@@ -66,6 +90,7 @@ export async function startRun(input: StartRunInput): Promise<RunProgress> {
     throw errors.validation('Describe the objective in a little more detail.');
   }
 
+  const periodStart = await assertWithinQuota(input.workspaceId);
   const model = await pickModel();
   const provider = getProvider(model.providerKey);
   if (!provider) throw errors.providerUnavailable(model.providerKey, model.key);
@@ -103,6 +128,18 @@ export async function startRun(input: StartRunInput): Promise<RunProgress> {
       system: PLAN_PROMPT,
       maxOutputTokens: 2_000,
       temperature: 0,
+    });
+
+    await recordUsage({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      projectId: input.projectId ?? null,
+      model,
+      usage: result.usage,
+      kind: 'agent',
+      operation: 'Agent planning',
+      autoRouted: true,
+      periodStart,
     });
 
     const plan = parsePlan(result.text, objective);
@@ -415,6 +452,9 @@ export async function advanceRun(
   }
 
   // ---- Model steps -------------------------------------------------------
+  // Re-checked here, not just at planning: a run can sit paused on an approval
+  // for a day, during which the workspace may exhaust its quota elsewhere.
+  const stepPeriodStart = await assertWithinQuota(workspaceId);
   const model = await pickModel();
   const provider = getProvider(model.providerKey);
   if (!provider) throw errors.providerUnavailable(model.providerKey, model.key);
@@ -443,6 +483,18 @@ export async function advanceRun(
         'You are executing one step of a larger plan. Do that step and report the result. ' +
         'Be concise and factual. If you cannot do it, say so plainly rather than inventing a result.',
       maxOutputTokens: 3_000,
+    });
+
+    await recordUsage({
+      workspaceId,
+      userId: actingUserId,
+      model,
+      usage: result.usage,
+      kind: 'agent',
+      operation: `Agent step: ${step.title.slice(0, 60)}`,
+      autoRouted: true,
+      periodStart: stepPeriodStart,
+      jobId: run.jobId,
     });
 
     await db
