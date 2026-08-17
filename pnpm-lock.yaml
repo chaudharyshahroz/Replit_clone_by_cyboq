@@ -35,6 +35,9 @@ importers:
       '@reklu/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@reklu/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@reklu/build':
         specifier: workspace:*
         version: link:../../packages/build
@@ -264,6 +267,34 @@ importers:
         version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
 
   packages/auth:
+    dependencies:
+      '@reklu/database':
+        specifier: workspace:*
+        version: link:../database
+      '@reklu/shared':
+        specifier: workspace:*
+        version: link:../shared
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(postgres@3.4.9)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
+
+  packages/billing:
     dependencies:
       '@reklu/database':
         specifier: workspace:*

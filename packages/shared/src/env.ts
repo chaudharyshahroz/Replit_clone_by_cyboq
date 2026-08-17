@@ -205,7 +205,20 @@ const serverSchema = z.object({
   SANDBOX_MAX_DISK_MB: intWithDefault(1024),
   SANDBOX_MAX_CONCURRENT: intWithDefault(3),
 
-  // ---- Billing -------------------------------------------------------------
+  // ---- Billing (Whop) ------------------------------------------------------
+  /**
+   * Whop replaces Stripe as the payment provider. Absent credentials leave
+   * billing reporting itself unavailable rather than rendering a checkout that
+   * cannot complete (spec §25).
+   */
+  WHOP_API_KEY: optionalString,
+  /** The `ws_...` signing secret. Without it no delivery can be trusted. */
+  WHOP_WEBHOOK_SECRET: optionalString,
+  /** Whop plan ids, mapped onto Reklu's own plan keys. */
+  WHOP_PLAN_ID_PRO: optionalString,
+  WHOP_PLAN_ID_TEAM: optionalString,
+
+  // ---- Billing (legacy Stripe fields, unused) -------------------------------
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
   STRIPE_PUBLISHABLE_KEY: optionalString,
@@ -484,7 +497,14 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
     githubIntegration: Boolean(env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET),
     vercelIntegration: Boolean(env.VERCEL_CLIENT_ID && env.VERCEL_CLIENT_SECRET),
     supabaseIntegration: Boolean(env.SUPABASE_CLIENT_ID && env.SUPABASE_CLIENT_SECRET),
-    billing: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET),
+    /**
+     * Checkout needs a plan id; acting on a membership change needs the
+     * webhook secret. Reporting billing as available without both would mean
+     * taking money and never recording the upgrade.
+     */
+    billing: Boolean(
+      env.WHOP_WEBHOOK_SECRET && (env.WHOP_PLAN_ID_PRO || env.WHOP_PLAN_ID_TEAM),
+    ),
     durableStorage: env.STORAGE_DRIVER === 's3' || env.STORAGE_LOCAL_SINGLE_NODE_ACK,
     isolatedSandbox: env.SANDBOX_DRIVER !== 'local',
     build:

@@ -16,6 +16,7 @@
     "@reklu/ai": "workspace:*",
     "@reklu/artifacts": "workspace:*",
     "@reklu/auth": "workspace:*",
+    "@reklu/billing": "workspace:*",
     "@reklu/build": "workspace:*",
     "@reklu/create": "workspace:*",
     "@reklu/database": "workspace:*",

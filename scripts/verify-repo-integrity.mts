@@ -285,6 +285,50 @@ for (const dir of ['packages/create', 'packages/agents', 'packages/research']) {
   }
 }
 
+/**
+ * No client component may import a package that reaches the database.
+ *
+ * Made three times — @reklu/skills, @reklu/mcp, @reklu/billing — always for one
+ * small helper or constant, and always caught only by a failed production
+ * build. The server should format and pass a value down, or the constant
+ * should be inlined.
+ */
+console.log('\n7. No client component imports a server-only package');
+
+const SERVER_ONLY = [
+  '@reklu/database', '@reklu/billing', '@reklu/mcp', '@reklu/skills',
+  '@reklu/agents', '@reklu/create', '@reklu/research', '@reklu/build',
+  '@reklu/projects', '@reklu/artifacts', '@reklu/storage', '@reklu/queue',
+  '@reklu/auth', '@reklu/integrations',
+];
+
+const clientOffenders: string[] = [];
+for (const file of allSources.filter((name) => name.startsWith('apps/web/'))) {
+  const text = readAll([file]);
+  if (!/^\s*['"]use client['"]/m.test(text)) continue;
+
+  /**
+   * Only VALUE imports matter. `import type { X } from '@reklu/database'` is
+   * erased at compile time and costs the bundle nothing — flagging it would
+   * report correct code as broken, which is how a check earns its way onto
+   * everyone's ignore list.
+   */
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('import type') || trimmed.startsWith('export type')) continue;
+
+    for (const pkg of SERVER_ONLY) {
+      if (trimmed.includes(`from '${pkg}'`)) clientOffenders.push(`${file} imports ${pkg}`);
+    }
+  }
+}
+
+check(
+  'client components import no server-only package',
+  clientOffenders.length === 0,
+  clientOffenders.slice(0, 4).join(' | '),
+);
+
 console.log(
   failures === 0
     ? '\nAll checks passed. A fresh clone contains everything the build needs.\n'

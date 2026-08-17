@@ -694,7 +694,7 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 829 unit tests
+pnpm test                        # 864 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
