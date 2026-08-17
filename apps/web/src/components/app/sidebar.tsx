@@ -12,13 +12,16 @@ import {
   Plug,
   Settings,
   Telescope,
+  Wand2,
   Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Wordmark } from '@/components/brand/logo';
 
 /**
- * Spec §66. Not every feature belongs in the sidebar — Create is contextual.
+ * Spec §66. Create earned a sidebar entry once it became a real destination
+ * rather than a contextual action; the comment here previously said the
+ * opposite, and outliving its own truth is how a comment becomes a lie.
  *
  * `available: false` renders an item as visibly unavailable rather than as a
  * link that goes nowhere. A disabled control that says why is honest; a live
@@ -37,6 +40,7 @@ const PRIMARY: readonly NavItem[] = [
   { href: '/compare', label: 'Compare', icon: Columns2, available: true },
   { href: '/research', label: 'Research', icon: Telescope, available: true },
   { href: '/build', label: 'Build', icon: Wrench, available: true },
+  { href: '/create', label: 'Create', icon: Wand2, available: true },
 ];
 
 const LIBRARY: readonly NavItem[] = [

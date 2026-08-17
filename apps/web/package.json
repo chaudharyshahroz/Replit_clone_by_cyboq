@@ -16,6 +16,7 @@
     "@reklu/artifacts": "workspace:*",
     "@reklu/auth": "workspace:*",
     "@reklu/build": "workspace:*",
+    "@reklu/create": "workspace:*",
     "@reklu/database": "workspace:*",
     "@reklu/integrations": "workspace:*",
     "@reklu/mcp": "workspace:*",
