@@ -573,7 +573,7 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 613 unit tests
+pnpm test                        # 693 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
@@ -584,6 +584,7 @@ pnpm verify:repo                 # a fresh clone contains what the build needs
 pnpm verify:e2b                  # live microVM checks (needs E2B_API_KEY)
 pnpm verify:oauth                # sign-in account linking, against the real DB
 pnpm verify:skills               # authoring, versioning, cross-workspace isolation
+pnpm verify:mcp                  # live MCP server: discovery, permissions, schema drift
 ```
 
 ---
