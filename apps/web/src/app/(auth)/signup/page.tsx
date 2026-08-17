@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { SocialSignIn } from '@/components/auth/social-sign-in';
 import { redirect } from 'next/navigation';
 import { features } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
@@ -28,17 +29,7 @@ export default async function SignUpPage({
         <SignUpForm next={next} />
       </div>
 
-      {/*
-        Spec §111/§137: an unconfigured provider is stated honestly rather than
-        rendered as a button that cannot work.
-      */}
-      {!available.googleSignIn && !available.githubSignIn ? (
-        <p className="mt-6 rounded-lg border border-border bg-surface/50 p-3 text-xs leading-relaxed text-text-muted">
-          Google and GitHub sign-in are not configured on this instance. Set{' '}
-          <code className="text-text-secondary">AUTH_GOOGLE_ID</code> or{' '}
-          <code className="text-text-secondary">AUTH_GITHUB_ID</code> to enable them.
-        </p>
-      ) : null}
+      <SocialSignIn />
 
       <p className="mt-8 text-center text-sm text-text-secondary">
         Already have an account?{' '}
