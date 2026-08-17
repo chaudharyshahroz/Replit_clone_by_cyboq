@@ -77,6 +77,41 @@ export const githubProvider: IntegrationProvider = {
     };
   },
 
+  /**
+   * Exchange a refresh token for a fresh access token.
+   *
+   * Only issued when the OAuth app has "Expire user access tokens" enabled, in
+   * which case access tokens last 8 hours. Without this method Reklu would mark
+   * the connection as needing attention twice a day — correct behaviour, but a
+   * reason operators would be tempted to turn expiry off and hold a
+   * non-expiring token instead. Supporting refresh is what makes the safer
+   * setting the convenient one.
+   *
+   * GitHub rotates the refresh token on every use, so the new one must be
+   * stored. `saveConnection` overwrites both, which is exactly what is needed.
+   */
+  async refresh({ credentials, refreshToken }): Promise<TokenSet> {
+    const body = await postForToken('github', TOKEN_URL, {
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    });
+
+    const accessToken = String(body.access_token ?? '');
+    if (!accessToken) throw new Error('GitHub returned no access token when refreshing.');
+
+    return {
+      accessToken,
+      // Absent here would silently turn a refreshable connection into one that
+      // dies for good at the next expiry.
+      refreshToken: typeof body.refresh_token === 'string' ? body.refresh_token : refreshToken,
+      tokenType: String(body.token_type ?? 'Bearer'),
+      expiresAt: expiryFrom(body.expires_in),
+      scopes: parseScopes(body.scope),
+    };
+  },
+
   async identify(accessToken: string): Promise<ExternalAccount> {
     const user = await getJson<GitHubUser>('github', `${API}/user`, accessToken, {
       Accept: 'application/vnd.github+json',

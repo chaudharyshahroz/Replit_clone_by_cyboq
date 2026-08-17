@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRepository, pushFiles, toRepositoryName } from '../deploy/github';
 import { createDeployment, toProjectName } from '../deploy/vercel';
 import { createProject } from '../deploy/supabase';
+import { githubProvider } from '../providers/github';
 import { IntegrationError } from '../types';
 
 /**
@@ -14,17 +15,22 @@ interface Call {
   readonly url: string;
   readonly method: string;
   readonly body: Record<string, unknown> | undefined;
+  /** Token endpoints are form-encoded, not JSON. */
+  readonly rawBody: string | undefined;
 }
 
 function stubFetch(routes: Array<[RegExp, unknown, number?]>): Call[] {
   const calls: Call[] = [];
   vi.stubGlobal('fetch', async (url: string | URL, init?: RequestInit) => {
     const href = String(url);
-    calls.push({
-      url: href,
-      method: init?.method ?? 'GET',
-      body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined,
-    });
+    const raw = init?.body ? String(init.body) : undefined;
+    let parsed: Record<string, unknown> | undefined;
+    try {
+      parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : undefined;
+    } catch {
+      parsed = undefined; // form-encoded, not JSON
+    }
+    calls.push({ url: href, method: init?.method ?? 'GET', body: parsed, rawBody: raw });
 
     for (const [pattern, payload, status] of routes) {
       if (pattern.test(href)) {
@@ -253,5 +259,74 @@ describe('supabase', () => {
     await expect(
       createProject('tok', { name: 'a', organizationId: 'o', databasePassword: 'short' }),
     ).rejects.toThrow(IntegrationError);
+  });
+});
+
+/**
+ * Token refresh.
+ *
+ * GitHub only issues refresh tokens when the OAuth app has "Expire user access
+ * tokens" enabled. Without a refresh implementation Reklu marks the connection
+ * as needing attention every 8 hours — correct, but it pushes operators toward
+ * disabling expiry and holding a non-expiring token instead. These tests cover
+ * the rotation behaviour that makes the safer setting the convenient one.
+ */
+describe('github token refresh', () => {
+  it('exchanges a refresh token for a new access token', async () => {
+    const calls = stubFetch([
+      [
+        /login\/oauth\/access_token/,
+        {
+          access_token: 'gho_new',
+          refresh_token: 'ghr_rotated',
+          expires_in: 28_800,
+          token_type: 'bearer',
+          scope: 'repo,read:user',
+        },
+      ],
+    ]);
+
+    const tokens = await githubProvider.refresh!({
+      credentials: { clientId: 'id', clientSecret: 'secret', redirectUri: 'https://reklu.app/cb' },
+      refreshToken: 'ghr_old',
+    });
+
+    expect(tokens.accessToken).toBe('gho_new');
+    // GitHub rotates the refresh token; storing the old one would break the
+    // next refresh.
+    expect(tokens.refreshToken).toBe('ghr_rotated');
+    expect(tokens.expiresAt).toBeInstanceOf(Date);
+    expect(tokens.scopes).toEqual(['repo', 'read:user']);
+
+    const body = new URLSearchParams(String(calls[0]?.rawBody));
+    expect(body.get('grant_type')).toBe('refresh_token');
+    expect(body.get('refresh_token')).toBe('ghr_old');
+  });
+
+  /**
+   * If GitHub omits a rotated token, keeping the existing one is the only way
+   * the connection survives; dropping it would turn a refreshable connection
+   * into one that dies permanently at the next expiry.
+   */
+  it('keeps the existing refresh token when none is returned', async () => {
+    stubFetch([[/login\/oauth\/access_token/, { access_token: 'gho_new', expires_in: 28_800 }]]);
+
+    const tokens = await githubProvider.refresh!({
+      credentials: { clientId: 'id', clientSecret: 'secret', redirectUri: 'https://reklu.app/cb' },
+      refreshToken: 'ghr_keep_me',
+    });
+
+    expect(tokens.refreshToken).toBe('ghr_keep_me');
+  });
+
+  it('fails loudly when no access token comes back', async () => {
+    stubFetch([[/login\/oauth\/access_token/, { token_type: 'bearer' }]]);
+
+    await expect(
+      githubProvider.refresh!({
+        credentials: { clientId: 'id', clientSecret: 'secret', redirectUri: 'https://reklu.app/cb' },
+        refreshToken: 'ghr_old',
+      }),
+    ).rejects.toThrow(/no access token/i);
   });
 });
