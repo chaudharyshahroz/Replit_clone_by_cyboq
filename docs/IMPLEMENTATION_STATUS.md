@@ -641,11 +641,24 @@ one part that calls a model — is still only covered by unit tests.
 
 ---
 
-## Milestone 11 ⬜
+## Milestone 11 — Billing, admin, QA ✅
 
-| # | Milestone | Notes |
-| - | --------- | ----- |
-| 11 | Billing, admin, analytics, QA | Schema ready |
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Whop embedded checkout | ✅ | `/settings/billing`; card details never touch Reklu |
+| Webhook signature verification | ✅ | raw body, constant-time, replay-bounded, rotation-aware |
+| Membership → subscription | ✅ | idempotent; a downgrade deletes nothing |
+| Quota enforced on every model path | ✅ | guarded by `pnpm verify:repo` |
+| Admin panel | ✅ | `/admin`, gated on `isSuperAdmin` |
+| Content-Security-Policy | ✅ | added; no `unsafe-eval` |
+| HSTS, no `X-Powered-By` | ✅ | `pnpm verify:security` |
+| Auth required on every app route | ✅ | asserted against a running origin |
+
+**Not verified:** no live Whop delivery received and no payment taken.
+
+**Accessibility and performance** have not had a dedicated pass. Semantic
+markup, focus styles and `aria-*` states were written as the components were
+built, but nothing has been measured — no axe run, no Lighthouse budget.
 
 The database was deliberately built ahead of the application layer so features
 grow against a stable ownership and tenancy model rather than adding tables ad
@@ -702,6 +715,7 @@ pnpm verify:build                # 24 live checks
 pnpm verify:preview              # 14 live checks
 pnpm verify:production-config    # 17 checks on .env.production.example
 pnpm verify:repo                 # a fresh clone contains what the build needs
+pnpm verify:security             # headers, disclosure and auth, against a live origin
 pnpm verify:e2b                  # live microVM checks (needs E2B_API_KEY)
 pnpm verify:oauth                # sign-in account linking, against the real DB
 pnpm verify:skills               # authoring, versioning, cross-workspace isolation

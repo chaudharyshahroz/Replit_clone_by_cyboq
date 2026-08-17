@@ -40,7 +40,8 @@
     "verify:oauth": "pnpm --filter @reklu/auth exec tsx scripts/verify-oauth.mts",
     "verify:skills": "pnpm --filter @reklu/skills exec tsx scripts/verify.mts",
     "verify:mcp": "pnpm --filter @reklu/mcp exec tsx scripts/verify.mts",
-    "verify:agents": "pnpm --filter @reklu/agents exec tsx scripts/verify.mts"
+    "verify:agents": "pnpm --filter @reklu/agents exec tsx scripts/verify.mts",
+    "verify:security": "pnpm --filter @reklu/database exec tsx ../../scripts/verify-security.mts"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
