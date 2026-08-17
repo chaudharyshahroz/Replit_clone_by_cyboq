@@ -476,6 +476,28 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
   };
 }
 
+/**
+ * An absolute URL on Reklu's canonical public origin.
+ *
+ * Redirects must never be built from the inbound request. Behind a reverse
+ * proxy that request carries the container's internal address — under Traefik
+ * it is `http://0.0.0.0:3000` — so `new URL(request.url).origin` sends the
+ * browser to a host that exists only inside the Docker network. A real OAuth
+ * callback landed on `0.0.0.0:3000/settings/connections` for exactly this
+ * reason: the flow had succeeded, and the redirect threw it away.
+ *
+ * APP_URL is the canonical origin, which is why it is required at startup.
+ */
+export function absoluteAppUrl(path = '/'): string {
+  const origin = loadServerEnv().APP_URL.replace(/\/+$/, '');
+  return new URL(path, `${origin}/`).toString();
+}
+
+/** Whether Reklu is served over TLS, judged by APP_URL rather than the request. */
+export function servedOverHttps(): boolean {
+  return loadServerEnv().APP_URL.startsWith('https:');
+}
+
 /** Convenience accessors for server code. */
 export const serverEnv = (): ServerEnv => loadServerEnv();
 export const features = (): FeatureAvailability => featuresFor(loadServerEnv());

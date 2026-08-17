@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
-import { EnvironmentError, featuresFor, loadServerEnv, resetServerEnvCache } from '../env';
+import {
+  EnvironmentError,
+  absoluteAppUrl,
+  featuresFor,
+  loadServerEnv,
+  resetServerEnvCache,
+  servedOverHttps,
+} from '../env';
 
 const key = () => randomBytes(32).toString('base64');
 
@@ -358,5 +365,77 @@ describe('unedited template placeholders', () => {
 
   it('leaves an unset variable alone', () => {
     expect(() => loadServerEnv(base({ S3_BUCKET: '' }))).not.toThrow();
+  });
+});
+
+/**
+ * Regression: a real GitHub OAuth callback completed successfully and then
+ * redirected the browser to `http://0.0.0.0:3000/settings/connections`. The
+ * route had built the redirect from `new URL(request.url).origin`, and behind
+ * Traefik the inbound request carries the container's internal address. The
+ * connection was saved; the user just never saw it.
+ */
+describe('absoluteAppUrl', () => {
+  beforeEach(() => resetServerEnvCache());
+
+  const withAppUrl = (appUrl: string): void => {
+    resetServerEnvCache();
+    loadServerEnv(base({ APP_URL: appUrl }));
+  };
+
+  it('builds a URL on the canonical origin, not the request host', () => {
+    withAppUrl('https://reklu.app');
+    expect(absoluteAppUrl('/settings/connections')).toBe(
+      'https://reklu.app/settings/connections',
+    );
+  });
+
+  it('tolerates a trailing slash on APP_URL', () => {
+    withAppUrl('https://reklu.app/');
+    expect(absoluteAppUrl('/settings/connections')).toBe(
+      'https://reklu.app/settings/connections',
+    );
+  });
+
+  it('preserves query strings', () => {
+    withAppUrl('https://reklu.app');
+    expect(absoluteAppUrl('/settings/connections?connected=github')).toBe(
+      'https://reklu.app/settings/connections?connected=github',
+    );
+  });
+
+  it('defaults to the origin root', () => {
+    withAppUrl('https://reklu.app');
+    expect(absoluteAppUrl()).toBe('https://reklu.app/');
+  });
+
+  // The exact failure that shipped: an internal address must never appear.
+  it('never yields the container address', () => {
+    withAppUrl('https://reklu.app');
+    expect(absoluteAppUrl('/settings/connections')).not.toContain('0.0.0.0');
+    expect(absoluteAppUrl('/settings/connections')).not.toContain(':3000');
+  });
+
+  it('works in development too', () => {
+    withAppUrl('http://localhost:3000');
+    expect(absoluteAppUrl('/chat')).toBe('http://localhost:3000/chat');
+  });
+});
+
+describe('servedOverHttps', () => {
+  /**
+   * A TLS-terminating proxy hands Reklu a plain HTTP request, so judging from
+   * the request drops the Secure flag on cookies for an HTTPS site.
+   */
+  it('is true for an https APP_URL', () => {
+    resetServerEnvCache();
+    loadServerEnv(base({ APP_URL: 'https://reklu.app' }));
+    expect(servedOverHttps()).toBe(true);
+  });
+
+  it('is false in local development', () => {
+    resetServerEnvCache();
+    loadServerEnv(base({ APP_URL: 'http://localhost:3000' }));
+    expect(servedOverHttps()).toBe(false);
   });
 });

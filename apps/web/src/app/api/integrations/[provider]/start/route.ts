@@ -14,7 +14,7 @@ import {
   safeReturnTo,
   startFlow,
 } from '@reklu/integrations';
-import { logger } from '@reklu/shared';
+import { logger, servedOverHttps } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
 
 export const runtime = 'nodejs';
@@ -72,7 +72,13 @@ export async function GET(
   const response = NextResponse.redirect(authorizeUrl);
   response.cookies.set(flow.cookieName, flow.cookieValue, {
     httpOnly: true,
-    secure: new URL(request.url).protocol === 'https:',
+    /**
+     * Decided from APP_URL, not the inbound request. Behind a TLS-terminating
+     * proxy the request Reklu receives is plain HTTP, so testing `request.url`
+     * drops the Secure flag on an HTTPS site — sending the OAuth CSRF cookie
+     * over plaintext on any downgrade.
+     */
+    secure: servedOverHttps(),
     // Lax, not Strict: the provider redirects the browser back to us
     // cross-site, and Strict would withhold the cookie on that navigation.
     sameSite: 'lax',

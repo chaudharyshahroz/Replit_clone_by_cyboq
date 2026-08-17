@@ -18,14 +18,14 @@ import {
   isIntegrationProvider,
   saveConnection,
 } from '@reklu/integrations';
-import { logger } from '@reklu/shared';
+import { absoluteAppUrl, logger } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function fail(request: Request, message: string, returnTo = '/settings/connections'): Response {
-  const url = new URL(returnTo, new URL(request.url).origin);
+function fail(_request: Request, message: string, returnTo = '/settings/connections'): Response {
+  const url = new URL(absoluteAppUrl(returnTo));
   url.searchParams.set('error', message);
   return NextResponse.redirect(url);
 }
@@ -121,7 +121,7 @@ export async function GET(
       account,
     });
 
-    const success = new URL(flow.returnTo, url.origin);
+    const success = new URL(absoluteAppUrl(flow.returnTo));
     success.searchParams.set('connected', raw);
     return clearCookie(NextResponse.redirect(success));
   } catch (error) {
