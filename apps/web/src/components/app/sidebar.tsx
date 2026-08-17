@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  Bot,
   Boxes,
   Columns2,
   History,
@@ -41,6 +42,7 @@ const PRIMARY: readonly NavItem[] = [
   { href: '/research', label: 'Research', icon: Telescope, available: true },
   { href: '/build', label: 'Build', icon: Wrench, available: true },
   { href: '/create', label: 'Create', icon: Wand2, available: true },
+  { href: '/agents', label: 'Agents', icon: Bot, available: true },
 ];
 
 const LIBRARY: readonly NavItem[] = [

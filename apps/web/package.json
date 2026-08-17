@@ -12,6 +12,7 @@
     "clean": "rm -rf .turbo .next node_modules"
   },
   "dependencies": {
+    "@reklu/agents": "workspace:*",
     "@reklu/ai": "workspace:*",
     "@reklu/artifacts": "workspace:*",
     "@reklu/auth": "workspace:*",

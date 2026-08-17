@@ -617,11 +617,30 @@ exported HTML already carries print styles.
 
 ---
 
-## Milestones 10–11 ⬜
+## Milestone 10 — Agents + approvals ✅
+
+`@reklu/agents` — plan, execute one step at a time, stop for a human whenever a
+step has a side effect.
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Plan before executing | ✅ | `/agents` shows the plan before anything runs |
+| One step per call | ✅ | the loop lives with the caller, never in a request |
+| Step + cost ceilings | ✅ | checked *before* a step, never after |
+| Approval gate for side effects | ✅ | stricter than MCP: only `read_only` runs unattended |
+| Payload integrity | ✅ | fingerprinted at approval, re-checked at execution |
+| Approval expiry | ✅ | consent does not survive indefinitely |
+| Durable runs | ✅ | a crash between steps loses nothing |
+| Audit | ✅ | inherits `tool_executions` via the MCP engine |
+
+**Not verified:** no run has been planned or executed against a live model.
+
+---
+
+## Milestone 11 ⬜
 
 | # | Milestone | Notes |
 | - | --------- | ----- |
-| 10 | Agents + approvals | Schema ready |
 | 11 | Billing, admin, analytics, QA | Schema ready |
 
 The database was deliberately built ahead of the application layer so features
@@ -671,7 +690,7 @@ The ✅ marks above rest on suites committed to the repo, not on a transcript.
 See [VERIFICATION.md](./VERIFICATION.md).
 
 ```bash
-pnpm test                        # 769 unit tests
+pnpm test                        # 829 unit tests
 pnpm verify:auth                 # 13 live checks
 pnpm verify:projects             # 40 live checks
 pnpm verify:queue                # 15 live checks (worker must be running)
