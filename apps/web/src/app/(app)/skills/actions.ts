@@ -5,7 +5,14 @@ import {
   createSkill,
   deleteSkill,
   duplicateSkill,
+  installSkill,
+  parseVariables,
+  publishSkill,
   reviseSkill,
+  rollbackSkill,
+  uninstallSkill,
+  unpublishSkill,
+  upgradeInstall,
   type SkillDraft,
 } from '@reklu/skills';
 import { isRekluError, logger } from '@reklu/shared';
@@ -25,6 +32,7 @@ function draftFrom(formData: FormData): SkillDraft {
     knowledge: text('knowledge') || undefined,
     category: text('category') || 'other',
     preferredModelKey: text('preferredModelKey') || undefined,
+    variables: parseVariables(text('variables')),
   };
 }
 
@@ -98,5 +106,76 @@ export async function deleteSkillAction(skillId: string): Promise<SkillFormState
   } catch (error) {
     if (isRekluError(error)) return { error: error.userMessage };
     return { error: 'The skill could not be deleted.' };
+  }
+}
+
+export async function rollbackSkillAction(
+  skillId: string,
+  versionId: string,
+): Promise<SkillFormState> {
+  const { user, workspace } = await getAppContext();
+  try {
+    await rollbackSkill({ skillId, workspaceId: workspace.workspaceId, userId: user.id, versionId });
+    revalidatePath(`/skills/${skillId}`);
+    return {};
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    return { error: 'The version could not be restored.' };
+  }
+}
+
+export async function setVisibilityAction(
+  skillId: string,
+  makePublic: boolean,
+): Promise<SkillFormState> {
+  const { workspace } = await getAppContext();
+  try {
+    if (makePublic) {
+      await publishSkill({ skillId, workspaceId: workspace.workspaceId });
+    } else {
+      await unpublishSkill({ skillId, workspaceId: workspace.workspaceId });
+    }
+    revalidatePath(`/skills/${skillId}`);
+    revalidatePath('/skills');
+    return {};
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    return { error: 'The visibility could not be changed.' };
+  }
+}
+
+export async function installSkillAction(skillId: string): Promise<SkillFormState> {
+  const { user, workspace } = await getAppContext();
+  try {
+    await installSkill({ skillId, workspaceId: workspace.workspaceId, userId: user.id });
+    revalidatePath('/skills');
+    return {};
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    return { error: 'The skill could not be installed.' };
+  }
+}
+
+export async function uninstallSkillAction(skillId: string): Promise<SkillFormState> {
+  const { workspace } = await getAppContext();
+  try {
+    await uninstallSkill({ skillId, workspaceId: workspace.workspaceId });
+    revalidatePath('/skills');
+    return {};
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    return { error: 'The skill could not be uninstalled.' };
+  }
+}
+
+export async function upgradeInstallAction(skillId: string): Promise<SkillFormState> {
+  const { workspace } = await getAppContext();
+  try {
+    await upgradeInstall({ skillId, workspaceId: workspace.workspaceId });
+    revalidatePath(`/skills/${skillId}`);
+    return {};
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    return { error: 'The skill could not be upgraded.' };
   }
 }

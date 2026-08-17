@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { Sparkles } from 'lucide-react';
 import { db, skills, skillVersions } from '@reklu/database';
@@ -92,7 +93,12 @@ export default async function SkillsPage() {
                     className="rounded-xl border border-border bg-surface/40 p-5 transition-colors hover:border-border-strong"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-medium text-text">{skill.name}</h3>
+                      <Link
+                        href={`/skills/${skill.id}`}
+                        className="rounded text-sm font-medium text-text hover:text-accent"
+                      >
+                        {skill.name}
+                      </Link>
                       <code className="rounded bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-text-muted">
                         @{skill.handle}
                       </code>

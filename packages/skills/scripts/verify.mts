@@ -11,7 +11,8 @@
 import { eq, inArray } from 'drizzle-orm';
 import { closeDatabase, db, skillInstalls, skillVersions, skills, users, workspaces } from '@reklu/database';
 import { newId } from '@reklu/shared';
-import { createSkill, duplicateSkill, listSkills, listVersions, reviseSkill } from '../src/authoring';
+import { createSkill, duplicateSkill, getSkill, listSkills, listVersions, reviseSkill, rollbackSkill } from '../src/authoring';
+import { installStatus, listPublicSkills, publishSkill, unpublishSkill, upgradeInstall } from '../src/install';
 import { resolveInvocation } from '../src/resolve';
 import { buildSkillPrompt } from '../src/invoke';
 
@@ -146,11 +147,76 @@ try {
   const listed = await listSkills(ws.id);
   check('includes built-ins and own skills', listed.length >= createdSkillIds.length);
   check('own skills marked as such', listed.some((s) => s.isOwn));
+  console.log('\n8. Install pins a version');
+  const pinTarget = await createSkill({
+    workspaceId: ws.id, userId: user.id,
+    draft: { name: 'Pin Target', description: 'Used to test version pinning.', instructions: 'Original instructions for the pinning test.' },
+  });
+  createdSkillIds.push(pinTarget.skillId);
+
+  const beforeUpgrade = await installStatus(pinTarget.skillId, ws.id);
+  check('author install exists', beforeUpgrade.installed === true);
+  check('pinned to v1', beforeUpgrade.pinnedVersion === 1, `v${beforeUpgrade.pinnedVersion}`);
+
+  await reviseSkill({
+    skillId: pinTarget.skillId, workspaceId: ws.id, userId: user.id,
+    draft: { name: 'Pin Target', description: 'Used to test version pinning.', instructions: 'Revised instructions that the pin must not pick up.' },
+  });
+
+  const afterRevision = await installStatus(pinTarget.skillId, ws.id);
+  // The whole point of pinning: publishing does not move an existing install.
+  check('install still pinned to v1', afterRevision.pinnedVersion === 1, `v${afterRevision.pinnedVersion}`);
+  check('upgrade reported as available', afterRevision.upgradeAvailable === true);
+
+  const upgraded = await upgradeInstall({ skillId: pinTarget.skillId, workspaceId: ws.id });
+  check('upgrade moves the pin', upgraded.version === 2, `v${upgraded.version}`);
+  const afterUpgrade = await installStatus(pinTarget.skillId, ws.id);
+  check('no upgrade outstanding', afterUpgrade.upgradeAvailable === false);
+
+  console.log('\n9. Rollback appends rather than rewinding');
+  const history = await listVersions(pinTarget.skillId);
+  const firstVersion = history.find((entry) => entry.version === 1)!;
+  const restored = await rollbackSkill({
+    skillId: pinTarget.skillId, workspaceId: ws.id, userId: user.id, versionId: firstVersion.id,
+  });
+  check('creates a new version', restored.version === 3, `v${restored.version}`);
+
+  const afterRollback = await listVersions(pinTarget.skillId);
+  check('history retains every version', afterRollback.length === 3, `${afterRollback.length}`);
+
+  const current = await getSkill(pinTarget.skillId, ws.id);
+  check('current content is the restored one', current?.instructions.includes('Original instructions') === true);
+
+  console.log('\n10. Publish and unpublish');
+  await publishSkill({ skillId: pinTarget.skillId, workspaceId: ws.id });
+  const published = await getSkill(pinTarget.skillId, ws.id);
+  check('marked public', published?.visibility === 'public');
+
+  // Your own published skills are already in your library, not the browse list.
+  const publicToOthers = await listPublicSkills(ws.id);
+  check('own skill excluded from the public browse list', !publicToOthers.some((s) => s.id === pinTarget.skillId));
+
+  await unpublishSkill({ skillId: pinTarget.skillId, workspaceId: ws.id });
+  const withdrawn = await getSkill(pinTarget.skillId, ws.id);
+  check('marked private again', withdrawn?.visibility === 'private');
+
+  console.log('\n11. A built-in cannot be edited or deleted');
+  if (builtIn) {
+    const [source] = await db.select({ id: skills.id }).from(skills).where(eq(skills.isBuiltIn, true)).limit(1);
+    let refusedEdit = false;
+    try {
+      await reviseSkill({
+        skillId: source!.id, workspaceId: ws.id, userId: user.id,
+        draft: { name: 'Hijack', description: 'Attempting to edit a built-in.', instructions: 'This must never be written to a built-in.' },
+      });
+    } catch { refusedEdit = true; }
+    check('editing a built-in is refused', refusedEdit);
+  }
 } catch (error) {
   failures++;
   console.error('\nUnexpected failure:', error instanceof Error ? error.message : error);
 } finally {
-  console.log('\n8. Cleanup');
+  console.log('\n12. Cleanup');
   if (createdSkillIds.length > 0) {
     await db.delete(skillInstalls).where(inArray(skillInstalls.skillId, createdSkillIds));
     await db.delete(skillVersions).where(inArray(skillVersions.skillId, createdSkillIds));

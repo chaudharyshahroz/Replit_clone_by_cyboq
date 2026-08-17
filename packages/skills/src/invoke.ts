@@ -158,3 +158,49 @@ export function missingVariables(
     .map((variable) => variable.name)
     .filter((name) => !haystack.includes(name.toLowerCase()));
 }
+
+/**
+ * Parse declared variables from a textarea, one per line.
+ *
+ * Format: `name — description` or `name* — description`, where a trailing
+ * asterisk marks it required. Deliberately forgiving: an author writing a bare
+ * list of names gets optional variables rather than an error.
+ */
+export function parseVariables(raw: string): SkillVariable[] {
+  const seen = new Set<string>();
+  const parsed: SkillVariable[] = [];
+
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim().replace(/^[-*•]\s*/, '');
+    if (!trimmed) continue;
+
+    const [namePart, ...rest] = trimmed.split(/\s*[—:-]\s*/);
+    if (!namePart) continue;
+
+    const required = namePart.trim().endsWith('*');
+    const name = namePart.trim().replace(/\*$/, '').trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+
+    const description = rest.join(' - ').trim();
+    parsed.push({
+      name,
+      required,
+      ...(description ? { description } : {}),
+    });
+
+    if (parsed.length >= 20) break;
+  }
+
+  return parsed;
+}
+
+/** Render declared variables back into the authoring format. */
+export function formatVariables(variables: readonly SkillVariable[]): string {
+  return variables
+    .map((variable) => {
+      const name = variable.required ? `${variable.name}*` : variable.name;
+      return variable.description ? `${name} — ${variable.description}` : name;
+    })
+    .join('\n');
+}

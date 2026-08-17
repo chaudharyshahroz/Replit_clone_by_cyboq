@@ -349,3 +349,143 @@ export async function recordSkillUse(skillId: string, workspaceId: string): Prom
       and(eq(skillInstalls.skillId, skillId), eq(skillInstalls.workspaceId, workspaceId)),
     );
 }
+
+export interface SkillDetail {
+  readonly id: string;
+  readonly handle: string;
+  readonly name: string;
+  readonly description: string;
+  readonly category: string;
+  readonly icon: string | null;
+  readonly isBuiltIn: boolean;
+  readonly isOwn: boolean;
+  readonly visibility: string;
+  readonly installCount: number;
+  readonly version: number | null;
+  readonly instructions: string;
+  readonly knowledge: string | null;
+  readonly examples: readonly SkillExample[];
+  readonly variables: readonly SkillVariable[];
+  readonly preferredModelKey: string | null;
+}
+
+/**
+ * One skill with its current version.
+ *
+ * Readable when it is a built-in, public, or this workspace's own — the same
+ * rule invocation uses, so a skill can never be inspected by id if it could
+ * not be invoked by handle.
+ */
+export async function getSkill(
+  skillId: string,
+  workspaceId: string,
+): Promise<SkillDetail | undefined> {
+  const [row] = await db
+    .select({ skill: skills, version: skillVersions })
+    .from(skills)
+    .leftJoin(skillVersions, eq(skills.currentVersionId, skillVersions.id))
+    .where(and(eq(skills.id, skillId), isNull(skills.deletedAt)))
+    .limit(1);
+
+  if (!row) return undefined;
+
+  const readable =
+    row.skill.isBuiltIn ||
+    row.skill.visibility === 'public' ||
+    row.skill.workspaceId === workspaceId;
+  if (!readable) return undefined;
+
+  return {
+    id: row.skill.id,
+    handle: row.skill.handle,
+    name: row.skill.name,
+    description: row.skill.description,
+    category: row.skill.category,
+    icon: row.skill.icon,
+    isBuiltIn: row.skill.isBuiltIn,
+    isOwn: row.skill.workspaceId === workspaceId,
+    visibility: row.skill.visibility,
+    installCount: row.skill.installCount,
+    version: row.version?.version ?? null,
+    instructions: row.version?.instructions ?? '',
+    knowledge: row.version?.knowledge ?? null,
+    examples: (row.version?.examples ?? []) as SkillExample[],
+    variables: (row.version?.variables ?? []) as SkillVariable[],
+    preferredModelKey: row.version?.preferredModelKey ?? null,
+  };
+}
+
+/**
+ * Restore an earlier version.
+ *
+ * Creates a NEW version carrying the old content rather than moving the
+ * pointer backwards. History stays append-only, so "we rolled back on Tuesday"
+ * remains visible instead of the intervening versions vanishing.
+ */
+export async function rollbackSkill(params: {
+  skillId: string;
+  workspaceId: string;
+  userId: string;
+  versionId: string;
+}): Promise<{ versionId: string; version: number }> {
+  const [skill] = await db
+    .select({ isBuiltIn: skills.isBuiltIn })
+    .from(skills)
+    .where(
+      and(
+        eq(skills.id, params.skillId),
+        eq(skills.workspaceId, params.workspaceId),
+        isNull(skills.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!skill) throw errors.notFound('Skill', params.skillId);
+  if (skill.isBuiltIn) throw errors.validation('Built-in skills cannot be changed.');
+
+  const [source] = await db
+    .select()
+    .from(skillVersions)
+    .where(
+      and(eq(skillVersions.id, params.versionId), eq(skillVersions.skillId, params.skillId)),
+    )
+    .limit(1);
+
+  if (!source) throw errors.notFound('Skill version', params.versionId);
+
+  const [latest] = await db
+    .select({ version: skillVersions.version })
+    .from(skillVersions)
+    .where(eq(skillVersions.skillId, params.skillId))
+    .orderBy(desc(skillVersions.version))
+    .limit(1);
+
+  const version = (latest?.version ?? 0) + 1;
+  const versionId = newId('skillVersion');
+
+  await db.transaction(async (tx) => {
+    await tx.insert(skillVersions).values({
+      id: versionId,
+      skillId: params.skillId,
+      version,
+      instructions: source.instructions,
+      knowledge: source.knowledge,
+      examples: source.examples,
+      variables: source.variables,
+      templates: source.templates,
+      fileIds: source.fileIds,
+      preferredModelKey: source.preferredModelKey,
+      allowedToolNames: source.allowedToolNames,
+      requestedMcpToolNames: source.requestedMcpToolNames,
+      changelog: `Restored version ${source.version}`,
+      createdById: params.userId,
+    });
+
+    await tx
+      .update(skills)
+      .set({ currentVersionId: versionId, updatedAt: new Date() })
+      .where(eq(skills.id, params.skillId));
+  });
+
+  return { versionId, version };
+}

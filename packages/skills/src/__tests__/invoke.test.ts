@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildSkillPrompt, missingVariables, neutralise, type InvocableSkill } from '../invoke';
+import {
+  buildSkillPrompt,
+  formatVariables,
+  missingVariables,
+  neutralise,
+  parseVariables,
+  type InvocableSkill,
+} from '../invoke';
 import { handleProblem, parseMentions, stripMention, toHandle } from '../handles';
 
 const skill = (over: Partial<InvocableSkill> = {}): InvocableSkill => ({
@@ -242,5 +249,52 @@ describe('missingVariables', () => {
 
   it('returns nothing for a skill that declares no variables', () => {
     expect(missingVariables(skill(), 'anything')).toEqual([]);
+  });
+});
+
+describe('parseVariables', () => {
+  it('parses a name and description', () => {
+    expect(parseVariables('topic — what to write about')).toEqual([
+      { name: 'topic', required: false, description: 'what to write about' },
+    ]);
+  });
+
+  it('marks a trailing asterisk as required', () => {
+    expect(parseVariables('topic* — required thing')[0]?.required).toBe(true);
+  });
+
+  // An author writing a bare list should get variables, not an error.
+  it('accepts bare names', () => {
+    expect(parseVariables('topic\naudience').map((v) => v.name)).toEqual(['topic', 'audience']);
+  });
+
+  it('tolerates list bullets', () => {
+    expect(parseVariables('- topic\n* audience').map((v) => v.name)).toEqual([
+      'topic',
+      'audience',
+    ]);
+  });
+
+  it('ignores blank lines', () => {
+    expect(parseVariables('\n\ntopic\n\n')).toHaveLength(1);
+  });
+
+  it('drops duplicates case-insensitively', () => {
+    expect(parseVariables('topic\nTopic\nTOPIC')).toHaveLength(1);
+  });
+
+  it('caps the count', () => {
+    const many = Array.from({ length: 50 }, (_, i) => `var${i}`).join('\n');
+    expect(parseVariables(many)).toHaveLength(20);
+  });
+
+  it('round-trips through formatVariables', () => {
+    const source = 'topic* — what to write about\naudience — who reads it';
+    expect(formatVariables(parseVariables(source))).toBe(source);
+  });
+
+  it('returns nothing for empty input', () => {
+    expect(parseVariables('')).toEqual([]);
+    expect(parseVariables('   \n  ')).toEqual([]);
   });
 });
