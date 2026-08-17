@@ -12,6 +12,8 @@ import { connectServerAction, type McpFormState } from '@/app/(app)/settings/mcp
  * shared session.
  */
 export function ConnectServerForm() {
+  // Reopened automatically after a failure, so the error and the fields that
+  // caused it stay on screen together.
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<McpFormState, FormData>(
     connectServerAction,
@@ -63,6 +65,7 @@ export function ConnectServerForm() {
           <span className="text-xs font-medium text-text">Name</span>
           <input
             name="name"
+            defaultValue={state.submitted?.name}
             placeholder="My tools"
             className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus:border-accent"
           />
@@ -75,6 +78,7 @@ export function ConnectServerForm() {
             name="endpoint"
             required
             type="url"
+            defaultValue={state.submitted?.endpoint}
             placeholder="https://example.com/mcp"
             className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text outline-none placeholder:text-text-muted focus:border-accent"
           />

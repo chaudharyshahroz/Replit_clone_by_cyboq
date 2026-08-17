@@ -15,6 +15,13 @@ export interface McpFormState {
   readonly error?: string;
   readonly serverId?: string;
   readonly notice?: string;
+  /**
+   * Echoed back so a failed attempt does not discard what was typed.
+   *
+   * The credential is deliberately NOT included: re-rendering a secret into
+   * the HTML to save one paste is a bad trade.
+   */
+  readonly submitted?: { readonly name: string; readonly endpoint: string };
 }
 
 /** Turn any failure into a readable sentence without leaking internals. */
@@ -35,7 +42,8 @@ export async function connectServerAction(
   const endpoint = String(formData.get('endpoint') ?? '').trim();
   const credential = String(formData.get('credential') ?? '').trim();
 
-  if (!endpoint) return { error: 'Enter the server endpoint URL.' };
+  const submitted = { name, endpoint };
+  if (!endpoint) return { error: 'Enter the server endpoint URL.', submitted };
 
   try {
     const connected = await connectServer({
@@ -52,7 +60,7 @@ export async function connectServerAction(
     };
   } catch (error) {
     logger.warn('MCP connection failed', { error });
-    return { error: toMessage(error, 'That server could not be connected.') };
+    return { error: toMessage(error, 'That server could not be connected.'), submitted };
   }
 }
 

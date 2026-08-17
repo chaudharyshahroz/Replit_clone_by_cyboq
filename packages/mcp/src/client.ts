@@ -103,6 +103,46 @@ async function safeEndpoint(endpoint: string): Promise<URL> {
   }
 }
 
+/**
+ * Turn a status code into something the user can act on.
+ *
+ * "The server returned HTTP 401" is accurate and useless: it names the symptom
+ * and leaves the person staring at a form with no idea which field is wrong.
+ * Each of these says what the server wanted instead.
+ */
+function describeHttpFailure(status: number, url: URL): string {
+  switch (status) {
+    case 401:
+      return (
+        'The server requires authentication and rejected the request (401). ' +
+        'Add an Authorization header below — usually "Bearer <token>". ' +
+        'If the server uses OAuth rather than a token, Reklu cannot connect to it yet.'
+      );
+    case 403:
+      return (
+        'The server accepted the credential but refused access (403). ' +
+        'The token may lack the scope needed to list tools.'
+      );
+    case 404:
+      return (
+        `Nothing is listening at ${url.pathname} (404). ` +
+        'Check the path — MCP endpoints commonly end in /mcp or /sse.'
+      );
+    case 405:
+      return (
+        'That URL rejected a POST (405), so it is probably not an MCP endpoint. ' +
+        'MCP servers accept JSON-RPC over POST.'
+      );
+    case 429:
+      return 'The server is rate limiting Reklu (429). Wait a moment and try again.';
+    default:
+      if (status >= 500) {
+        return `The server failed while handling the request (HTTP ${status}). This is a problem on their side.`;
+      }
+      return `The server rejected the request (HTTP ${status}).`;
+  }
+}
+
 async function rpc(
   options: McpClientOptions,
   method: string,
@@ -145,7 +185,7 @@ async function rpc(
   }
 
   if (!response.ok) {
-    throw new McpError('SERVER_ERROR', `The server returned HTTP ${response.status}.`);
+    throw new McpError('SERVER_ERROR', describeHttpFailure(response.status, url));
   }
 
   const text = await response.text();

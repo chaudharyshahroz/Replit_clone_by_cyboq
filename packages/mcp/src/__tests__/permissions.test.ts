@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:http';
 import { resetServerEnvCache } from '@reklu/shared';
 import {
   classifyTool,
@@ -466,5 +467,65 @@ describe('what may be offered to a model', () => {
     ] as const) {
       expect(decidePermission(offerable({ riskClass })).outcome).not.toBe('deny');
     }
+  });
+});
+
+/**
+ * Connection failures must say what to do, not just what happened.
+ *
+ * A real attempt returned "The server returned HTTP 401." — accurate, and
+ * useless: it names the symptom and leaves the person staring at a form with
+ * no idea which field is wrong.
+ */
+describe('connection failure messages', () => {
+  const server = (status: number) =>
+    createServer((_req, res) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
+
+  const messageFor = async (status: number): Promise<string> => {
+    const instance = server(status);
+    await new Promise<void>((resolve) => instance.listen(0, '127.0.0.1', resolve));
+    const port = (instance.address() as { port: number }).port;
+    try {
+      await listTools({ endpoint: `http://127.0.0.1:${port}/mcp` });
+      return 'no error';
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    } finally {
+      instance.close();
+    }
+  };
+
+  it('401 names the Authorization header', async () => {
+    const message = await messageFor(401);
+    expect(message).toMatch(/authentication/i);
+    expect(message).toMatch(/Authorization header/i);
+  });
+
+  it('403 distinguishes a bad scope from a missing credential', async () => {
+    expect(await messageFor(403)).toMatch(/scope/i);
+  });
+
+  it('404 suggests checking the path', async () => {
+    const message = await messageFor(404);
+    expect(message).toMatch(/\/mcp/);
+    expect(message).toMatch(/path/i);
+  });
+
+  it('405 says it is probably not an MCP endpoint', async () => {
+    expect(await messageFor(405)).toMatch(/not an MCP endpoint/i);
+  });
+
+  it('5xx attributes the failure to the server', async () => {
+    expect(await messageFor(503)).toMatch(/their side/i);
+  });
+
+  // Every message must be a sentence someone can act on, not a status code.
+  it.each([401, 403, 404, 405, 429, 503])('gives an actionable message for %s', async (status) => {
+    const message = await messageFor(status);
+    expect(message.length).toBeGreaterThan(30);
+    expect(message).not.toBe(`The server returned HTTP ${status}.`);
   });
 });
