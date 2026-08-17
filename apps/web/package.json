@@ -23,6 +23,7 @@
     "@reklu/research": "workspace:*",
     "@reklu/sandbox": "workspace:*",
     "@reklu/shared": "workspace:*",
+    "@reklu/skills": "workspace:*",
     "@reklu/storage": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.469.0",

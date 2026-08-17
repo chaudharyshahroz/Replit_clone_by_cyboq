@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { Sparkles } from 'lucide-react';
 import { db, skills, skillVersions } from '@reklu/database';
 import { getAppContext } from '@/lib/auth-context';
+import { SkillEditor } from '@/components/skills/skill-editor';
 
 export const metadata: Metadata = { title: 'Skills' };
 
@@ -20,7 +21,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 export default async function SkillsPage() {
-  await getAppContext();
+  const { workspace } = await getAppContext();
 
   const rows = await db
     .select({
@@ -36,7 +37,13 @@ export default async function SkillsPage() {
     })
     .from(skills)
     .leftJoin(skillVersions, eq(skills.currentVersionId, skillVersions.id))
-    .where(isNull(skills.deletedAt))
+    .where(
+      and(
+        isNull(skills.deletedAt),
+        // Built-ins have no workspace; a workspace never sees another's skills.
+        or(isNull(skills.workspaceId), eq(skills.workspaceId, workspace.workspaceId)),
+      ),
+    )
     .orderBy(asc(skills.category), asc(skills.name));
 
   const byCategory = new Map<string, typeof rows>();
@@ -54,6 +61,10 @@ export default async function SkillsPage() {
           Reusable AI expertise: instructions, worked examples, attached knowledge, a preferred
           model, and the tools a skill is allowed to use.
         </p>
+
+        <div className="mt-6">
+          <SkillEditor />
+        </div>
       </header>
 
       {rows.length === 0 ? (
@@ -62,7 +73,7 @@ export default async function SkillsPage() {
           <Sparkles className="mx-auto h-5 w-5 text-text-muted" strokeWidth={1.5} />
           <p className="mt-4 text-sm text-text">No Skills yet</p>
           <p className="mx-auto mt-2 max-w-sm text-sm text-text-secondary">
-            Install a Reklu Skill or create your own. Run <code>pnpm db:seed</code> to load the
+            Create your own with the button above, or run <code>pnpm db:seed</code> to load the
             built-in library.
           </p>
         </div>

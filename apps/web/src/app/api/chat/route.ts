@@ -38,6 +38,12 @@ import { loadAttachments } from '@/lib/files';
 import { buildAttachmentParts } from '@/lib/attachment-parts';
 import { assembleProjectContext, extractMemories, touchProject } from '@reklu/projects';
 import { createArtifact, detectArtifact } from '@reklu/artifacts';
+import {
+  buildSkillPrompt,
+  recordSkillUse,
+  resolveInvocation,
+  stripMention,
+} from '@reklu/skills';
 
 export const runtime = 'nodejs';
 // Streaming must never be cached or statically optimized.
@@ -145,6 +151,30 @@ export async function POST(request: Request): Promise<Response> {
         })
       : undefined;
 
+    /**
+     * Skills (spec §41). A saved instruction the user chose to apply, invoked
+     * with `@handle`.
+     *
+     * The skill block is a *user* message placed immediately before the
+     * request it modifies — never a system message. Skill text is authored by
+     * users, and a public skill by someone other than the person running it,
+     * so it is user-level instruction and `buildSkillPrompt` says so in the
+     * framing it wraps around it.
+     */
+    const invocation = await resolveInvocation(body.message, access.workspaceId);
+    const invokedSkill = invocation.skills[0];
+    const requestText = invokedSkill
+      ? stripMention(body.message, invokedSkill.handle)
+      : body.message;
+
+    if (invokedSkill) {
+      // Usage ordering in the library. Never worth failing a chat turn over,
+      // so a bookkeeping error is logged rather than thrown.
+      await recordSkillUse(invokedSkill.id, access.workspaceId).catch((error: unknown) => {
+        logger.warn('Could not record skill use', { error, skillId: invokedSkill.id });
+      });
+    }
+
     const history = conversation ? await loadHistory(conversation.id) : [];
     const modelMessages: ModelMessage[] = [
       ...(projectContext?.contextBlock
@@ -156,9 +186,19 @@ export async function POST(request: Request): Promise<Response> {
           ]
         : []),
       ...history,
+      ...(invokedSkill
+        ? [
+            {
+              role: 'user' as const,
+              content: [
+                { type: 'text' as const, text: buildSkillPrompt(invokedSkill).text },
+              ],
+            },
+          ]
+        : []),
       {
         role: 'user',
-        content: [{ type: 'text', text: body.message }, ...attachmentParts],
+        content: [{ type: 'text', text: requestText }, ...attachmentParts],
       },
     ];
 

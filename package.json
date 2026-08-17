@@ -37,7 +37,8 @@
     "verify:production-config": "pnpm --filter @reklu/database exec tsx ../shared/scripts/verify-production-config.mts",
     "verify:repo": "pnpm --filter @reklu/database exec tsx ../../scripts/verify-repo-integrity.mts",
     "verify:e2b": "pnpm --filter @reklu/sandbox exec tsx scripts/verify-e2b.mts",
-    "verify:oauth": "pnpm --filter @reklu/auth exec tsx scripts/verify-oauth.mts"
+    "verify:oauth": "pnpm --filter @reklu/auth exec tsx scripts/verify-oauth.mts",
+    "verify:skills": "pnpm --filter @reklu/skills exec tsx scripts/verify.mts"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
