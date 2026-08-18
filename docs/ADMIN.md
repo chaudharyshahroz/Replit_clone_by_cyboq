@@ -38,11 +38,26 @@ version of this file read it and silently did nothing in production:
 admin.reklu.app served the marketing page and no log said why. The `admin`
 label is now the rule, which needs no build-time coupling.
 
-4. Promote yourself. There is no code path that grants admin — deliberately, because
-   a UI that can grant admin is a UI that can be tricked into granting it:
+4. Promote yourself. There is no product feature that grants admin —
+   deliberately, because a UI that can grant admin is a UI that can be tricked
+   into granting it. On the VPS:
 
-```sql
-UPDATE users SET is_super_admin = true WHERE email_normalized = 'you@example.com';
+```bash
+docker exec reklu-reklu-app-wab4ty-web-1 \
+  sh -c 'cd /app/packages/database && ./node_modules/.bin/tsx scripts/promote-admin.mts you@example.com'
+```
+
+The script runs where the database URL already lives, so there is no psql
+invocation to remember and no password on a command line. It refuses an unknown
+address by listing the accounts that do exist, is idempotent, will not remove
+the last administrator, and writes the same audit row the panel does.
+
+Raw SQL still works if you prefer it — note it must run against **Postgres**,
+not the web container, which has no `psql`:
+
+```bash
+docker exec reklu-reklu-app-wab4ty-postgres-1 psql -U reklu -d reklu \
+  -c "UPDATE users SET is_super_admin = true WHERE email_normalized = 'you@example.com';"
 ```
 
 ## Sections

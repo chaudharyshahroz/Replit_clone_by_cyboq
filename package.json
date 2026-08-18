@@ -43,7 +43,8 @@
     "verify:security": "tsx scripts/verify-security.mts",
     "verify:a11y": "tsx scripts/verify-a11y.mts",
     "verify:perf": "tsx scripts/verify-perf.mts",
-    "verify:all": "pnpm verify:repo && pnpm verify:a11y && pnpm verify:perf && pnpm verify:security"
+    "verify:all": "pnpm verify:repo && pnpm verify:a11y && pnpm verify:perf && pnpm verify:security",
+    "admin:promote": "pnpm --filter @reklu/database exec tsx scripts/promote-admin.mts"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",
