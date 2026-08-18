@@ -57,7 +57,7 @@ const FEATURES: readonly {
 export function Features() {
   return (
     <section id="features" className="scroll-mt-20 border-t border-border py-24">
-      <div className="mx-auto max-w-6xl px-6">
+      <div className="reveal mx-auto max-w-6xl px-6">
         <div className="max-w-2xl">
           <p className="text-sm font-medium text-accent">Capabilities</p>
           <h2 className="display mt-4 text-4xl text-text sm:text-5xl">

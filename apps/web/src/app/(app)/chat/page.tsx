@@ -8,8 +8,13 @@ import { getAppContext } from '@/lib/auth-context';
 export const metadata: Metadata = { title: 'Chat' };
 export const dynamic = 'force-dynamic';
 
-export default async function ChatPage() {
+export default async function ChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const { workspace } = await getAppContext();
+  const { q } = await searchParams;
 
   const [registry, planRow] = await Promise.all([
     loadRegistry(),
@@ -37,6 +42,9 @@ export default async function ChatPage() {
     <ChatView
       models={models}
       initialMessages={[]}
+      // Carried from the landing page, capped so a crafted link cannot paste an
+      // unbounded string into a new account's composer.
+      initialInput={q?.slice(0, 2_000)}
       devMockActive={shouldUseDevelopmentMock()}
     />
   );

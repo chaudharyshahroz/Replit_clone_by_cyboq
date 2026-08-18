@@ -28,8 +28,8 @@ const UNIFIED = [
 export function Unify() {
   return (
     <section id="why" className="scroll-mt-20 border-t border-border bg-surface/30 py-24">
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="mx-auto max-w-2xl text-center">
+      <div className="reveal mx-auto max-w-6xl px-6">
+        <div className="reveal mx-auto max-w-2xl text-center">
           <h2 className="display text-4xl text-text sm:text-5xl">
             Six subscriptions, or one workspace.
           </h2>
@@ -97,7 +97,7 @@ export function Unify() {
 export function FinalCta() {
   return (
     <section id="start" className="scroll-mt-20 border-t border-border py-28">
-      <div className="mx-auto max-w-2xl px-6 text-center">
+      <div className="reveal mx-auto max-w-2xl px-6 text-center">
         <h2 className="display text-4xl text-text sm:text-5xl">
           Chat. Research. Create. Build. Ship.
         </h2>

@@ -4,6 +4,7 @@ import { SocialSignIn } from '@/components/auth/social-sign-in';
 import { redirect } from 'next/navigation';
 import { features } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
+import { safeNext } from '@/lib/safe-next';
 import { SignUpForm } from './form';
 
 export const metadata: Metadata = { title: 'Create your account' };
@@ -13,9 +14,15 @@ export default async function SignUpPage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  if (await getSession()) redirect('/home');
-
   const { next } = await searchParams;
+
+  /**
+   * An already-signed-in visitor still goes where they were heading.
+   * Redirecting to /home instead would silently discard the question someone
+   * typed on the landing page, which is the one thing this flow exists to
+   * preserve.
+   */
+  if (await getSession()) redirect(safeNext(next));
   const available = features();
 
   return (

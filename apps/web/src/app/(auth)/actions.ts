@@ -2,6 +2,7 @@
 
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { safeNext } from '@/lib/safe-next';
 import {
   authenticate,
   createSession,
@@ -17,16 +18,6 @@ export interface AuthFormState {
   readonly fieldErrors?: Record<string, string[]>;
 }
 
-/**
- * Only allow relative, single-slash paths as a post-sign-in destination.
- * `//evil.com` and `https://evil.com` are absolute in a browser, so rejecting
- * them here is what stops an open redirect.
- */
-function safeNext(value: FormDataEntryValue | null): string {
-  const next = typeof value === 'string' ? value : '';
-  if (!next.startsWith('/') || next.startsWith('//')) return '/home';
-  return next;
-}
 
 async function requestContext() {
   const headerList = await headers();

@@ -228,6 +228,25 @@ body {
 }
 
 /* Spec §99: honour a reduced-motion preference rather than merely shortening. */
+/**
+ * Scroll-triggered reveal.
+ *
+ * Uses `animation-timeline: view()` rather than an IntersectionObserver: it is
+ * declarative, costs no JavaScript, and degrades to simply-visible content in
+ * browsers without support — which is the correct failure, since the content
+ * matters and the motion does not.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reklu-rise 0.8s var(--ease-out-quint) both;
+      animation-timeline: view();
+      /* Finishes well before the element centres, so reading is never blocked. */
+      animation-range: entry 0% cover 32%;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -237,6 +256,10 @@ body {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+  .reveal {
+    animation: none;
+  }
+
   .rise {
     opacity: 1;
     transform: none;

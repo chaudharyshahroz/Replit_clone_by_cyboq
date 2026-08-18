@@ -195,16 +195,26 @@ function ModelSelector({
 export function ChatView({
   models,
   initialMessages,
+  initialInput,
   initialConversationId,
   devMockActive,
 }: {
   models: readonly SelectableModel[];
   initialMessages: readonly ChatMessage[];
+  /**
+   * Prefilled composer text, carried from the landing page.
+   *
+   * The question is placed in the box rather than sent, so the first thing a
+   * new account does is still a deliberate act — arriving to find a request
+   * already in flight would be startling, and it would spend their quota
+   * before they had chosen to.
+   */
+  initialInput?: string;
   initialConversationId?: string | undefined;
   devMockActive: boolean;
 }) {
   const [messages, setMessages] = useState<readonly ChatMessage[]>(initialMessages);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialInput ?? '');
   const [modelKey, setModelKey] = useState('auto');
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
