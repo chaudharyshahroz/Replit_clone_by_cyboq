@@ -90,6 +90,27 @@ const serverSchema = z.object({
     .url('APP_URL must be an absolute URL, e.g. http://localhost:3000')
     .transform((v) => v.replace(/\/$/, '')),
   APP_NAME: z.string().trim().default('Reklu'),
+  /**
+   * Host that serves the admin panel, e.g. `admin.reklu.app`.
+   *
+   * When set, admin lives ONLY there: the main host refuses /admin outright,
+   * and the admin host serves nothing else. Two surfaces on one deployment,
+   * which keeps an XSS in the product away from the admin routes without a
+   * second container to operate.
+   *
+   * Unset means admin stays at /admin on the main host, which is right for
+   * development where there is only one hostname.
+   */
+  ADMIN_HOST: optionalString,
+  /**
+   * Domain for the session cookie, e.g. `.reklu.app`.
+   *
+   * Required when ADMIN_HOST is a subdomain: a cookie set for `reklu.app`
+   * without this is host-only and never reaches `admin.reklu.app`, so an
+   * admin would appear signed out. Leave unset for a single host — a
+   * needlessly broad cookie domain widens where the session can travel.
+   */
+  SESSION_COOKIE_DOMAIN: optionalString,
   LOG_LEVEL: enumWithDefault(['trace', 'debug', 'info', 'warn', 'error'], 'info'),
 
   // ---- Database ------------------------------------------------------------

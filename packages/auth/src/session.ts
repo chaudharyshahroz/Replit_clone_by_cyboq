@@ -36,6 +36,12 @@ export interface CookieAttributes {
   readonly secure: boolean;
   readonly path: '/';
   readonly expires: Date;
+  /**
+   * Set only when the deployment serves more than one host, so the session
+   * reaches admin.reklu.app as well as reklu.app. Left undefined otherwise:
+   * a broader cookie domain is a wider blast radius for no benefit.
+   */
+  readonly domain?: string | undefined;
 }
 
 function cookieAttributes(token: string, expires: Date): CookieAttributes {
@@ -50,6 +56,9 @@ function cookieAttributes(token: string, expires: Date): CookieAttributes {
     secure: loadServerEnv().APP_URL.startsWith('https://'),
     path: '/',
     expires,
+    ...(loadServerEnv().SESSION_COOKIE_DOMAIN
+      ? { domain: loadServerEnv().SESSION_COOKIE_DOMAIN }
+      : {}),
   };
 }
 
