@@ -1,31 +1,29 @@
 import Link from 'next/link';
 import { Wordmark } from '@/components/brand/logo';
 
+/**
+ * Only destinations that exist.
+ *
+ * This previously listed Overview, Integrations, Enterprise, Security, About,
+ * Pricing, Terms and Privacy — every one a 404 — plus Research, Build and
+ * Skills, which are app routes that bounce a logged-out visitor to sign-in.
+ * Twelve of thirteen footer links went nowhere. `verify:links` now fails the
+ * build if a marketing link stops resolving.
+ */
 const COLUMNS = [
   {
     heading: 'Product',
     links: [
-      { href: '/product', label: 'Overview' },
-      { href: '/research', label: 'Research' },
-      { href: '/build', label: 'Build' },
-      { href: '/skills', label: 'Skills' },
-      { href: '/integrations', label: 'Integrations' },
+      { href: '#how', label: 'How it works' },
+      { href: '#features', label: 'Features' },
+      { href: '#why', label: 'Why Reklu' },
     ],
   },
   {
-    heading: 'Company',
+    heading: 'Get started',
     links: [
-      { href: '/pricing', label: 'Pricing' },
-      { href: '/enterprise', label: 'Enterprise' },
-      { href: '/security', label: 'Security' },
-      { href: '/about', label: 'About' },
-    ],
-  },
-  {
-    heading: 'Legal',
-    links: [
-      { href: '/terms', label: 'Terms' },
-      { href: '/privacy', label: 'Privacy' },
+      { href: '/signup', label: 'Create account' },
+      { href: '/login', label: 'Sign in' },
     ],
   },
 ] as const;
@@ -34,7 +32,7 @@ export function Footer() {
   return (
     <footer className="border-t border-border bg-surface/30">
       <div className="mx-auto max-w-6xl px-6 py-16">
-        <div className="grid gap-12 md:grid-cols-[2fr_1fr_1fr_1fr]">
+        <div className="grid gap-12 md:grid-cols-[2fr_1fr_1fr]">
           <div>
             <Wordmark />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-text-secondary">
@@ -51,16 +49,21 @@ export function Footer() {
                 {column.heading}
               </h2>
               <ul className="mt-4 space-y-2.5">
-                {column.links.map((link) => (
-                  <li key={link.href}>
-                    <Link
-                      href={link.href}
-                      className="rounded text-sm text-text-secondary transition-colors hover:text-text"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
+                {column.links.map((link) => {
+                  // Fragments use a native anchor; routes use next/link.
+                  // See the note in nav.tsx.
+                  const Tag = link.href.startsWith('#') ? 'a' : Link;
+                  return (
+                    <li key={link.href}>
+                      <Tag
+                        href={link.href}
+                        className="rounded text-sm text-text-secondary transition-colors hover:text-text"
+                      >
+                        {link.label}
+                      </Tag>
+                    </li>
+                  );
+                })}
               </ul>
             </nav>
           ))}

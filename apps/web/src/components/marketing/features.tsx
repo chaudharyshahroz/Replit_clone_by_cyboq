@@ -1,5 +1,6 @@
 import {
   Blocks,
+  Bot,
   Boxes,
   FolderKanban,
   Layers,
@@ -25,32 +26,37 @@ const FEATURES: readonly {
   {
     icon: Telescope,
     title: 'Deep Research',
-    body: 'Find, analyse and understand information with real sources and verifiable citations.',
+    body: 'Real sources with citations checked against what was actually retrieved. A claim Reklu cannot source is removed, not softened.',
   },
   {
     icon: Blocks,
     title: 'Build anything',
-    body: 'Websites, web apps and mobile apps — generated, previewed, and edited by conversation.',
+    body: 'Websites and apps, generated and previewed live. Generated code runs isolated — never on Reklu.',
   },
   {
     icon: Wand2,
     title: 'Create',
-    body: 'Documents, presentations, images and video, all reusable across your projects.',
+    body: 'Documents, slide decks and images — exported as real .docx and .pptx files, not screenshots.',
+  },
+  {
+    icon: Bot,
+    title: 'Agents',
+    body: 'Give Reklu an objective. It plans the steps, shows you the plan, and asks before anything changes data.',
   },
   {
     icon: FolderKanban,
     title: 'Projects',
-    body: 'Persistent context for everything you are working on: files, memory, research and builds.',
+    body: 'Files, memory and history that persist across chats — so you stop re-explaining yourself every session.',
   },
   {
     icon: Boxes,
     title: 'Skills',
-    body: 'Reusable AI expertise you can install, create, and share with your team.',
+    body: 'Save an instruction once, invoke it anywhere with @handle. Versioned, so improving one never breaks someone mid-task.',
   },
   {
     icon: Plug,
     title: 'Connections',
-    body: 'Let Reklu work with the tools you already use — GitHub, Vercel, Supabase, and any MCP server.',
+    body: 'GitHub, Vercel, Supabase and any MCP server. Every tool arrives switched off, and anything that changes data asks first.',
   },
 ];
 

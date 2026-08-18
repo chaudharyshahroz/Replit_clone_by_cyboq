@@ -50,8 +50,23 @@ export function ButtonLink({
   children,
   ...rest
 }: CommonProps & ComponentProps<typeof Link>) {
+  const classes = `${BASE} ${VARIANTS[variant]} ${SIZES[size]} ${className}`;
+
+  /**
+   * A same-page fragment gets a native anchor: jumping within the current page
+   * is not a navigation, so it does not need the client router.
+   */
+  if (typeof rest.href === 'string' && rest.href.startsWith('#')) {
+    const { href, ...anchorProps } = rest;
+    return (
+      <a href={href} className={classes} {...(anchorProps as ComponentProps<'a'>)}>
+        {children}
+      </a>
+    );
+  }
+
   return (
-    <Link className={`${BASE} ${VARIANTS[variant]} ${SIZES[size]} ${className}`} {...rest}>
+    <Link className={classes} {...rest}>
       {children}
     </Link>
   );

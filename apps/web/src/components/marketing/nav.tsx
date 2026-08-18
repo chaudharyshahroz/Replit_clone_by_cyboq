@@ -3,11 +3,17 @@ import { Wordmark } from '@/components/brand/logo';
 import { ButtonLink } from '@/components/ui/button';
 
 const LINKS = [
-  { href: '/product', label: 'Product' },
-  { href: '/research', label: 'Research' },
-  { href: '/build', label: 'Build' },
-  { href: '/skills', label: 'Skills' },
-  { href: '/pricing', label: 'Pricing' },
+  /**
+   * Every link points somewhere that exists.
+   *
+   * These previously went to /product, /pricing and the app's own /research and
+   * /build — six 404s and three redirects to sign-in for anyone not logged in.
+   * A nav that does not go where it says is the dead control the spec forbids
+   * (§25), and it sat on the most-visited page in the product.
+   */
+  { href: '#how', label: 'How it works' },
+  { href: '#features', label: 'Features' },
+  { href: '#why', label: 'Why Reklu' },
 ] as const;
 
 export function Nav() {
@@ -22,14 +28,20 @@ export function Nav() {
         </Link>
 
         <ul className="hidden items-center gap-1 md:flex">
+          {/*
+            A plain <a>, not next/link: a jump within this page is not a
+            navigation, and native anchor scrolling handles it without the
+            client router. It honours scroll-mt-20 on each target, which is
+            what stops the sticky header covering the heading.
+          */}
           {LINKS.map((link) => (
             <li key={link.href}>
-              <Link
+              <a
                 href={link.href}
                 className="rounded-md px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text"
               >
                 {link.label}
-              </Link>
+              </a>
             </li>
           ))}
         </ul>

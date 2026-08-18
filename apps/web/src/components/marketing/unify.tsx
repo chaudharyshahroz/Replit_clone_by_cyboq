@@ -109,8 +109,15 @@ export function FinalCta() {
             Start with Reklu
             <ArrowRight className="h-4 w-4" strokeWidth={2} />
           </ButtonLink>
-          <ButtonLink href="/pricing" variant="secondary" size="lg">
-            See pricing
+          {/*
+            This said "See pricing" and pointed at /pricing, which does not
+            exist — and cannot honestly be built yet, because plan prices live
+            in Whop rather than in this repository. Inventing numbers for the
+            page would be the fabricated detail the spec forbids, so the second
+            action is one that is true today.
+          */}
+          <ButtonLink href="#how" variant="secondary" size="lg">
+            See how it works
           </ButtonLink>
         </div>
       </div>
