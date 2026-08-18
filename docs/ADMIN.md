@@ -1,6 +1,7 @@
 # Admin panel
 
-Lives on its own host. `ADMIN_HOST=admin.reklu.app` means:
+Lives on its own host. Any hostname whose first label is `admin` — so
+`admin.reklu.app` — is the admin host:
 
 - `admin.reklu.app` serves **only** `/admin` — its root redirects there, and a
   product path bounces to the main site.
@@ -23,14 +24,19 @@ misconfigured, so it is never the only thing in the way.
 3. Environment:
 
 ```
-ADMIN_HOST=admin.reklu.app
 SESSION_COOKIE_DOMAIN=.reklu.app
 ```
 
-`SESSION_COOKIE_DOMAIN` is not optional here. A cookie set for `reklu.app` is
-host-only and never reaches a subdomain, so an administrator would land on the
-admin host signed out with no way to fix it. Startup refuses the combination
-rather than letting you discover it.
+**This one is not optional.** A cookie set for `reklu.app` is host-only and
+never reaches a subdomain, so without it an administrator lands on the admin
+host signed out with no way to fix it.
+
+`ADMIN_HOST` is optional and documents intent; routing does not read it.
+Middleware runs on the edge runtime, where `process.env` is inlined at *build*
+time — a value supplied at runtime by Compose is `undefined` there. The first
+version of this file read it and silently did nothing in production:
+admin.reklu.app served the marketing page and no log said why. The `admin`
+label is now the rule, which needs no build-time coupling.
 
 4. Promote yourself. There is no code path that grants admin — deliberately, because
    a UI that can grant admin is a UI that can be tricked into granting it:

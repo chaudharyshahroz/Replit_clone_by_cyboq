@@ -24,22 +24,48 @@ function isShared(pathname: string): boolean {
   return SHARED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
-export function middleware(request: NextRequest): NextResponse {
-  /**
-   * Read from the env at request time rather than module scope.
-   *
-   * Middleware runs on the edge runtime, where `loadServerEnv` (Node crypto,
-   * zod, a database import chain) is not available. Reading the one variable
-   * directly keeps this file free of that dependency.
-   */
-  const adminHost = process.env.ADMIN_HOST?.trim().toLowerCase();
-  if (!adminHost) return NextResponse.next();
+/**
+ * Whether a request arrived on the admin host.
+ *
+ * Decided from the hostname itself rather than from `ADMIN_HOST`, and that is
+ * deliberate. Middleware runs on the edge runtime, where `process.env` is
+ * INLINED AT BUILD TIME — so a variable supplied at runtime by Compose is
+ * `undefined` here no matter what the operator sets. The first attempt at this
+ * file read `process.env.ADMIN_HOST` and silently did nothing in production:
+ * admin.reklu.app served the marketing page, and nothing in any log said why.
+ *
+ * A convention needs no build-time coupling and cannot be misconfigured: the
+ * `admin` label is the admin host. `ADMIN_HOST` still exists for the cookie
+ * check and the docs, but routing no longer depends on reading it here.
+ */
+function isAdminHost(host: string): boolean {
+  const [label] = host.split('.');
+  return label === 'admin';
+}
 
+export function middleware(request: NextRequest): NextResponse {
   // `host` may carry a port in development; compare the hostname only.
   const host = (request.headers.get('host') ?? '').toLowerCase().split(':')[0] ?? '';
   const { pathname } = request.nextUrl;
 
-  if (host === adminHost) {
+  /**
+   * A single-host deployment has no admin subdomain, so nothing is rewritten
+   * and /admin stays reachable on the one host — which is what development
+   * needs.
+   */
+  if (!isAdminHost(host)) {
+    if (pathname.startsWith('/admin') && host.split('.').length > 2) {
+      /**
+       * A multi-label host that is NOT the admin host must not serve /admin.
+       * Rewritten to the 404 rather than redirected: a redirect to the admin
+       * host would confirm one exists.
+       */
+      return NextResponse.rewrite(new URL('/_not-found', request.url));
+    }
+    return NextResponse.next();
+  }
+
+  {
     // The admin host's root is the admin panel, not the product home.
     if (pathname === '/') {
       return NextResponse.redirect(new URL('/admin', request.url));
@@ -50,26 +76,13 @@ export function middleware(request: NextRequest): NextResponse {
     }
 
     /**
-     * A product path on the admin host is sent to the product rather than
-     * 404'd, so a stray link is useful instead of broken.
+     * A product path on the admin host goes to the admin panel rather than
+     * being rewritten to the product, because reaching the product would need
+     * the product's hostname — which this file deliberately no longer reads
+     * from the environment.
      */
-    const appUrl = process.env.APP_URL;
-    if (appUrl) {
-      return NextResponse.redirect(new URL(pathname, appUrl));
-    }
     return NextResponse.redirect(new URL('/admin', request.url));
   }
-
-  /**
-   * On the product host, admin does not exist. Rewriting to the 404 rather
-   * than redirecting means the response is indistinguishable from any other
-   * missing page — a redirect to the admin host would confirm one exists.
-   */
-  if (pathname.startsWith('/admin')) {
-    return NextResponse.rewrite(new URL('/_not-found', request.url));
-  }
-
-  return NextResponse.next();
 }
 
 export const config = {

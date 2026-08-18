@@ -11,7 +11,7 @@ import {
   users,
   workspaces,
 } from '@reklu/database';
-import { getAppContext } from '@/lib/auth-context';
+import { getAppContext, requireUser } from '@/lib/auth-context';
 
 /**
  * Gate every admin surface (spec §78).
@@ -24,6 +24,15 @@ import { getAppContext } from '@/lib/auth-context';
  * error page confirming an admin area exists.
  */
 export async function requireSuperAdmin(): Promise<{ userId: string }> {
+  /**
+   * `requireUser` is called directly, with a return path.
+   *
+   * `getAppContext()` is cached with no arguments and used in ~20 places, so
+   * threading a destination through it would change every call site. Signing
+   * in on the admin host otherwise lands the operator on the product home —
+   * on a host that serves nothing else, leaving them stuck.
+   */
+  await requireUser('/admin');
   const { user } = await getAppContext();
 
   const [row] = await db
