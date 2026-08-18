@@ -656,9 +656,15 @@ one part that calls a model — is still only covered by unit tests.
 
 **Not verified:** no live Whop delivery received and no payment taken.
 
-**Accessibility and performance** have not had a dedicated pass. Semantic
-markup, focus styles and `aria-*` states were written as the components were
-built, but nothing has been measured — no axe run, no Lighthouse budget.
+**Accessibility** — axe runs against the served HTML of `/`, `/login` and
+`/signup` via `pnpm verify:a11y`. No serious or critical violations. Colour
+contrast, focus visibility and target size are **not** covered: jsdom applies
+no stylesheet and does no layout, so those rules need a real browser. That is
+a real gap, stated rather than papered over.
+
+**Performance** — `pnpm verify:perf` holds a client-JS budget (763 KB against
+1.6 MB), response times, and compression. No Lighthouse run: it needs a
+browser, and the numbers that matter most here are already covered.
 
 The database was deliberately built ahead of the application layer so features
 grow against a stable ownership and tenancy model rather than adding tables ad
@@ -716,6 +722,9 @@ pnpm verify:preview              # 14 live checks
 pnpm verify:production-config    # 17 checks on .env.production.example
 pnpm verify:repo                 # a fresh clone contains what the build needs
 pnpm verify:security             # headers, disclosure and auth, against a live origin
+pnpm verify:a11y                 # axe against served HTML
+pnpm verify:perf                 # JS budget, response time, compression
+pnpm verify:all                  # all four
 pnpm verify:e2b                  # live microVM checks (needs E2B_API_KEY)
 pnpm verify:oauth                # sign-in account linking, against the real DB
 pnpm verify:skills               # authoring, versioning, cross-workspace isolation

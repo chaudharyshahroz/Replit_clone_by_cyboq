@@ -14,7 +14,6 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:e2e": "pnpm --filter @reklu/web test:e2e",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @reklu/database db:generate",
     "db:migrate": "pnpm --filter @reklu/database db:migrate",
@@ -35,17 +34,24 @@
     "verify:build": "pnpm --filter @reklu/build exec tsx scripts/verify.mts",
     "verify:preview": "pnpm --filter @reklu/build exec tsx scripts/verify-preview.mts",
     "verify:production-config": "pnpm --filter @reklu/database exec tsx ../shared/scripts/verify-production-config.mts",
-    "verify:repo": "pnpm --filter @reklu/database exec tsx ../../scripts/verify-repo-integrity.mts",
+    "verify:repo": "tsx scripts/verify-repo-integrity.mts",
     "verify:e2b": "pnpm --filter @reklu/sandbox exec tsx scripts/verify-e2b.mts",
     "verify:oauth": "pnpm --filter @reklu/auth exec tsx scripts/verify-oauth.mts",
     "verify:skills": "pnpm --filter @reklu/skills exec tsx scripts/verify.mts",
     "verify:mcp": "pnpm --filter @reklu/mcp exec tsx scripts/verify.mts",
     "verify:agents": "pnpm --filter @reklu/agents exec tsx scripts/verify.mts",
-    "verify:security": "pnpm --filter @reklu/database exec tsx ../../scripts/verify-security.mts"
+    "verify:security": "tsx scripts/verify-security.mts",
+    "verify:a11y": "tsx scripts/verify-a11y.mts",
+    "verify:perf": "tsx scripts/verify-perf.mts",
+    "verify:all": "pnpm verify:repo && pnpm verify:a11y && pnpm verify:perf && pnpm verify:security"
   },
   "devDependencies": {
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.10.5",
+    "axe-core": "^4.13.0",
+    "jsdom": "^25.0.1",
     "prettier": "^3.4.2",
+    "tsx": "^4.23.12",
     "turbo": "^2.10.10",
     "typescript": "^5.7.3"
   }
