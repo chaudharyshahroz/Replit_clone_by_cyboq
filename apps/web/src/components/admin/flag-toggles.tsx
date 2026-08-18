@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setFeatureFlag } from '@/app/(app)/admin/actions';
+import { setFeatureFlag } from '@/app/(admin)/admin/actions';
 
 interface Flag {
   readonly key: string;

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setPlanPublic } from '@/app/(app)/admin/actions';
+import { setPlanPublic } from '@/app/(admin)/admin/actions';
 
 interface Plan {
   readonly id: string;

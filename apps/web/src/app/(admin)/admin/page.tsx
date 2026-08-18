@@ -13,6 +13,10 @@ export default async function AdminOverviewPage() {
 
   return (
     <div className="space-y-8">
+      <header>
+        <h1 className="display text-2xl text-text">Overview</h1>
+      </header>
+
       <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Users" value={stats.users.toLocaleString()} />
         <Stat label="Workspaces" value={stats.workspaces.toLocaleString()} />

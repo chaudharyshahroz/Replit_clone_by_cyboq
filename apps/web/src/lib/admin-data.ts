@@ -1,16 +1,22 @@
 import 'server-only';
 import { and, count, desc, eq, gte, ilike, or, sql } from 'drizzle-orm';
 import {
+  agentRuns,
   aiModels,
   aiProviders,
+  artifacts,
   auditLogs,
+  buildProjects,
   conversations,
   db,
   jobs,
   messages,
   plans,
+  researchSessions,
   sessions,
+  skills,
   subscriptions,
+  toolExecutions,
   usageLedger,
   users,
   workspaceMembers,
@@ -339,4 +345,183 @@ export async function adminAuditTrail(limit = 40) {
     .where(eq(auditLogs.isAdminAction, true))
     .orderBy(desc(auditLogs.createdAt))
     .limit(limit);
+}
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+/**
+ * What Reklu can honestly report.
+ *
+ * There is no page-view collector, no referrer and no visitor tracking — the
+ * product records what people *did*, not what they browsed. So "traffic" here
+ * means real activity: turns taken, features used, money spent. Inventing
+ * pageviews from server logs would be a different, weaker number wearing a
+ * familiar name.
+ */
+
+export interface FeatureUsage {
+  readonly feature: string;
+  readonly total: number;
+  readonly last7: number;
+}
+
+export async function featureUsage(): Promise<FeatureUsage[]> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const pairs = [
+    ['Conversations', conversations, conversations.createdAt],
+    ['Messages', messages, messages.createdAt],
+    ['Artifacts', artifacts, artifacts.createdAt],
+    ['Research runs', researchSessions, researchSessions.createdAt],
+    ['Agent runs', agentRuns, agentRuns.createdAt],
+    ['Build projects', buildProjects, buildProjects.createdAt],
+    ['Skills', skills, skills.createdAt],
+    ['Tool calls', toolExecutions, toolExecutions.createdAt],
+  ] as const;
+
+  return Promise.all(
+    pairs.map(async ([feature, table, column]) => {
+      const [all] = await db.select({ value: count() }).from(table);
+      const [recent] = await db.select({ value: count() }).from(table).where(gte(column, weekAgo));
+      return { feature, total: all?.value ?? 0, last7: recent?.value ?? 0 };
+    }),
+  );
+}
+
+export interface ModelShare {
+  readonly modelKey: string;
+  readonly calls: number;
+  readonly costUsd: number;
+}
+
+/** Which models the platform actually leans on. */
+export async function modelShare(days = 30): Promise<ModelShare[]> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      modelKey: usageLedger.modelKey,
+      calls: count(),
+      costUsd: sql<string>`coalesce(sum(${usageLedger.estimatedCostUsd}), 0)`,
+    })
+    .from(usageLedger)
+    .where(gte(usageLedger.createdAt, since))
+    .groupBy(usageLedger.modelKey)
+    .orderBy(desc(count()));
+
+  return rows.map((row) => ({
+    modelKey: row.modelKey ?? 'unknown',
+    calls: Number(row.calls),
+    costUsd: Number(row.costUsd),
+  }));
+}
+
+export interface DailyCost {
+  readonly day: string;
+  readonly costUsd: number;
+}
+
+export async function dailyCost(days = 30): Promise<DailyCost[]> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      day: sql<string>`date_trunc('day', ${usageLedger.createdAt})::date::text`,
+      costUsd: sql<string>`coalesce(sum(${usageLedger.estimatedCostUsd}), 0)`,
+    })
+    .from(usageLedger)
+    .where(gte(usageLedger.createdAt, since))
+    .groupBy(sql`date_trunc('day', ${usageLedger.createdAt})`);
+
+  const byDay = new Map<string, number>();
+  for (let index = days - 1; index >= 0; index--) {
+    byDay.set(new Date(Date.now() - index * 86_400_000).toISOString().slice(0, 10), 0);
+  }
+  for (const row of rows) {
+    if (byDay.has(row.day)) byDay.set(row.day, Number(row.costUsd));
+  }
+
+  return [...byDay.entries()].map(([day, costUsd]) => ({ day, costUsd }));
+}
+
+export interface Retention {
+  readonly totalUsers: number;
+  readonly activeToday: number;
+  readonly active7: number;
+  readonly active30: number;
+  readonly neverReturned: number;
+}
+
+/**
+ * How many people come back.
+ *
+ * `neverReturned` counts accounts whose only activity was the day they signed
+ * up — the number that matters most early, and the one a raw signup count
+ * hides.
+ */
+export async function retention(): Promise<Retention> {
+  const day = new Date(Date.now() - 86_400_000);
+  const week = new Date(Date.now() - 7 * 86_400_000);
+  const month = new Date(Date.now() - 30 * 86_400_000);
+
+  const [total] = await db.select({ value: count() }).from(users);
+  const [today] = await db.select({ value: count() }).from(users).where(gte(users.lastSeenAt, day));
+  const [seven] = await db.select({ value: count() }).from(users).where(gte(users.lastSeenAt, week));
+  const [thirty] = await db.select({ value: count() }).from(users).where(gte(users.lastSeenAt, month));
+
+  const [bounced] = await db
+    .select({ value: count() })
+    .from(users)
+    .where(
+      or(
+        sql`${users.lastSeenAt} is null`,
+        sql`${users.lastSeenAt} < ${users.createdAt} + interval '1 day'`,
+      ),
+    );
+
+  return {
+    totalUsers: total?.value ?? 0,
+    activeToday: today?.value ?? 0,
+    active7: seven?.value ?? 0,
+    active30: thirty?.value ?? 0,
+    neverReturned: bounced?.value ?? 0,
+  };
+}
+
+export interface ErrorRate {
+  readonly label: string;
+  readonly failed: number;
+  readonly total: number;
+}
+
+/** Where things are breaking, as counts rather than a vague health colour. */
+export async function errorRates(): Promise<ErrorRate[]> {
+  const [jobRows, toolRows, runRows] = await Promise.all([
+    db.select({ status: jobs.status, n: count() }).from(jobs).groupBy(jobs.status),
+    db
+      .select({ status: toolExecutions.status, n: count() })
+      .from(toolExecutions)
+      .groupBy(toolExecutions.status),
+    db.select({ status: agentRuns.status, n: count() }).from(agentRuns).groupBy(agentRuns.status),
+  ]);
+
+  const summarise = (
+    label: string,
+    rows: ReadonlyArray<{ status: string; n: number }>,
+    failedStatuses: readonly string[],
+  ): ErrorRate => ({
+    label,
+    failed: rows
+      .filter((row) => failedStatuses.includes(row.status))
+      .reduce((sum, row) => sum + Number(row.n), 0),
+    total: rows.reduce((sum, row) => sum + Number(row.n), 0),
+  });
+
+  return [
+    summarise('Background jobs', jobRows, ['failed']),
+    summarise('Tool calls', toolRows, ['failed', 'denied', 'timed_out']),
+    summarise('Agent runs', runRows, ['failed']),
+  ];
 }

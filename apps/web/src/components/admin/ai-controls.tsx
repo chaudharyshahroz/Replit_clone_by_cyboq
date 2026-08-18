@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setModelEnabled, setProviderEnabled } from '@/app/(app)/admin/actions';
+import { setModelEnabled, setProviderEnabled } from '@/app/(admin)/admin/actions';
 
 interface Provider {
   readonly id: string;

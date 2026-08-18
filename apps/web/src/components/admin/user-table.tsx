@@ -9,7 +9,7 @@ import {
   setUserSuspended,
   type AdminActionState,
   type UserContentResult,
-} from '@/app/(app)/admin/actions';
+} from '@/app/(admin)/admin/actions';
 
 interface Row {
   readonly id: string;
