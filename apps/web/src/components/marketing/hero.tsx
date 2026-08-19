@@ -10,11 +10,16 @@ import { HeroComposer } from '@/components/marketing/hero-composer';
 export function Hero() {
   return (
     <section className="relative overflow-hidden px-6 pb-24 pt-20 sm:pt-28">
-      {/* Ambient grid. Decorative, so hidden from assistive technology. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.14] [background-image:linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000,transparent)]"
-      />
+      {/*
+        Decorative, so hidden from assistive technology. Defined in globals.css
+        rather than inline: it is three cooperating layers with keyframes, not a
+        utility's worth of styling.
+      */}
+      <div aria-hidden="true" className="hero-backdrop">
+        <div className="hero-grid" />
+        <div className="hero-glow" />
+        <div className="hero-beam" />
+      </div>
 
       <div className="relative mx-auto max-w-4xl text-center">
         <p className="rise inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs text-text-secondary">

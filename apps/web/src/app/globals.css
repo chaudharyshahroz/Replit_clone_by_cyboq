@@ -189,13 +189,123 @@ body {
   background: linear-gradient(90deg, transparent, var(--border-strong) 18%, var(--border-strong) 82%, transparent);
 }
 
-/* Very low-contrast grid, used only behind the hero. */
-.grid-backdrop {
+/**
+ * The hero backdrop: a drafting grid, drifting, crossed once by a beam.
+ *
+ * Reklu is a place where things get built, so the ground under the headline is
+ * engineering paper — a fine 40px cell with a heavier 200px rule over it,
+ * rather than a single flat mesh. The two spacings are what make it read as
+ * drawn to scale instead of tiled.
+ *
+ * All three layers are decorative and sit behind the text at low opacity, so
+ * nothing here changes the contrast of anything readable.
+ */
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* One mask for every layer: strong at the top, gone before the composer. */
+  mask-image: radial-gradient(ellipse 95% 72% at 50% 0%, #000 45%, transparent 100%);
+}
+
+.hero-grid {
+  position: absolute;
+  /* Oversized so the drift never exposes an edge. */
+  inset: -240px;
   background-image:
+    /* Major rules. */
+    linear-gradient(to right, var(--border-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-strong) 1px, transparent 1px),
+    /* Fine cells. */
     linear-gradient(to right, var(--border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--border) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 40%, transparent 100%);
+  background-size:
+    200px 200px,
+    200px 200px,
+    40px 40px,
+    40px 40px;
+  opacity: 0.55;
+  /*
+   * Travels exactly one major cell, so the loop has no seam. Transform rather
+   * than background-position keeps it on the compositor.
+   */
+  animation: reklu-grid-drift 34s linear infinite;
+}
+
+@keyframes reklu-grid-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(200px, 200px, 0);
+  }
+}
+
+/**
+ * The signature: a single accent beam crossing the grid, the way a plotter
+ * passes over a sheet. One slow pass — the restraint is the point.
+ */
+.hero-beam {
+  position: absolute;
+  inset-inline: -10%;
+  top: 0;
+  height: 180px;
+  /* Derived from the accent token: light theme uses a different orange. */
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--accent) 5%, transparent) 35%,
+    color-mix(in srgb, var(--accent) 14%, transparent) 50%,
+    color-mix(in srgb, var(--accent) 5%, transparent) 65%,
+    transparent
+  );
+  filter: blur(6px);
+  animation: reklu-beam 11s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes reklu-beam {
+  0% {
+    transform: translateY(-180px);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(620px);
+    opacity: 0;
+  }
+}
+
+/* A warm bloom under the headline, breathing slowly. */
+.hero-glow {
+  position: absolute;
+  left: 50%;
+  top: -10%;
+  height: 520px;
+  width: min(900px, 110%);
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    color-mix(in srgb, var(--accent) 3%, transparent) 45%,
+    transparent 70%
+  );
+  animation: reklu-breathe 9s ease-in-out infinite;
+}
+
+@keyframes reklu-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes reklu-rise {
@@ -263,5 +373,16 @@ body {
   .rise {
     opacity: 1;
     transform: none;
+  }
+
+  /* Ambient motion is decoration; removed rather than merely shortened. */
+  .hero-grid,
+  .hero-beam,
+  .hero-glow {
+    animation: none;
+  }
+
+  .hero-beam {
+    opacity: 0;
   }
 }
