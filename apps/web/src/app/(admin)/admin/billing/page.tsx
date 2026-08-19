@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { billingConfig } from '@reklu/billing';
 import { listPlans, spendBreakdown } from '@/lib/admin-data';
-import { PlanToggles } from '@/components/admin/plan-toggles';
+import { PlanEditor } from '@/components/admin/plan-editor';
 
 export const metadata: Metadata = { title: 'Admin · Billing' };
 export const dynamic = 'force-dynamic';
@@ -32,17 +32,27 @@ export default async function AdminBillingPage() {
 
       <section>
         <h2 className="text-sm font-medium text-text">Plans</h2>
-        <p className="mt-1.5 text-xs text-text-muted">
-          Hiding a plan removes it from pricing. Existing subscribers keep it.
+        <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-text-muted">
+          Plans are defined here. Saving one creates or updates its counterpart in
+          Whop and publishes it to the billing page — no deploy, and no second
+          copy of the price to keep in step.
         </p>
         <div className="mt-3">
-          <PlanToggles
+          <PlanEditor
             plans={plansList.map((plan) => ({
               id: plan.id,
               key: plan.key,
               name: plan.name,
+              description: plan.description,
               priceMonthlyUsd: plan.priceMonthlyUsd,
+              billingPeriodDays: plan.billingPeriodDays,
+              currency: plan.currency,
               isPublic: plan.isPublic,
+              isPurchasable: plan.isPurchasable,
+              whopPlanId: plan.whopPlanId,
+              // Serialised for the client boundary; Date does not cross it.
+              whopSyncedAt: plan.whopSyncedAt ? plan.whopSyncedAt.toISOString() : null,
+              whopSyncError: plan.whopSyncError,
               subscribers: plan.subscribers,
             }))}
           />

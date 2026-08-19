@@ -235,7 +235,16 @@ const serverSchema = z.object({
   WHOP_API_KEY: optionalString,
   /** The `ws_...` signing secret. Without it no delivery can be trusted. */
   WHOP_WEBHOOK_SECRET: optionalString,
-  /** Whop plan ids, mapped onto Reklu's own plan keys. */
+  /**
+   * The `biz_...` company plans are created under. Required to create a plan
+   * in Whop from Reklu's own plan definition.
+   */
+  WHOP_COMPANY_ID: optionalString,
+  /**
+   * Legacy. Plans are now defined in the admin panel and carry their own Whop
+   * plan id in the database. These remain as a fallback for a deployment that
+   * set them before plan management existed.
+   */
   WHOP_PLAN_ID_PRO: optionalString,
   WHOP_PLAN_ID_TEAM: optionalString,
 
@@ -523,9 +532,12 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
      * webhook secret. Reporting billing as available without both would mean
      * taking money and never recording the upgrade.
      */
-    billing: Boolean(
-      env.WHOP_WEBHOOK_SECRET && (env.WHOP_PLAN_ID_PRO || env.WHOP_PLAN_ID_TEAM),
-    ),
+    /*
+     * Plans now live in the database, so their presence is not an env
+     * question. What must be present is the ability to mint a checkout session
+     * and to verify the webhook that follows it.
+     */
+    billing: Boolean(env.WHOP_WEBHOOK_SECRET && env.WHOP_API_KEY && env.WHOP_COMPANY_ID),
     durableStorage: env.STORAGE_DRIVER === 's3' || env.STORAGE_LOCAL_SINGLE_NODE_ACK,
     isolatedSandbox: env.SANDBOX_DRIVER !== 'local',
     build:

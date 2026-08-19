@@ -18,6 +18,8 @@ export interface BillingConfig {
   readonly missing: readonly string[];
   /** Present only when configured; needed to mint checkout sessions. */
   readonly apiKey: string | undefined;
+  /** The Whop company plans are created under. */
+  readonly companyId: string | undefined;
   readonly planIds: Readonly<Partial<Record<PayablePlanKey, string>>>;
   readonly canVerifyWebhooks: boolean;
 }
@@ -36,10 +38,15 @@ export function billingConfig(): BillingConfig {
    * with no workspace to attach the membership to.
    */
   if (!env.WHOP_API_KEY) missing.push('WHOP_API_KEY');
+  // Plans are created from Reklu's own definitions, which Whop files under a
+  // company. Without it a plan cannot be brought into existence.
+  if (!env.WHOP_COMPANY_ID) missing.push('WHOP_COMPANY_ID');
   if (!env.WHOP_WEBHOOK_SECRET) missing.push('WHOP_WEBHOOK_SECRET');
-  if (!env.WHOP_PLAN_ID_PRO && !env.WHOP_PLAN_ID_TEAM) {
-    missing.push('WHOP_PLAN_ID_PRO or WHOP_PLAN_ID_TEAM');
-  }
+  /*
+   * Plan ids are no longer an environment concern: plans are defined in the
+   * admin panel and carry their own Whop id in the database. The env values
+   * remain readable as a fallback for deployments configured before that.
+   */
 
   const planIds: Partial<Record<PayablePlanKey, string>> = {};
   if (env.WHOP_PLAN_ID_PRO) planIds.pro = env.WHOP_PLAN_ID_PRO;
@@ -47,6 +54,7 @@ export function billingConfig(): BillingConfig {
 
   return {
     apiKey: env.WHOP_API_KEY,
+    companyId: env.WHOP_COMPANY_ID,
     available: missing.length === 0,
     detail:
       missing.length === 0

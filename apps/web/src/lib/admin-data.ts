@@ -211,8 +211,16 @@ export interface PlanRow {
   readonly id: string;
   readonly key: string;
   readonly name: string;
+  readonly description: string | null;
   readonly priceMonthlyUsd: string;
+  readonly billingPeriodDays: number;
+  readonly currency: string;
   readonly isPublic: boolean;
+  readonly isPurchasable: boolean;
+  /** Set once the plan exists in Whop; null until it has been synced. */
+  readonly whopPlanId: string | null;
+  readonly whopSyncedAt: Date | null;
+  readonly whopSyncError: string | null;
   readonly subscribers: number;
 }
 
@@ -222,13 +230,34 @@ export async function listPlans(): Promise<PlanRow[]> {
       id: plans.id,
       key: plans.key,
       name: plans.name,
+      description: plans.description,
       priceMonthlyUsd: plans.priceMonthlyUsd,
+      billingPeriodDays: plans.billingPeriodDays,
+      currency: plans.currency,
       isPublic: plans.isPublic,
+      isPurchasable: plans.isPurchasable,
+      whopPlanId: plans.whopPlanId,
+      whopSyncedAt: plans.whopSyncedAt,
+      whopSyncError: plans.whopSyncError,
       subscribers: sql<number>`count(${subscriptions.id})`,
     })
     .from(plans)
     .leftJoin(subscriptions, eq(subscriptions.planId, plans.id))
-    .groupBy(plans.id, plans.key, plans.name, plans.priceMonthlyUsd, plans.isPublic, plans.sortOrder)
+    .groupBy(
+      plans.id,
+      plans.key,
+      plans.name,
+      plans.description,
+      plans.priceMonthlyUsd,
+      plans.billingPeriodDays,
+      plans.currency,
+      plans.isPublic,
+      plans.isPurchasable,
+      plans.whopPlanId,
+      plans.whopSyncedAt,
+      plans.whopSyncError,
+      plans.sortOrder,
+    )
     .orderBy(plans.sortOrder);
 
   return rows.map((row) => ({ ...row, subscribers: Number(row.subscribers) }));

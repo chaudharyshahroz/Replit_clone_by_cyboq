@@ -118,12 +118,19 @@ export async function seed(): Promise<void> {
         priceYearlyUsd: plan.priceYearlyUsd,
         sortOrder: plan.sortOrder,
         limits: plan.limits,
+        // Anything with a price is something to sell; Free is not.
+        isPurchasable: Number(plan.priceMonthlyUsd) > 0,
       })
       .onConflictDoUpdate({
         target: plans.key,
         set: {
-          name: plan.name,
-          description: plan.description,
+          /*
+           * Only what the code still owns.
+           *
+           * Name, description, price and purchasability are edited in the admin
+           * panel now, so re-seeding must not reach in and undo someone's
+           * pricing change — a deploy would quietly reset the shop.
+           */
           limits: plan.limits,
           sortOrder: plan.sortOrder,
           updatedAt: new Date(),

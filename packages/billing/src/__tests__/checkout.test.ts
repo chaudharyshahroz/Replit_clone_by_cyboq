@@ -32,8 +32,19 @@ async function userMessageFrom(work: () => Promise<unknown>): Promise<string> {
 const params = {
   apiKey: 'whop_test_key',
   whopPlanId: 'plan_abc123',
+  planKey: 'pro',
   workspaceId: 'wsp_01hxyz',
   returnUrl: 'https://reklu.app/settings/billing',
+};
+
+/** A plan Reklu owns, for the path where Whop has not seen it yet. */
+const definition = {
+  key: 'pro',
+  title: 'Pro',
+  description: 'More AI units and priority models.',
+  priceUsd: 25,
+  billingPeriodDays: 30,
+  currency: 'usd',
 };
 
 function respondWith(body: unknown, status = 200): void {
@@ -69,16 +80,83 @@ describe('createCheckoutSession', () => {
     await expect(createCheckoutSession(params)).resolves.toEqual({ id: 'ch_live_123' });
   });
 
-  it('carries the workspace id in metadata', async () => {
+  it('carries the workspace id and plan key in metadata', async () => {
     respondWith({ id: 'ch_live_123' });
     await createCheckoutSession(params);
 
     expect(sentRequest().body).toMatchObject({
       mode: 'payment',
       plan_id: 'plan_abc123',
-      metadata: { workspace_id: 'wsp_01hxyz' },
+      metadata: { workspace_id: 'wsp_01hxyz', plan_key: 'pro' },
       redirect_url: params.returnUrl,
     });
+  });
+
+  /**
+   * The path taken before a plan has ever been synced: Reklu describes the
+   * plan instead of naming one, so a brand-new plan is buyable immediately
+   * rather than after a separate setup step in Whop's dashboard.
+   */
+  it('sends the full plan definition when there is no Whop plan yet', async () => {
+    respondWith({ id: 'ch_live_123' });
+    await createCheckoutSession({
+      apiKey: params.apiKey,
+      workspaceId: params.workspaceId,
+      returnUrl: params.returnUrl,
+      planKey: 'pro',
+      plan: definition,
+      companyId: 'biz_123',
+    });
+
+    expect(sentRequest().body).toMatchObject({
+      mode: 'payment',
+      plan: {
+        company_id: 'biz_123',
+        title: 'Pro',
+        currency: 'usd',
+        plan_type: 'renewal',
+        initial_price: 25,
+        renewal_price: 25,
+        billing_period: 30,
+      },
+      metadata: { workspace_id: 'wsp_01hxyz', plan_key: 'pro' },
+    });
+  });
+
+  it('prefers an existing Whop plan over re-describing it', async () => {
+    respondWith({ id: 'ch_live_123' });
+    await createCheckoutSession({ ...params, plan: definition, companyId: 'biz_123' });
+
+    const body = sentRequest().body;
+    expect(body.plan_id).toBe('plan_abc123');
+    expect(body.plan).toBeUndefined();
+  });
+
+  it('refuses to ask Whop to charge for a plan it was never given', async () => {
+    respondWith({ id: 'ch_live_123' });
+    await expect(
+      createCheckoutSession({
+        apiKey: params.apiKey,
+        workspaceId: params.workspaceId,
+        returnUrl: params.returnUrl,
+        planKey: 'pro',
+      }),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reads back the plan id when Whop names one', async () => {
+    respondWith({ id: 'ch_live_123', plan: { id: 'plan_new999' } });
+    await expect(createCheckoutSession(params)).resolves.toEqual({
+      id: 'ch_live_123',
+      whopPlanId: 'plan_new999',
+    });
+  });
+
+  it('tolerates a response that names no plan', async () => {
+    respondWith({ id: 'ch_live_123' });
+    const session = await createCheckoutSession(params);
+    expect(session.whopPlanId).toBeUndefined();
   });
 
   it('posts to the checkout configurations endpoint with bearer auth', async () => {

@@ -14,7 +14,8 @@ import {
   plans,
   users,
 } from '@reklu/database';
-import { logger, newId } from '@reklu/shared';
+import { absoluteAppUrl, isRekluError, logger, newId } from '@reklu/shared';
+import { billingConfig, syncPlanToWhop } from '@reklu/billing';
 import { requireSuperAdmin } from '@/lib/admin';
 
 export interface AdminActionState {
@@ -184,24 +185,135 @@ export async function setModelEnabled(
 // Plans and flags
 // ---------------------------------------------------------------------------
 
-export async function setPlanPublic(
+export async function savePlan(
   planId: string,
-  isPublic: boolean,
+  input: {
+    readonly name: string;
+    readonly description: string;
+    readonly priceMonthlyUsd: string;
+    readonly billingPeriodDays: number;
+    readonly isPurchasable: boolean;
+    readonly isPublic: boolean;
+  },
 ): Promise<AdminActionState> {
   const me = await actor();
+
+  const price = Number(input.priceMonthlyUsd);
+  if (!Number.isFinite(price) || price < 0) {
+    return { error: 'Enter a price of zero or more.' };
+  }
+  if (!Number.isInteger(input.billingPeriodDays) || input.billingPeriodDays < 1) {
+    return { error: 'Billing period must be a whole number of days.' };
+  }
+  const name = input.name.trim();
+  if (name.length === 0) return { error: 'A plan needs a name.' };
 
   await audit({
     actorId: me.id,
     actorEmail: me.email,
-    action: isPublic ? 'plan.publish' : 'plan.hide',
+    action: 'plan.update',
     resourceType: 'plan',
     resourceId: planId,
   });
 
-  // Hiding a plan removes it from pricing; existing subscribers keep it.
-  await db.update(plans).set({ isPublic }).where(eq(plans.id, planId));
+  await db
+    .update(plans)
+    .set({
+      name,
+      description: input.description.trim() || null,
+      priceMonthlyUsd: price.toFixed(2),
+      billingPeriodDays: input.billingPeriodDays,
+      isPurchasable: input.isPurchasable,
+      isPublic: input.isPublic,
+    })
+    .where(eq(plans.id, planId));
+
+  const result = await syncPlan(planId);
   revalidatePath('/admin', 'layout');
-  return { notice: isPublic ? 'Plan is public.' : 'Plan hidden from pricing.' };
+  revalidatePath('/settings/billing');
+  return result;
+}
+
+/**
+ * Create or refresh this plan's counterpart in Whop.
+ *
+ * Exposed on its own as well as from `savePlan`, so a plan that failed to sync
+ * can be retried without re-entering everything.
+ */
+export async function syncPlan(planId: string): Promise<AdminActionState> {
+  await actor();
+
+  const config = billingConfig();
+  if (!config.apiKey || !config.companyId) {
+    const detail = `Cannot reach Whop: ${config.detail}`;
+    await db.update(plans).set({ whopSyncError: detail }).where(eq(plans.id, planId));
+    return { error: detail };
+  }
+
+  const [plan] = await db
+    .select({
+      key: plans.key,
+      name: plans.name,
+      description: plans.description,
+      priceMonthlyUsd: plans.priceMonthlyUsd,
+      billingPeriodDays: plans.billingPeriodDays,
+      currency: plans.currency,
+      isPurchasable: plans.isPurchasable,
+    })
+    .from(plans)
+    .where(eq(plans.id, planId))
+    .limit(1);
+
+  if (!plan) return { error: 'No such plan.' };
+
+  // A free plan is never bought, so Whop has nothing to hold for it.
+  if (!plan.isPurchasable || Number(plan.priceMonthlyUsd) <= 0) {
+    await db
+      .update(plans)
+      .set({ whopSyncError: null, whopSyncedAt: null, whopPlanId: null })
+      .where(eq(plans.id, planId));
+    revalidatePath('/admin', 'layout');
+    return { notice: 'Saved. This plan is not sold, so Whop needs no copy of it.' };
+  }
+
+  try {
+    const { whopPlanId } = await syncPlanToWhop({
+      apiKey: config.apiKey,
+      companyId: config.companyId,
+      returnUrl: absoluteAppUrl('/settings/billing'),
+      plan: {
+        key: plan.key,
+        title: plan.name,
+        description: plan.description,
+        priceUsd: Number(plan.priceMonthlyUsd),
+        billingPeriodDays: plan.billingPeriodDays,
+        currency: plan.currency,
+      },
+    });
+
+    await db
+      .update(plans)
+      .set({
+        // Only overwrite when Whop actually named a plan. Clearing a known id
+        // because one response omitted it would lose the link.
+        ...(whopPlanId ? { whopPlanId } : {}),
+        whopSyncedAt: new Date(),
+        whopSyncError: null,
+      })
+      .where(eq(plans.id, planId));
+
+    revalidatePath('/admin', 'layout');
+    return { notice: 'Saved and synced to Whop.' };
+  } catch (error) {
+    const detail = isRekluError(error)
+      ? error.userMessage
+      : 'Whop refused the plan. Check the API key permissions.';
+    logger.error('Plan sync to Whop failed', { error, planId });
+
+    await db.update(plans).set({ whopSyncError: detail }).where(eq(plans.id, planId));
+    revalidatePath('/admin', 'layout');
+    return { error: `Saved in Reklu, but not synced: ${detail}` };
+  }
 }
 
 export async function setFeatureFlag(key: string, enabled: boolean): Promise<AdminActionState> {

@@ -56,9 +56,39 @@ export const plans = pgTable(
       .default('0'),
     priceYearlyUsd: numeric('price_yearly_usd', { precision: 10, scale: 2 }).notNull().default('0'),
 
+    /**
+     * Vestigial. Reklu bills through Whop; these predate that decision and are
+     * kept only because dropping a column is destructive and nothing reads
+     * them. Remove them in a migration of their own.
+     */
     stripeProductId: text('stripe_product_id'),
     stripePriceIdMonthly: text('stripe_price_id_monthly'),
     stripePriceIdYearly: text('stripe_price_id_yearly'),
+
+    /**
+     * The Whop side of a plan.
+     *
+     * Reklu owns the definition — an administrator edits the price here, not in
+     * Whop's dashboard — and Whop holds a matching plan object to charge
+     * against. `whopPlanId` is that object once it exists.
+     *
+     * The sync result is stored rather than inferred, so the admin list can say
+     * "this plan is not in Whop yet, and here is why" instead of letting the
+     * first paying customer discover it.
+     */
+    whopPlanId: text('whop_plan_id'),
+    whopSyncedAt: tsColumn('whop_synced_at'),
+    whopSyncError: text('whop_sync_error'),
+
+    /** Charge interval in days. 30 is Whop's monthly. */
+    billingPeriodDays: integer('billing_period_days').notNull().default(30),
+    currency: text('currency').notNull().default('usd'),
+
+    /**
+     * Whether this plan can be bought. Separate from `isPublic`: a plan can be
+     * visible to existing subscribers while no longer being sold.
+     */
+    isPurchasable: boolean('is_purchasable').notNull().default(false),
 
     limits: jsonb('limits').$type<PlanLimits>().notNull(),
 

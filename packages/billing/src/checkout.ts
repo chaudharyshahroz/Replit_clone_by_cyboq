@@ -23,6 +23,40 @@ const TIMEOUT_MS = 15_000;
 export interface CheckoutSession {
   /** The `ch_…` id for `data-whop-checkout-session`. */
   readonly id: string;
+  /** The Whop plan the session resolved to, when the response names one. */
+  readonly whopPlanId?: string | undefined;
+}
+
+/**
+ * A plan as Reklu defines it. Whop is told about it; it is not asked.
+ *
+ * Prices live in Reklu's `plans` table so an administrator changes them in one
+ * place. Sending the definition rather than a pre-made Whop plan id is what
+ * removes the failure where the two drift and the page advertises one number
+ * while the card is charged another.
+ */
+export interface PlanDefinition {
+  readonly key: string;
+  readonly title: string;
+  readonly description?: string | null;
+  readonly priceUsd: number;
+  readonly billingPeriodDays: number;
+  readonly currency: string;
+}
+
+/**
+ * Whop's response nests the plan differently depending on the call, and the
+ * shape is not guaranteed. Read it defensively: a missing id is recoverable
+ * (the next checkout sends the definition again), a wrong one is not.
+ */
+function planIdFrom(payload: Record<string, unknown>): string | undefined {
+  const direct = payload.plan_id;
+  if (typeof direct === 'string' && direct.startsWith('plan_')) return direct;
+
+  const plan = payload.plan as Record<string, unknown> | undefined;
+  if (plan && typeof plan.id === 'string' && plan.id.startsWith('plan_')) return plan.id;
+
+  return undefined;
 }
 
 /**
@@ -55,10 +89,44 @@ function describeFailure(status: number): string {
  */
 export async function createCheckoutSession(params: {
   readonly apiKey: string;
-  readonly whopPlanId: string;
   readonly workspaceId: string;
   readonly returnUrl: string;
+  /** Reklu's plan key, carried so the webhook need not match on plan id. */
+  readonly planKey: string;
+  /** An existing Whop plan, when this plan has already been synced. */
+  readonly whopPlanId?: string | undefined;
+  /** The definition to create from, when it has not. Needs a company. */
+  readonly plan?: PlanDefinition | undefined;
+  readonly companyId?: string | undefined;
 }): Promise<CheckoutSession> {
+  /**
+   * One of the two has to be usable, or Whop is being asked to charge for
+   * something nobody has described.
+   */
+  if (!params.whopPlanId && !(params.plan && params.companyId)) {
+    throw errors.notConfigured({
+      feature: 'Checkout',
+      requiredEnv: ['WHOP_COMPANY_ID'],
+      docsPath: '/admin/billing',
+    });
+  }
+
+  const planPart = params.whopPlanId
+    ? { plan_id: params.whopPlanId }
+    : {
+        plan: {
+          company_id: params.companyId,
+          title: params.plan!.title,
+          ...(params.plan!.description ? { description: params.plan!.description } : {}),
+          currency: params.plan!.currency,
+          plan_type: 'renewal',
+          initial_price: params.plan!.priceUsd,
+          renewal_price: params.plan!.priceUsd,
+          billing_period: params.plan!.billingPeriodDays,
+          visibility: 'hidden',
+        },
+      };
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -72,8 +140,13 @@ export async function createCheckoutSession(params: {
       },
       body: JSON.stringify({
         mode: 'payment',
-        plan_id: params.whopPlanId,
-        metadata: { workspace_id: params.workspaceId },
+        ...planPart,
+        /*
+         * Both, deliberately. The workspace says whose plan to change; the
+         * plan key says which plan, without the webhook having to recognise a
+         * Whop plan id it may be seeing for the first time.
+         */
+        metadata: { workspace_id: params.workspaceId, plan_key: params.planKey },
         redirect_url: params.returnUrl,
       }),
       signal: controller.signal,
@@ -127,5 +200,37 @@ export async function createCheckoutSession(params: {
     });
   }
 
-  return { id: payload.id };
+  return { id: payload.id, whopPlanId: planIdFrom(payload as Record<string, unknown>) };
+}
+
+/**
+ * Make a plan exist in Whop, from Reklu's definition of it.
+ *
+ * Implemented through the checkout endpoint's inline plan rather than the
+ * plans API, which is in beta and gated behind a dated version header. This
+ * path is documented and stable, and it is the same call checkout makes — so
+ * a plan that syncs here is one that can definitely be bought.
+ *
+ * The checkout configuration it creates as a side effect is harmless and
+ * unused; the plan it materialises is the point.
+ */
+export async function syncPlanToWhop(params: {
+  readonly apiKey: string;
+  readonly companyId: string;
+  readonly plan: PlanDefinition;
+  readonly returnUrl: string;
+}): Promise<{ readonly whopPlanId: string | undefined }> {
+  const session = await createCheckoutSession({
+    apiKey: params.apiKey,
+    companyId: params.companyId,
+    plan: params.plan,
+    planKey: params.plan.key,
+    // No real workspace is buying anything here; this exists to create the
+    // plan. A placeholder that cannot match a workspace is safer than a real
+    // id, which a stray webhook could act on.
+    workspaceId: 'wsp_sync_probe',
+    returnUrl: params.returnUrl,
+  });
+
+  return { whopPlanId: session.whopPlanId };
 }

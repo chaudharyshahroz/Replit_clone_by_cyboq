@@ -8,6 +8,13 @@
       "when": 1786870727491,
       "tag": "0000_hot_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787158624402,
+      "tag": "0001_colossal_dazzler",
+      "breakpoints": true
     }
   ]
 }

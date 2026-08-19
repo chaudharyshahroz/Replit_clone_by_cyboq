@@ -59,6 +59,42 @@ function workspaceIdFrom(data: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+/**
+ * The plan key Reklu put in the checkout metadata.
+ *
+ * Preferred over recognising a Whop plan id, because plans are now created
+ * from Reklu's own definitions — the id may be one this deployment has never
+ * seen, and refusing it would reject a payment that is perfectly valid.
+ */
+function planKeyFromMetadata(data: Record<string, unknown>): string | undefined {
+  const metadata = (data.metadata ?? {}) as Record<string, unknown>;
+  const candidates = [
+    metadata.plan_key,
+    metadata.planKey,
+    (data.checkout_session as Record<string, unknown> | undefined)?.metadata,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') return candidate;
+    if (candidate && typeof candidate === 'object') {
+      const nested = candidate as Record<string, unknown>;
+      const value = nested.plan_key ?? nested.planKey;
+      if (typeof value === 'string') return value;
+    }
+  }
+  return undefined;
+}
+
+/** Whether a key names a plan this deployment can actually sell. */
+async function isPayablePlanKey(key: string): Promise<boolean> {
+  const [row] = await db
+    .select({ key: plans.key })
+    .from(plans)
+    .where(and(eq(plans.key, key), eq(plans.isPurchasable, true)))
+    .limit(1);
+  return Boolean(row);
+}
+
 function whopPlanIdFrom(data: Record<string, unknown>): string | undefined {
   const direct = data.plan_id ?? data.planId;
   if (typeof direct === 'string') return direct;
@@ -152,13 +188,28 @@ export async function applyMembershipEvent(params: {
     case 'membership.activated':
     case 'payment.succeeded': {
       const whopPlanId = whopPlanIdFrom(params.data);
-      const planKey = whopPlanId ? planKeyForWhopPlan(whopPlanId) : undefined;
+
+      /*
+       * Metadata first, then the plan id.
+       *
+       * Reklu writes the plan key into the checkout session, so it is the
+       * authoritative answer. Matching a Whop plan id is kept as a fallback
+       * for memberships bought before plans moved into the admin panel, and
+       * for anything created directly in Whop's dashboard.
+       */
+      const fromMetadata = planKeyFromMetadata(params.data);
+      const planKey =
+        fromMetadata && (await isPayablePlanKey(fromMetadata))
+          ? (fromMetadata as PayablePlanKey)
+          : whopPlanId
+            ? planKeyForWhopPlan(whopPlanId)
+            : undefined;
 
       if (!planKey) {
         // A plan Reklu does not recognise must not silently grant anything.
         return {
           outcome: 'ignored_unknown_plan',
-          detail: `Whop plan ${whopPlanId ?? 'unknown'} is not mapped to a Reklu plan.`,
+          detail: `Neither the checkout metadata (${fromMetadata ?? 'absent'}) nor the Whop plan ${whopPlanId ?? 'unknown'} names a Reklu plan that can be sold.`,
           workspaceId,
         };
       }

@@ -4,7 +4,7 @@ import { ArrowLeft, CreditCard } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
 import { billingConfig, createCheckoutSession } from '@reklu/billing';
 import { db, plans, subscriptions } from '@reklu/database';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { isRekluError, logger } from '@reklu/shared';
 import { absoluteAppUrl } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
@@ -37,19 +37,25 @@ export default async function BillingPage({
    * Whop is what actually charges, so a mismatch here would advertise one
    * number and take another.
    */
+  /*
+   * Whatever an administrator has marked purchasable — not a hard-coded pair.
+   * Adding a tier in the admin panel makes it appear here with no deploy.
+   */
   const purchasable = await db
     .select({
       key: plans.key,
       name: plans.name,
       description: plans.description,
       priceMonthlyUsd: plans.priceMonthlyUsd,
+      billingPeriodDays: plans.billingPeriodDays,
+      currency: plans.currency,
+      whopPlanId: plans.whopPlanId,
     })
     .from(plans)
-    .where(inArray(plans.key, ['pro', 'team']))
+    .where(eq(plans.isPurchasable, true))
     .orderBy(asc(plans.priceMonthlyUsd));
 
-  const wantedPlanId =
-    wanted === 'team' ? config.planIds.team : wanted === 'pro' ? config.planIds.pro : undefined;
+  const chosen = wanted ? purchasable.find((plan) => plan.key === wanted) : undefined;
 
   const returnUrl = absoluteAppUrl('/settings/billing');
 
@@ -58,16 +64,28 @@ export default async function BillingPage({
    * the workspace id reaches the webhook. A failure is reported rather than
    * rendering an embed that would take a payment nobody could attribute.
    */
-  let session: { id: string } | undefined;
+  let session: { id: string; whopPlanId?: string | undefined } | undefined;
   let checkoutError: string | undefined;
 
-  if (wantedPlanId && config.available && config.apiKey) {
+  if (chosen && config.available && config.apiKey) {
     try {
       session = await createCheckoutSession({
         apiKey: config.apiKey,
-        whopPlanId: wantedPlanId,
         workspaceId: workspace.workspaceId,
         returnUrl,
+        planKey: chosen.key,
+        // Prefer the synced plan; describe it inline if it has never synced,
+        // so a newly created plan is buyable immediately.
+        whopPlanId: chosen.whopPlanId ?? undefined,
+        companyId: config.companyId,
+        plan: {
+          key: chosen.key,
+          title: chosen.name,
+          description: chosen.description,
+          priceUsd: Number(chosen.priceMonthlyUsd),
+          billingPeriodDays: chosen.billingPeriodDays,
+          currency: chosen.currency,
+        },
       });
     } catch (error) {
       checkoutError = isRekluError(error)
@@ -141,7 +159,7 @@ export default async function BillingPage({
           <h2 className="text-sm font-medium text-text">Payments are not set up</h2>
           <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">{config.detail}</p>
         </section>
-      ) : wantedPlanId ? (
+      ) : chosen ? (
         <section className="mt-6">
           <h2 className="text-sm font-medium text-text">Complete your upgrade</h2>
           <p className="mt-1.5 text-xs leading-relaxed text-text-muted">
@@ -159,7 +177,7 @@ export default async function BillingPage({
           ) : session ? (
             <div className="mt-4">
               <WhopCheckout
-                planId={wantedPlanId}
+                planId={session.whopPlanId ?? chosen.whopPlanId ?? ''}
                 sessionId={session.id}
                 returnUrl={returnUrl}
               />
@@ -168,11 +186,7 @@ export default async function BillingPage({
         </section>
       ) : (
         <section className="mt-6 grid gap-3 sm:grid-cols-2">
-          {purchasable
-            // Only plans this deployment can actually sell: a card for a plan
-            // with no Whop id would lead to a checkout that cannot open.
-            .filter((plan) => config.planIds[plan.key as 'pro' | 'team'])
-            .map((plan) => (
+          {purchasable.map((plan) => (
               <Link
                 key={plan.key}
                 href={`/settings/billing?plan=${plan.key}`}
@@ -192,7 +206,7 @@ export default async function BillingPage({
                   Choose {plan.name} →
                 </span>
               </Link>
-            ))}
+          ))}
         </section>
       )}
     </div>
