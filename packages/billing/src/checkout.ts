@@ -59,13 +59,33 @@ function planIdFrom(payload: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+/** Pull a human-readable reason out of an error body, whatever shape it took. */
+function readReason(body: string): string | undefined {
+  if (!body) return undefined;
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    for (const key of ['message', 'error', 'detail']) {
+      const value = parsed[key];
+      if (typeof value === 'string' && value.length > 0) return value.slice(0, 300);
+    }
+    // Field-level validation usually arrives keyed by field name.
+    const errors = parsed.errors;
+    if (errors && typeof errors === 'object') return JSON.stringify(errors).slice(0, 300);
+  } catch {
+    // Not JSON — a proxy error page, most likely. The status alone is the signal.
+    return undefined;
+  }
+  return undefined;
+}
+
 /**
  * Turn a failed call into something an operator can act on.
  *
  * "Checkout is unavailable" tells nobody which of six things to fix, and
  * billing is the worst place to be vague.
  */
-function describeFailure(status: number): string {
+function describeFailure(status: number, reason?: string): string {
+  const suffix = reason ? ` Whop said: ${reason}` : '';
   if (status === 401 || status === 403) {
     return 'Whop rejected the API key. Check WHOP_API_KEY is correct and has checkout permissions.';
   }
@@ -73,7 +93,9 @@ function describeFailure(status: number): string {
     return 'Whop does not recognise that plan. Check WHOP_PLAN_ID_PRO and WHOP_PLAN_ID_TEAM match plans in your Whop company.';
   }
   if (status === 422 || status === 400) {
-    return 'Whop refused the checkout request. Check the plan is published and payable.';
+    // Echoed, because these are field-level validation problems and the
+    // generic version sent people looking in the wrong place for a whole day.
+    return `Whop rejected the plan definition.${suffix}`;
   }
   if (status === 429) return 'Whop is rate limiting checkout requests. Try again shortly.';
   if (status >= 500) return 'Whop is having trouble on their end. Try again shortly.';
@@ -124,6 +146,21 @@ export async function createCheckoutSession(params: {
           renewal_price: params.plan!.priceUsd,
           billing_period: params.plan!.billingPeriodDays,
           visibility: 'hidden',
+          /**
+           * A plan in Whop has to belong to a product, and the first version of
+           * this sent neither `product` nor `product_id` — so Whop refused every
+           * request with "check the plan is published and payable", which was
+           * true but pointed at the wrong thing.
+           *
+           * `external_identifier` is what makes repeated syncs idempotent: it is
+           * Reklu's own plan key, so editing a price updates the same product
+           * instead of leaving a trail of duplicates in the dashboard.
+           */
+          product: {
+            external_identifier: `reklu-${params.plan!.key}`,
+            title: `Reklu ${params.plan!.title}`,
+            ...(params.plan!.description ? { description: params.plan!.description } : {}),
+          },
         },
       };
 
@@ -166,13 +203,23 @@ export async function createCheckoutSession(params: {
   }
 
   if (!response.ok) {
-    const detail = describeFailure(response.status);
     // The body may carry a reason, and may equally carry nothing useful.
     const body = await response.text().catch(() => '');
     logger.error('Whop refused a checkout session', {
       status: response.status,
       body: body.slice(0, 500),
     });
+
+    /*
+     * Only for the statuses where the reason is a field problem. An auth
+     * failure's body is not echoed — nothing useful is in it, and it is the one
+     * place an upstream message could carry something about the credential.
+     */
+    const reason =
+      response.status === 400 || response.status === 422
+        ? readReason(body)
+        : undefined;
+    const detail = describeFailure(response.status, reason);
     throw errors.providerError({
       provider: 'Whop',
       detail: `checkout_configurations returned ${response.status}`,

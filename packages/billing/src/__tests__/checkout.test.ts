@@ -123,6 +123,75 @@ describe('createCheckoutSession', () => {
     });
   });
 
+  /**
+   * A plan in Whop must belong to a product. Omitting this was the whole of
+   * the "check the plan is published and payable" failure — every checkout was
+   * refused before a card was ever shown.
+   */
+  it('gives the plan a product to belong to', async () => {
+    respondWith({ id: 'ch_live_123' });
+    await createCheckoutSession({
+      apiKey: params.apiKey,
+      workspaceId: params.workspaceId,
+      returnUrl: params.returnUrl,
+      planKey: 'pro',
+      plan: definition,
+      companyId: 'biz_123',
+    });
+
+    const plan = sentRequest().body.plan as Record<string, unknown>;
+    expect(plan.product).toMatchObject({
+      external_identifier: 'reklu-pro',
+      title: 'Reklu Pro',
+    });
+  });
+
+  /**
+   * The external identifier is derived from Reklu's plan key, so syncing the
+   * same plan twice updates one product rather than leaving duplicates behind.
+   */
+  it('keeps the product identifier stable across syncs', async () => {
+    respondWith({ id: 'ch_1' });
+    await createCheckoutSession({
+      apiKey: params.apiKey,
+      workspaceId: params.workspaceId,
+      returnUrl: params.returnUrl,
+      planKey: 'pro',
+      plan: { ...definition, priceUsd: 25 },
+      companyId: 'biz_123',
+    });
+    const first = (sentRequest().body.plan as Record<string, unknown>)
+      .product as Record<string, unknown>;
+
+    respondWith({ id: 'ch_2' });
+    await createCheckoutSession({
+      apiKey: params.apiKey,
+      workspaceId: params.workspaceId,
+      returnUrl: params.returnUrl,
+      planKey: 'pro',
+      // A price change must not become a second product.
+      plan: { ...definition, priceUsd: 30 },
+      companyId: 'biz_123',
+    });
+    const second = (sentRequest().body.plan as Record<string, unknown>)
+      .product as Record<string, unknown>;
+
+    expect(second.external_identifier).toBe(first.external_identifier);
+  });
+
+  it("repeats Whop's own reason when it rejects the definition", async () => {
+    respondWith({ message: 'product is required' }, 422);
+    const message = await userMessageFrom(() => createCheckoutSession(params));
+    expect(message).toMatch(/product is required/);
+  });
+
+  it('does not echo the body of an auth failure', async () => {
+    respondWith({ message: 'token abc123 is invalid' }, 401);
+    const message = await userMessageFrom(() => createCheckoutSession(params));
+    expect(message).not.toMatch(/abc123/);
+    expect(message).toMatch(/API key/i);
+  });
+
   it('prefers an existing Whop plan over re-describing it', async () => {
     respondWith({ id: 'ch_live_123' });
     await createCheckoutSession({ ...params, plan: definition, companyId: 'biz_123' });
@@ -187,7 +256,7 @@ describe('createCheckoutSession', () => {
     [401, /API key/i],
     [403, /API key/i],
     [404, /WHOP_PLAN_ID/i],
-    [422, /published|payable/i],
+    [422, /rejected the plan definition/i],
     [429, /rate limit/i],
     [500, /their end/i],
   ])('explains a %i by name', async (status, expected) => {
