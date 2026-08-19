@@ -26,11 +26,13 @@ import { Markdown } from './markdown';
 /**
  * The composer's tools.
  *
- * Picking one does not change how chat replies — it hands the request to the
- * surface that already does that work. Build, Image and Research each have a
- * real implementation with its own quota, streaming and failure handling;
- * re-implementing a thin version of each inside the composer would produce
- * three shallower copies of features that already work.
+ * Each runs inside this conversation rather than sending you to another page:
+ * the request, the progress and the result all land in the transcript you are
+ * already reading. The server delegates to the same package the dedicated
+ * surface uses, so the behaviour is not a thinner copy of it.
+ *
+ * A tool stays selected until it is removed, so a follow-up question does the
+ * same kind of work. The chip in the composer is what says so.
  *
  * With no tool selected this is ordinary chat, which is the default because it
  * is what most requests are.
@@ -41,10 +43,6 @@ interface ToolDefinition {
   readonly label: string;
   readonly icon: LucideIcon;
   readonly placeholder: string;
-  /** The surface this hands off to, which prefills from `?q=`. */
-  readonly href: string;
-  /** Extra query the target needs — Create serves several kinds. */
-  readonly params?: Readonly<Record<string, string>>;
   readonly hint: string;
   readonly suggestions: readonly string[];
 }
@@ -54,7 +52,6 @@ const TOOLS: Record<Exclude<ToolKey, 'chat'>, ToolDefinition> = {
     label: 'Build',
     icon: Wrench,
     placeholder: 'Describe the app or site you want built…',
-    href: '/build',
     hint: 'Reklu writes the code and runs it in an isolated sandbox.',
     suggestions: [
       'A booking page for a barber shop with opening hours',
@@ -66,8 +63,6 @@ const TOOLS: Record<Exclude<ToolKey, 'chat'>, ToolDefinition> = {
     label: 'Image',
     icon: ImagePlus,
     placeholder: 'Describe the image you want…',
-    href: '/create',
-    params: { kind: 'image' },
     hint: 'Generated images are saved to Artifacts.',
     suggestions: [
       'A minimal logo for a coffee roastery, flat vector',
@@ -79,7 +74,6 @@ const TOOLS: Record<Exclude<ToolKey, 'chat'>, ToolDefinition> = {
     label: 'Research',
     icon: Telescope,
     placeholder: 'What should Reklu research?',
-    href: '/research',
     hint: 'Answers come back with sources you can open and check.',
     suggestions: [
       'Compare the three biggest AI note-taking apps on pricing and privacy',
@@ -327,19 +321,6 @@ export function ChatView({
     async (text: string) => {
       if (!text.trim() || streaming) return;
 
-      /**
-       * A tool hands the request to the surface that implements it, carrying
-       * the prompt in `?q=`. Nothing is streamed here, because Build, Image
-       * and Research each have their own streaming, quota and error handling
-       * that this composer has no business duplicating.
-       */
-      if (tool !== 'chat') {
-        const definition = TOOLS[tool];
-        const query = new URLSearchParams({ ...definition.params, q: text.trim() });
-        router.push(`${definition.href}?${query.toString()}`);
-        return;
-      }
-
       setError(undefined);
       setRoutingReason(undefined);
       setInput('');
@@ -368,6 +349,12 @@ export function ChatView({
             conversationId,
             modelKey: modelKey === 'auto' ? undefined : modelKey,
             fileIds: attachments.map((file) => file.id),
+            /*
+             * The selected tool runs inside this conversation. It stays
+             * selected until removed, which is what the chip in the composer
+             * is showing — the next message will do the same thing.
+             */
+            ...(tool !== 'chat' ? { tool } : {}),
           }),
           signal: controller.signal,
         });
@@ -543,10 +530,18 @@ export function ChatView({
         setDragging(false);
         if (event.dataTransfer.files.length > 0) void upload(event.dataTransfer.files);
       }}
+      /*
+       * Focus is shown on the frame, not inside it. A textarea matches
+       * :focus-visible even when clicked with a mouse, so the global accent
+       * ring (spec §99) drew a bright outline around the input every time
+       * anyone clicked to type. The indicator is still here and still meets
+       * the requirement — it is simply the composer's own border brightening,
+       * which is what the shape already suggested.
+       */
       className={`relative rounded-xl border bg-surface transition-colors ${
         dragging
           ? 'border-accent bg-accent-subtle/30'
-          : 'border-border-strong focus-within:border-text-muted'
+          : 'border-border-strong focus-within:border-text-muted focus-within:ring-1 focus-within:ring-text-muted/40'
       }`}
     >
       {dragging ? (
@@ -571,7 +566,7 @@ export function ChatView({
           }
         }}
         placeholder={tool === 'chat' ? 'Ask Reklu anything…' : TOOLS[tool].placeholder}
-        className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
+        className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none focus-visible:outline-none"
       />
 
       {attachments.length > 0 ? (

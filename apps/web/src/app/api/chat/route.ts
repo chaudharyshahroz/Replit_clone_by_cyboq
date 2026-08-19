@@ -32,7 +32,7 @@ import {
   subscriptions,
   type PlanLimits,
 } from '@reklu/database';
-import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared';
+import { errors, isRekluError, logger, newId, slugify, toRekluError } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { buildAttachmentParts } from '@/lib/attachment-parts';
@@ -45,6 +45,15 @@ import {
   stripMention,
 } from '@reklu/skills';
 import { executeTool, usableTools } from '@reklu/mcp';
+import { createImage } from '@reklu/create';
+import { generateBrief } from '@reklu/build';
+import {
+  createWebAdapter,
+  createWorkspaceAdapter,
+  runResearch,
+  type StageReporter,
+} from '@reklu/research';
+import { buildProjects, researchSessions } from '@reklu/database';
 
 export const runtime = 'nodejs';
 // Streaming must never be cached or statically optimized.
@@ -59,6 +68,12 @@ const BodySchema = z.object({
   fileIds: z.array(z.string()).max(10).optional(),
   /** Run this turn inside a project, inheriting its instructions and memory. */
   projectId: z.string().optional(),
+  /**
+   * A composer tool. Omitted or "chat" is an ordinary model reply; the others
+   * run that capability inside this conversation rather than sending the user
+   * somewhere else, so the transcript stays in one place.
+   */
+  tool: z.enum(['chat', 'build', 'image', 'research']).optional(),
 });
 
 const SYSTEM_PROMPT = [
@@ -338,6 +353,125 @@ export async function POST(request: Request): Promise<Response> {
             ...(routingReason ? { routingReason } : {}),
           });
 
+          /**
+           * A tool runs its own capability into this conversation.
+           *
+           * Each delegates to the package that already implements it, so the
+           * behaviour is the same one the dedicated surface gives you — the
+           * only difference is that the result lands in the transcript you are
+           * already reading instead of on another page.
+           */
+          const tool = body.tool ?? 'chat';
+
+          if (tool === 'image') {
+            send({ type: 'status', stage: 'generating', detail: 'Generating the image…' });
+
+            const result = await createImage({
+              workspaceId: access.workspaceId,
+              userId: user.id,
+              projectId,
+              prompt: body.message,
+            });
+
+            text = `Generated **${result.title}** · ${result.detail}`;
+            send({ type: 'text-delta', text });
+            send({
+              type: 'artifact',
+              artifact: { id: result.artifactId, title: result.title, type: 'image' },
+            });
+          } else if (tool === 'build') {
+            send({ type: 'status', stage: 'planning', detail: 'Planning the build…' });
+
+            const { brief, usedFallback } = await generateBrief({ prompt: body.message, model });
+            const buildId = newId('build');
+            const name = brief.product.slice(0, 120);
+
+            await db.insert(buildProjects).values({
+              id: buildId,
+              workspaceId: access.workspaceId,
+              createdById: user.id,
+              name,
+              slug: `${slugify(brief.product)}-${buildId.slice(-6)}`,
+              target: brief.target,
+              status: 'briefing',
+              brief: brief as unknown as Record<string, unknown>,
+              framework: brief.stack[0] ?? null,
+              createdBy: user.id,
+            });
+
+            if (usedFallback) log.warn('Build brief fell back to heuristics', { buildId });
+
+            /*
+             * The brief lands here; the file tree, preview and version history
+             * do not, because those are a workspace rather than a message. The
+             * link is how you get to them, and the conversation stays put.
+             */
+            text = [
+              `**${name}**`,
+              '',
+              brief.summary ?? '',
+              '',
+              `Target: ${brief.target}${brief.stack.length > 0 ? ` · ${brief.stack.join(', ')}` : ''}`,
+              '',
+              `[Open the build workspace](/build/${buildId}) to generate the code, preview it and revise.`,
+            ].join('\n');
+            send({ type: 'text-delta', text });
+          } else if (tool === 'research') {
+            const adapters = [
+              createWebAdapter(),
+              createWorkspaceAdapter({
+                workspaceId: access.workspaceId,
+                projectId: projectId ?? null,
+              }),
+            ].filter((adapter) => adapter.isConfigured());
+
+            if (adapters.length === 0) {
+              throw errors.notConfigured({
+                feature: 'Research',
+                requiredEnv: ['TAVILY_API_KEY', 'BRAVE_API_KEY'],
+                docsPath: '/settings',
+              });
+            }
+
+            // Recorded like any other research run, so it appears in history
+            // rather than being a private variant only chat knows about.
+            const [session] = await db
+              .insert(researchSessions)
+              .values({
+                workspaceId: access.workspaceId,
+                projectId: projectId ?? null,
+                userId: user.id,
+                query: body.message,
+                mode: 'research',
+                stage: 'queued',
+              })
+              .returning({ id: researchSessions.id });
+
+            const report: StageReporter = (stage, detail) => {
+              send({ type: 'status', stage, ...(detail ? { detail } : {}) });
+            };
+
+            const outcome = await runResearch({
+              query: body.message,
+              mode: 'research',
+              model,
+              adapters,
+              report,
+              signal: request.signal,
+            });
+
+            /*
+             * Reported honestly (spec §88): the count of sources that failed
+             * is part of the answer, not something to quietly drop.
+             */
+            const retrieval =
+              outcome.sourcesFailed > 0
+                ? `\n\n_${outcome.sourcesUsed} of ${outcome.sourcesDiscovered} sources used; ${outcome.sourcesFailed} could not be retrieved._`
+                : `\n\n_${outcome.sourcesUsed} sources used._`;
+
+            text = `${outcome.answer ?? outcome.report}${retrieval}\n\n[Open the full research session](/research/${session!.id})`;
+            send({ type: 'text-delta', text });
+          } else {
           for await (const event of provider.stream({
             modelIdentifier: model.modelIdentifier,
             messages: modelMessages,
@@ -357,6 +491,7 @@ export async function POST(request: Request): Promise<Response> {
             }
             if (event.type === 'finish') usage = event.usage;
             send(event);
+          }
           }
 
           // Persist the assistant turn only after a successful stream.

@@ -1,11 +1,10 @@
 /**
- * The composer's tool routing.
+ * The composer's tools.
  *
- * What matters here is that choosing a tool sends the request to the surface
- * that implements it — carrying the prompt — and that choosing nothing still
- * produces an ordinary streamed chat. Getting that backwards would either
- * strand people on a blank Build page or silently answer a build request with
- * prose.
+ * What matters is that choosing a tool sends it with the message and keeps the
+ * conversation where it is — an earlier version navigated away to the Build,
+ * Create and Research pages, which emptied the chat every time a tool was
+ * used. Choosing nothing must still be an ordinary chat.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -70,41 +69,32 @@ describe('the + menu', () => {
   });
 });
 
-describe('tool routing', () => {
+describe('tool selection', () => {
+  /** Read the JSON body the composer posted to /api/chat. */
+  const sentBody = (): Record<string, unknown> => {
+    const call = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]!;
+    return JSON.parse((call[1] as { body: string }).body) as Record<string, unknown>;
+  };
+
   it.each([
-    ['Build', '/build', 'a booking page for a barber shop'],
-    ['Research', '/research', 'compare two note-taking apps'],
-  ])('sends a %s request to %s with the prompt', async (label, path, prompt) => {
+    ['Build', 'build'],
+    ['Research', 'research'],
+    ['Image', 'image'],
+  ])('sends %s with the message and stays in the chat', async (label, expected) => {
     const user = userEvent.setup();
     renderChat();
 
     await chooseTool(user, label);
-    await user.type(screen.getByRole('textbox', { name: /Ask Reklu anything/ }), prompt);
+    await user.type(screen.getByRole('textbox', { name: /Ask Reklu anything/ }), 'do the thing');
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
-    await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
-    const target = push.mock.calls[0]![0] as string;
-    expect(target.startsWith(`${path}?`)).toBe(true);
-    expect(new URL(target, 'http://x').searchParams.get('q')).toBe(prompt);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(sentBody()).toMatchObject({ tool: expected, message: 'do the thing' });
+    // The whole point: no navigation away from the conversation.
+    expect(push).not.toHaveBeenCalled();
   });
 
-  it('asks Create for an image, not a document', async () => {
-    const user = userEvent.setup();
-    renderChat();
-
-    await chooseTool(user, 'Image');
-    await user.type(screen.getByRole('textbox', { name: /Ask Reklu anything/ }), 'a red bicycle');
-    await user.click(screen.getByRole('button', { name: 'Send message' }));
-
-    await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
-    const url = new URL(push.mock.calls[0]![0] as string, 'http://x');
-    expect(url.pathname).toBe('/create');
-    expect(url.searchParams.get('kind')).toBe('image');
-    expect(url.searchParams.get('q')).toBe('a red bicycle');
-  });
-
-  /** The default has to stay plain chat, or every message becomes a handoff. */
-  it('streams an ordinary chat when no tool is chosen', async () => {
+  it('sends no tool at all for an ordinary chat', async () => {
     const user = userEvent.setup();
     renderChat();
 
@@ -112,10 +102,11 @@ describe('tool routing', () => {
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(sentBody().tool).toBeUndefined();
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('turns a tool back off from its chip, restoring plain chat', async () => {
+  it('stops sending a tool once its chip is removed', async () => {
     const user = userEvent.setup();
     renderChat();
 
@@ -126,7 +117,7 @@ describe('tool routing', () => {
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(push).not.toHaveBeenCalled();
+    expect(sentBody().tool).toBeUndefined();
   });
 
   it('changes the placeholder to match the tool', async () => {
@@ -134,9 +125,7 @@ describe('tool routing', () => {
     renderChat();
 
     await chooseTool(user, 'Research');
-    expect(
-      screen.getByPlaceholderText('What should Reklu research?'),
-    ).toBeDefined();
+    expect(screen.getByPlaceholderText('What should Reklu research?')).toBeDefined();
   });
 });
 
