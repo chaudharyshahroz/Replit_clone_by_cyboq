@@ -30,8 +30,12 @@ const models = [
   },
 ];
 
-function renderChat() {
-  return render(<ChatView models={models} initialMessages={[]} devMockActive={false} />);
+function renderChat(
+  initialMessages: { id: string; role: 'user' | 'assistant'; text: string }[] = [],
+) {
+  return render(
+    <ChatView models={models} initialMessages={initialMessages} devMockActive={false} />,
+  );
 }
 
 /** Choose a tool from the composer's + menu. */
@@ -144,6 +148,27 @@ describe('suggestions', () => {
     expect(
       screen.getByRole('button', { name: /minimal logo for a coffee roastery/ }),
     ).toBeDefined();
+  });
+
+  /**
+   * Once there is a transcript, openers are clutter. They used to survive into
+   * a running conversation whenever a tool was selected — which is most of the
+   * time a tool is used, so they were on screen exactly when least wanted.
+   */
+  it('disappears once the conversation has started', () => {
+    renderChat([{ id: 'm1', role: 'user', text: 'hello' }]);
+    expect(screen.queryByRole('button', { name: 'Explain what this codebase does' })).toBeNull();
+  });
+
+  it('stays hidden mid-conversation even with a tool selected', async () => {
+    const user = userEvent.setup();
+    renderChat([{ id: 'm1', role: 'user', text: 'hello' }]);
+
+    await chooseTool(user, 'Research');
+
+    expect(
+      screen.queryByRole('button', { name: /Compare the three biggest AI note-taking apps/ }),
+    ).toBeNull();
   });
 
   /** They fill the box rather than sending, so a prompt can still be edited. */

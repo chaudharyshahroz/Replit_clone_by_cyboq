@@ -490,10 +490,11 @@ export function ChatView({
   const isEmpty = messages.length === 0 && !streaming;
 
   /*
-   * Only on an empty conversation, or when a tool is chosen mid-thread and the
-   * composer is blank. Once there is a transcript to read, openers are clutter.
+   * Only on an empty conversation. Once there is a transcript to read, openers
+   * are clutter — and they were still showing mid-thread whenever a tool was
+   * selected, which is most of the time a tool is used.
    */
-  const showSuggestions = (isEmpty || tool !== 'chat') && input.trim().length === 0;
+  const showSuggestions = isEmpty && input.trim().length === 0;
 
   /*
    * Extracted so the empty state and the running conversation render the

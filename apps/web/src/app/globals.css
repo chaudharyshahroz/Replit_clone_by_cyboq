@@ -150,10 +150,24 @@ body {
 
 /* ---- Focus: visible, consistent, keyboard-only (spec §99) ---------------- */
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-xs);
+/**
+ * Inside `@layer base`, so a component can opt out.
+ *
+ * Unlayered it could not be overridden by anything: `@import 'tailwindcss'`
+ * puts every utility into a cascade layer, and unlayered rules beat layered
+ * ones no matter their specificity. So `outline-none` on the chat composer —
+ * and on the landing page's own input — was silently losing, and clicking
+ * into either drew a bright orange ring around the text box. Specificity was
+ * never the problem, which is why adding more of it did not help.
+ *
+ * Keyboard focus stays visible everywhere that does not deliberately opt out.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
 }
 
 /* ---- Selection ----------------------------------------------------------- */
