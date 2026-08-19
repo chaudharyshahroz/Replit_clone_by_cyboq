@@ -1,8 +1,22 @@
+import { listProjects } from '@reklu/projects';
 import { Sidebar } from '@/components/app/sidebar';
 import { getAppContext } from '@/lib/auth-context';
+import { listConversations } from '@/lib/conversations';
+
+/**
+ * History and projects load here rather than per-page, because the sidebar
+ * shows them on every screen. Forcing dynamic rendering is the cost of a
+ * sidebar that reflects what the user actually has.
+ */
+export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, workspace } = await getAppContext();
+
+  const [threads, projects] = await Promise.all([
+    listConversations(user, workspace.workspaceId),
+    listProjects(workspace.workspaceId, user.id),
+  ]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -13,6 +27,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           workspaceName={workspace.workspaceName}
           userName={user.name ?? 'Account'}
           userEmail={user.email}
+          threads={threads}
+          projects={projects.map(({ project }) => ({ id: project.id, name: project.name }))}
         />
       </div>
 

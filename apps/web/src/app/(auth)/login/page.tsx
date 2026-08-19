@@ -12,7 +12,7 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  if (await getSession()) redirect('/home');
+  if (await getSession()) redirect('/chat');
 
   const { next, error } = await searchParams;
 

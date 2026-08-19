@@ -403,203 +403,230 @@ export function ChatView({
 
   const isEmpty = messages.length === 0 && !streaming;
 
+  /*
+   * Extracted so the empty state and the running conversation render the
+   * *same* composer. Two copies would drift — and the one people meet first
+   * is the one that would fall behind.
+   */
+  const composer = (
+    <>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send(input);
+      }}
+      className="rounded-xl border border-border-strong bg-surface focus-within:border-text-muted"
+    >
+      <label htmlFor="composer" className="sr-only">
+        Ask Reklu anything
+      </label>
+      <textarea
+        id="composer"
+        ref={textareaRef}
+        rows={2}
+        value={input}
+        onChange={(event) => setInput(event.target.value)}
+        onKeyDown={(event) => {
+          // Enter sends; Shift+Enter inserts a newline.
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            void send(input);
+          }
+        }}
+        placeholder="Ask Reklu anything..."
+        className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
+      />
+
+      {attachments.length > 0 ? (
+        <ul className="flex flex-wrap gap-2 px-3 pb-1">
+          {attachments.map((file) => (
+            <li
+              key={file.id}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
+                file.usableInChat
+                  ? 'border-border-strong text-text-secondary'
+                  : 'border-warning/40 bg-warning/5 text-warning'
+              }`}
+            >
+              <Paperclip className="h-3 w-3 shrink-0" strokeWidth={1.75} />
+              <span className="max-w-[14rem] truncate">{file.filename}</span>
+              <span className="text-text-muted">{formatBytes(file.sizeBytes)}</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setAttachments((prev) => prev.filter((f) => f.id !== file.id))
+                }
+                aria-label={`Remove ${file.filename}`}
+                className="rounded text-text-muted hover:text-text"
+              >
+                <X className="h-3 w-3" strokeWidth={2} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {/* Honest about files that were stored but could not be read. */}
+      {attachments.some((f) => !f.usableInChat) ? (
+        <p className="px-3 pb-1 text-[11px] leading-relaxed text-warning">
+          {attachments.find((f) => !f.usableInChat)?.statusDetail ??
+            'Some attachments could not be read and will be described to the model rather than included.'}
+        </p>
+      ) : null}
+
+      <div className="flex items-center gap-2 px-3 pb-3">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          onChange={(event) => void upload(event.target.files)}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={streaming || uploading}
+          aria-label="Attach files"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-2.5 text-xs text-text-secondary transition-colors hover:text-text disabled:opacity-40"
+        >
+          {uploading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+          ) : (
+            <Paperclip className="h-3.5 w-3.5" strokeWidth={1.75} />
+          )}
+          Attach
+        </button>
+
+        <ModelSelector
+          models={models}
+          value={modelKey}
+          onChange={setModelKey}
+          disabled={streaming}
+        />
+
+        <div className="ml-auto">
+          {streaming ? (
+            <button
+              type="button"
+              onClick={stop}
+              aria-label="Stop generating"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong text-text-secondary transition-colors hover:text-text"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              aria-label="Send message"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-30"
+            >
+              <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
+            </button>
+          )}
+        </div>
+      </div>
+    </form>
+    <p className="mt-2 text-center text-[11px] text-text-muted">
+      Reklu can make mistakes. Verify important information.
+    </p>
+    </>
+  );
+
+
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-6 py-10">
-          {isEmpty ? (
-            <div className="pt-16 text-center">
-              <h1 className="display text-3xl text-text">What do you want to do?</h1>
-              <p className="mt-3 text-text-secondary">
-                Ask anything. Reklu picks the right model for each request.
-              </p>
-              {devMockActive ? (
-                <p className="mx-auto mt-8 max-w-md rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs leading-relaxed text-text-secondary">
-                  <strong className="text-warning">Development Mock active.</strong> No AI provider
-                  key is configured, so replies are generated by a stub that echoes your request —
-                  not by a real model.
+        {isEmpty ? (
+          /*
+           * Nothing has been said yet, so the composer is the page: heading and
+           * input sit together in the middle, the way every assistant opens.
+           * Docking it to the bottom of an empty screen strands it under a
+           * blank expanse.
+           */
+          <div className="flex flex-1 items-center justify-center overflow-y-auto px-6 py-10">
+            <div className="w-full max-w-3xl">
+              <div className="text-center">
+                <h1 className="display text-3xl text-text">What do you want to do?</h1>
+                <p className="mt-3 text-text-secondary">
+                  Ask anything. Reklu picks the right model for each request.
                 </p>
-              ) : null}
+                {devMockActive ? (
+                  <p className="mx-auto mt-8 max-w-md rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs leading-relaxed text-text-secondary">
+                    <strong className="text-warning">Development Mock active.</strong> No AI
+                    provider key is configured, so replies are generated by a stub that echoes
+                    your request — not by a real model.
+                  </p>
+                ) : null}
+              </div>
+              <div className="mt-8">{composer}</div>
             </div>
-          ) : null}
-
-          <div className="space-y-6">
-            {messages.map((message) => (
-              <Bubble key={message.id} message={message} models={models} />
-            ))}
-
-            {streaming ? (
-              <div>
-                {routingReason ? (
-                  <p className="mb-2 flex items-center gap-1.5 text-xs text-text-muted">
-                    <Sparkles className="h-3 w-3 text-accent" strokeWidth={2} />
-                    {routingReason}
-                  </p>
-                ) : null}
-                {streamText ? (
-                  <Markdown content={streamText} />
-                ) : (
-                  <p className="flex items-center gap-2 text-sm text-text-muted">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
-                    Thinking…
-                  </p>
-                )}
-              </div>
-            ) : null}
-
-            {error ? (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-text"
-              >
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" strokeWidth={2} />
-                <span className="flex-1">{error.message}</span>
-                {error.retryable ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const last = [...messages].reverse().find((m) => m.role === 'user');
-                      if (last) void send(last.text);
-                    }}
-                    className="shrink-0 rounded-md border border-border-strong px-2 py-1 text-xs text-text-secondary hover:text-text"
-                  >
-                    Retry
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
           </div>
-        </div>
-      </div>
+        ) : (
+          <>
+            {/* Once the conversation is running the transcript leads and the
+                composer docks below it. */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+              <div className="mx-auto max-w-3xl px-6 py-10">
+                <div className="space-y-6">
+                  {messages.map((message) => (
+                    <Bubble key={message.id} message={message} models={models} />
+                  ))}
 
-      {/* ---- Composer ---- */}
-      <div className="border-t border-border bg-canvas">
-        <div className="mx-auto max-w-3xl px-6 py-4">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send(input);
-            }}
-            className="rounded-xl border border-border-strong bg-surface focus-within:border-text-muted"
-          >
-            <label htmlFor="composer" className="sr-only">
-              Ask Reklu anything
-            </label>
-            <textarea
-              id="composer"
-              ref={textareaRef}
-              rows={2}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                // Enter sends; Shift+Enter inserts a newline.
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  void send(input);
-                }
-              }}
-              placeholder="Ask Reklu anything..."
-              className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
-            />
+                  {streaming ? (
+                    <div>
+                      {routingReason ? (
+                        <p className="mb-2 flex items-center gap-1.5 text-xs text-text-muted">
+                          <Sparkles className="h-3 w-3 text-accent" strokeWidth={2} />
+                          {routingReason}
+                        </p>
+                      ) : null}
+                      {streamText ? (
+                        <Markdown content={streamText} />
+                      ) : (
+                        <p className="flex items-center gap-2 text-sm text-text-muted">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+                          Thinking…
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
 
-            {attachments.length > 0 ? (
-              <ul className="flex flex-wrap gap-2 px-3 pb-1">
-                {attachments.map((file) => (
-                  <li
-                    key={file.id}
-                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
-                      file.usableInChat
-                        ? 'border-border-strong text-text-secondary'
-                        : 'border-warning/40 bg-warning/5 text-warning'
-                    }`}
-                  >
-                    <Paperclip className="h-3 w-3 shrink-0" strokeWidth={1.75} />
-                    <span className="max-w-[14rem] truncate">{file.filename}</span>
-                    <span className="text-text-muted">{formatBytes(file.sizeBytes)}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAttachments((prev) => prev.filter((f) => f.id !== file.id))
-                      }
-                      aria-label={`Remove ${file.filename}`}
-                      className="rounded text-text-muted hover:text-text"
+                  {error ? (
+                    <div
+                      role="alert"
+                      className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-text"
                     >
-                      <X className="h-3 w-3" strokeWidth={2} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            {/* Honest about files that were stored but could not be read. */}
-            {attachments.some((f) => !f.usableInChat) ? (
-              <p className="px-3 pb-1 text-[11px] leading-relaxed text-warning">
-                {attachments.find((f) => !f.usableInChat)?.statusDetail ??
-                  'Some attachments could not be read and will be described to the model rather than included.'}
-              </p>
-            ) : null}
-
-            <div className="flex items-center gap-2 px-3 pb-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={(event) => void upload(event.target.files)}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={streaming || uploading}
-                aria-label="Attach files"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-2.5 text-xs text-text-secondary transition-colors hover:text-text disabled:opacity-40"
-              >
-                {uploading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
-                ) : (
-                  <Paperclip className="h-3.5 w-3.5" strokeWidth={1.75} />
-                )}
-                Attach
-              </button>
-
-              <ModelSelector
-                models={models}
-                value={modelKey}
-                onChange={setModelKey}
-                disabled={streaming}
-              />
-
-              <div className="ml-auto">
-                {streaming ? (
-                  <button
-                    type="button"
-                    onClick={stop}
-                    aria-label="Stop generating"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong text-text-secondary transition-colors hover:text-text"
-                  >
-                    <Square className="h-3.5 w-3.5 fill-current" strokeWidth={2} />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!input.trim()}
-                    aria-label="Send message"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-30"
-                  >
-                    <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
-                  </button>
-                )}
+                      <AlertCircle
+                        className="mt-0.5 h-4 w-4 shrink-0 text-danger"
+                        strokeWidth={2}
+                      />
+                      <span className="flex-1">{error.message}</span>
+                      {error.retryable ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const last = [...messages].reverse().find((m) => m.role === 'user');
+                            if (last) void send(last.text);
+                          }}
+                          className="shrink-0 rounded-md border border-border-strong px-2 py-1 text-xs text-text-secondary hover:text-text"
+                        >
+                          Retry
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </form>
 
-          <p className="mt-2 text-center text-[11px] text-text-muted">
-            Reklu can make mistakes. Verify important information.
-          </p>
-        </div>
+            <div className="border-t border-border bg-canvas">
+              <div className="mx-auto max-w-3xl px-6 py-4">{composer}</div>
+            </div>
+          </>
+        )}
       </div>
-      </div>
+
 
       {/* Artifact workspace beside the chat (spec §20). */}
       {artifact ? (

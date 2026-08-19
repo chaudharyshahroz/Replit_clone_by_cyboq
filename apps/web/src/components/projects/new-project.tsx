@@ -5,7 +5,7 @@ import { useFormStatus } from 'react-dom';
 import { AlertCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
-import { createProjectAction, type ProjectFormState } from './actions';
+import { createProjectAction, type ProjectFormState } from '@/app/(app)/projects/actions';
 
 function Submit() {
   const { pending } = useFormStatus();
@@ -16,8 +16,18 @@ function Submit() {
   );
 }
 
-export function NewProjectDialog() {
-  const [open, setOpen] = useState(false);
+/**
+ * Controlled, because two places open it: the sidebar's + button and the
+ * Projects screen. Owning its own `open` state would mean two copies of the
+ * dialog and two different ways to dismiss it.
+ */
+export function NewProjectDialog({
+  open,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly onClose: () => void;
+}) {
   const [state, formAction] = useActionState<ProjectFormState, FormData>(createProjectAction, {});
   const dialogRef = useRef<HTMLDivElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
@@ -26,26 +36,19 @@ export function NewProjectDialog() {
     if (!open) return;
     firstFieldRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
+  }, [open, onClose]);
 
-  if (!open) {
-    return (
-      <Button size="sm" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" strokeWidth={2} />
-        New project
-      </Button>
-    );
-  }
+  if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) setOpen(false);
+        if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
@@ -104,7 +107,7 @@ export function NewProjectDialog() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" size="md" onClick={() => setOpen(false)}>
+            <Button type="button" variant="secondary" size="md" onClick={onClose}>
               Cancel
             </Button>
             <Submit />
@@ -112,5 +115,19 @@ export function NewProjectDialog() {
         </form>
       </div>
     </div>
+  );
+}
+
+/** The Projects screen's own trigger, which owns the dialog it opens. */
+export function NewProjectButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" strokeWidth={2} />
+        New project
+      </Button>
+      <NewProjectDialog open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }

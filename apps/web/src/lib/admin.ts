@@ -41,7 +41,7 @@ export async function requireSuperAdmin(): Promise<{ userId: string }> {
     .where(eq(users.id, user.id))
     .limit(1);
 
-  if (!row?.isSuperAdmin) redirect('/home');
+  if (!row?.isSuperAdmin) redirect('/chat');
   return { userId: user.id };
 }
 

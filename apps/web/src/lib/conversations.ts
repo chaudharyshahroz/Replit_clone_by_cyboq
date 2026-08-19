@@ -1,6 +1,6 @@
 import 'server-only';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { conversations, db, messages } from '@reklu/database';
+import { conversations, db, messages, projects } from '@reklu/database';
 import { errors } from '@reklu/shared';
 import type { User } from '@reklu/database';
 import type { ChatMessage } from '@/components/chat/chat-view';
@@ -11,7 +11,12 @@ export interface ConversationSummary {
   readonly lastMessageAt: Date | null;
   readonly messageCount: number;
   readonly mode: string;
+  readonly pinned: boolean;
+  readonly projectId: string | null;
 }
+
+/** A title long enough to be useful, short enough not to break the sidebar. */
+const MAX_TITLE_LENGTH = 200;
 
 /**
  * Threads for the sidebar.
@@ -32,6 +37,8 @@ export async function listConversations(
       lastMessageAt: conversations.lastMessageAt,
       messageCount: conversations.messageCount,
       mode: conversations.mode,
+      pinned: conversations.isFavorite,
+      projectId: conversations.projectId,
     })
     .from(conversations)
     .where(
@@ -42,7 +49,8 @@ export async function listConversations(
         isNull(conversations.archivedAt),
       ),
     )
-    .orderBy(desc(conversations.lastMessageAt))
+    // Pinned threads first, then most recently active.
+    .orderBy(desc(conversations.isFavorite), desc(conversations.lastMessageAt))
     .limit(limit);
 
   return rows.map((row) => ({
@@ -51,6 +59,8 @@ export async function listConversations(
     lastMessageAt: row.lastMessageAt,
     messageCount: row.messageCount,
     mode: row.mode,
+    pinned: row.pinned,
+    projectId: row.projectId,
   }));
 }
 
@@ -100,6 +110,8 @@ export async function loadConversation(
       lastMessageAt: conversation.lastMessageAt,
       messageCount: conversation.messageCount,
       mode: conversation.mode,
+      pinned: conversation.isFavorite,
+      projectId: conversation.projectId,
     },
     messages: rows
       .filter((row) => row.role === 'user' || row.role === 'assistant')
@@ -132,4 +144,103 @@ export async function deleteConversation(
     .returning({ id: conversations.id });
 
   if (deleted.length === 0) throw errors.notFound('Conversation', conversationId);
+}
+
+/**
+ * The predicate every mutation below shares: this conversation, owned by this
+ * user, in this workspace, not deleted.
+ *
+ * Written once because a mutation that forgets any one of these clauses is a
+ * cross-tenant write, and four near-identical `and(...)` blocks is exactly
+ * where that omission hides.
+ */
+function ownedBy(user: User, workspaceId: string, conversationId: string) {
+  return and(
+    eq(conversations.id, conversationId),
+    eq(conversations.userId, user.id),
+    eq(conversations.workspaceId, workspaceId),
+    isNull(conversations.deletedAt),
+  );
+}
+
+/** Rename a thread. An empty title restores the automatic one. */
+export async function renameConversation(
+  user: User,
+  workspaceId: string,
+  conversationId: string,
+  title: string,
+): Promise<void> {
+  const trimmed = title.trim().slice(0, MAX_TITLE_LENGTH);
+
+  const updated = await db
+    .update(conversations)
+    .set({
+      title: trimmed.length > 0 ? trimmed : null,
+      /*
+       * A human-chosen title must survive: the auto-titler overwrites only
+       * where titleIsAuto is still true, so leaving this set would let the
+       * next turn discard what the user just typed.
+       */
+      titleIsAuto: trimmed.length === 0,
+      updatedBy: user.id,
+    })
+    .where(ownedBy(user, workspaceId, conversationId))
+    .returning({ id: conversations.id });
+
+  if (updated.length === 0) throw errors.notFound('Conversation', conversationId);
+}
+
+/** Pin or unpin a thread, which sorts it to the top of the sidebar. */
+export async function setConversationPinned(
+  user: User,
+  workspaceId: string,
+  conversationId: string,
+  pinned: boolean,
+): Promise<void> {
+  const updated = await db
+    .update(conversations)
+    .set({ isFavorite: pinned, updatedBy: user.id })
+    .where(ownedBy(user, workspaceId, conversationId))
+    .returning({ id: conversations.id });
+
+  if (updated.length === 0) throw errors.notFound('Conversation', conversationId);
+}
+
+/**
+ * File a thread into a project, or pass null to take it out of one.
+ *
+ * The project is re-checked against the same workspace before the write.
+ * Without that, a crafted request could file a conversation into another
+ * tenant's project — the conversation's own ownership check would still pass,
+ * because it is the *destination* that crosses the boundary.
+ */
+export async function setConversationProject(
+  user: User,
+  workspaceId: string,
+  conversationId: string,
+  projectId: string | null,
+): Promise<void> {
+  if (projectId !== null) {
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.id, projectId),
+          eq(projects.workspaceId, workspaceId),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!project) throw errors.notFound('Project', projectId);
+  }
+
+  const updated = await db
+    .update(conversations)
+    .set({ projectId, updatedBy: user.id })
+    .where(ownedBy(user, workspaceId, conversationId))
+    .returning({ id: conversations.id });
+
+  if (updated.length === 0) throw errors.notFound('Conversation', conversationId);
 }

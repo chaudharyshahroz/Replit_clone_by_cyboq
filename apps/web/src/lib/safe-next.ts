@@ -14,6 +14,6 @@ export function safeNext(value: FormDataEntryValue | null | undefined): string {
   const next = typeof value === 'string' ? value : '';
   // A protocol-relative `//evil.test` is absolute to a browser despite the
   // leading slash, so both conditions are needed.
-  if (!next.startsWith('/') || next.startsWith('//')) return '/home';
+  if (!next.startsWith('/') || next.startsWith('//')) return '/chat';
   return next;
 }

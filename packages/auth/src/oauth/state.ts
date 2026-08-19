@@ -40,11 +40,11 @@ export function deriveCodeChallenge(verifier: string): string {
 
 /** Constrained to a path on this origin, so the callback cannot open-redirect. */
 export function safeReturnTo(candidate: string | undefined | null): string {
-  if (!candidate) return '/home';
-  if (!candidate.startsWith('/') || candidate.startsWith('//')) return '/home';
-  if (candidate.includes('\\') || /[\r\n]/.test(candidate)) return '/home';
+  if (!candidate) return '/chat';
+  if (!candidate.startsWith('/') || candidate.startsWith('//')) return '/chat';
+  if (candidate.includes('\\') || /[\r\n]/.test(candidate)) return '/chat';
   // An authenticated destination only; bouncing back to /login would loop.
-  if (candidate.startsWith('/login') || candidate.startsWith('/signup')) return '/home';
+  if (candidate.startsWith('/login') || candidate.startsWith('/signup')) return '/chat';
   return candidate;
 }
 

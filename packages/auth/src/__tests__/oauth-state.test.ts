@@ -37,15 +37,15 @@ describe('safeReturnTo', () => {
     ['absolute url', 'https://evil.test/steal'],
     ['protocol-relative', '//evil.test'],
     ['backslash trick', '/\\evil.test'],
-    ['crlf injection', '/home\r\nSet-Cookie: x=1'],
+    ['crlf injection', '/chat\r\nSet-Cookie: x=1'],
     ['empty', ''],
   ])('refuses %s', (_label, candidate) => {
-    expect(safeReturnTo(candidate)).toBe('/home');
+    expect(safeReturnTo(candidate)).toBe('/chat');
   });
 
   // Returning to the sign-in page after signing in would loop.
-  it.each(['/login', '/signup', '/login?next=/home'])('refuses %s', (candidate) => {
-    expect(safeReturnTo(candidate)).toBe('/home');
+  it.each(['/login', '/signup', '/login?next=/chat'])('refuses %s', (candidate) => {
+    expect(safeReturnTo(candidate)).toBe('/chat');
   });
 });
 
@@ -64,7 +64,7 @@ describe('sign-in state', () => {
   });
 
   it('derives a PKCE challenge from the verifier, not the other way round', () => {
-    const started = startSignIn('google', '/home');
+    const started = startSignIn('google', '/chat');
     const completed = completeSignIn({
       state: started.state,
       cookieValue: started.cookieValue,
@@ -75,7 +75,7 @@ describe('sign-in state', () => {
 
   // The verifier must never leave this server; only the challenge is sent.
   it('never puts the code verifier in the state', () => {
-    const started = startSignIn('google', '/home');
+    const started = startSignIn('google', '/chat');
     const verifier = started.cookieValue.split('.')[1]!;
     expect(started.state).not.toContain(verifier);
     expect(started.codeChallenge).not.toBe(verifier);
@@ -87,8 +87,8 @@ describe('sign-in state', () => {
    * a sign-in in the victim's session using the attacker's own code.
    */
   it('refuses a state that was not issued to this browser', () => {
-    const attacker = startSignIn('google', '/home');
-    const victim = startSignIn('google', '/home');
+    const attacker = startSignIn('google', '/chat');
+    const victim = startSignIn('google', '/chat');
 
     expect(() =>
       completeSignIn({
@@ -100,21 +100,21 @@ describe('sign-in state', () => {
   });
 
   it('refuses a missing cookie', () => {
-    const started = startSignIn('github', '/home');
+    const started = startSignIn('github', '/chat');
     expect(() =>
       completeSignIn({ state: started.state, cookieValue: undefined, provider: 'github' }),
     ).toThrow(SignInStateError);
   });
 
   it('refuses a missing state', () => {
-    const started = startSignIn('github', '/home');
+    const started = startSignIn('github', '/chat');
     expect(() =>
       completeSignIn({ state: null, cookieValue: started.cookieValue, provider: 'github' }),
     ).toThrow(SignInStateError);
   });
 
   it('refuses a tampered state', () => {
-    const started = startSignIn('github', '/home');
+    const started = startSignIn('github', '/chat');
     const tampered = `${started.state.slice(0, -4)}AAAA`;
     expect(() =>
       completeSignIn({ state: tampered, cookieValue: started.cookieValue, provider: 'github' }),
@@ -123,7 +123,7 @@ describe('sign-in state', () => {
 
   // A state issued for one provider must not complete another's callback.
   it('refuses a state from a different provider', () => {
-    const started = startSignIn('google', '/home');
+    const started = startSignIn('google', '/chat');
     expect(() =>
       completeSignIn({
         state: started.state,
@@ -134,7 +134,7 @@ describe('sign-in state', () => {
   });
 
   it('refuses an expired state', () => {
-    const started = startSignIn('google', '/home');
+    const started = startSignIn('google', '/chat');
     expect(() =>
       completeSignIn({
         state: started.state,
@@ -146,7 +146,7 @@ describe('sign-in state', () => {
   });
 
   it('refuses a state stamped in the future', () => {
-    const started = startSignIn('google', '/home');
+    const started = startSignIn('google', '/chat');
     expect(() =>
       completeSignIn({
         state: started.state,
@@ -158,7 +158,7 @@ describe('sign-in state', () => {
   });
 
   it('refuses a malformed cookie', () => {
-    const started = startSignIn('google', '/home');
+    const started = startSignIn('google', '/chat');
     expect(() =>
       completeSignIn({
         state: started.state,
@@ -177,6 +177,6 @@ describe('sign-in state', () => {
       cookieValue: started.cookieValue,
       provider: 'google',
     });
-    expect(completed.returnTo).toBe('/home');
+    expect(completed.returnTo).toBe('/chat');
   });
 });

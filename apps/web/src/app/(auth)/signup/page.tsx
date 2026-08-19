@@ -18,7 +18,7 @@ export default async function SignUpPage({
 
   /**
    * An already-signed-in visitor still goes where they were heading.
-   * Redirecting to /home instead would silently discard the question someone
+   * Redirecting to /chat instead would silently discard the question someone
    * typed on the landing page, which is the one thing this flow exists to
    * preserve.
    */
