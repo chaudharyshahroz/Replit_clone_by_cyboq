@@ -115,12 +115,39 @@ describe('createCheckoutSession', () => {
         title: 'Pro',
         currency: 'usd',
         plan_type: 'renewal',
-        initial_price: 25,
+        initial_price: 0,
         renewal_price: 25,
         billing_period: 30,
       },
       metadata: { workspace_id: 'wsp_01hxyz', plan_key: 'pro' },
     });
+  });
+
+  /**
+   * Whop adds `initial_price` to the first `renewal_price` on a renewal plan,
+   * so setting both to the plan price charged everyone twice — a $25 plan
+   * asked for $50 at checkout. The first payment must equal what the billing
+   * page advertised, and this asserts the arithmetic rather than the fields.
+   */
+  it('charges the advertised price once, not twice', async () => {
+    respondWith({ id: 'ch_live_123' });
+    await createCheckoutSession({
+      apiKey: params.apiKey,
+      workspaceId: params.workspaceId,
+      returnUrl: params.returnUrl,
+      planKey: 'pro',
+      plan: definition,
+      companyId: 'biz_123',
+    });
+
+    const plan = sentRequest().body.plan as {
+      initial_price: number;
+      renewal_price: number;
+    };
+    const firstCharge = plan.initial_price + plan.renewal_price;
+
+    expect(firstCharge).toBe(definition.priceUsd);
+    expect(plan.renewal_price).toBe(definition.priceUsd);
   });
 
   /**

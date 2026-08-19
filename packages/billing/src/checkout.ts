@@ -142,7 +142,16 @@ export async function createCheckoutSession(params: {
           ...(params.plan!.description ? { description: params.plan!.description } : {}),
           currency: params.plan!.currency,
           plan_type: 'renewal',
-          initial_price: params.plan!.priceUsd,
+          /**
+           * Zero, deliberately.
+           *
+           * On a renewal plan Whop charges `initial_price` *on top of* the
+           * first `renewal_price` — it is a setup fee, not the first period.
+           * Setting both to the plan price billed everyone double at checkout:
+           * a $25 plan asked for $50. Reklu sells a flat monthly price with no
+           * joining fee, so the only correct value here is nothing.
+           */
+          initial_price: 0,
           renewal_price: params.plan!.priceUsd,
           billing_period: params.plan!.billingPeriodDays,
           visibility: 'hidden',
