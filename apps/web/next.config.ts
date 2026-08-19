@@ -87,6 +87,22 @@ const config: NextConfig = {
     ].join('; ');
 
     return [
+      /**
+       * Apple's merchant domain verification file.
+       *
+       * Served from `public/.well-known/` with no extension, so Next hands it
+       * back as `application/octet-stream`. Apple compares the bytes rather
+       * than the type, but `nosniff` is set globally and an octet-stream is
+       * the one thing a fetcher might refuse to read as text — so the type is
+       * stated rather than left to a default.
+       *
+       * Listed before the catch-all: the first matching source wins for a
+       * given header key.
+       */
+      {
+        source: '/.well-known/apple-developer-merchantid-domain-association',
+        headers: [{ key: 'Content-Type', value: 'text/plain; charset=utf-8' }],
+      },
       {
         source: '/:path*',
         headers: [
