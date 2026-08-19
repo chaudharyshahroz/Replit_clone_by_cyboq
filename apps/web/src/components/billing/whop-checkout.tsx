@@ -18,18 +18,21 @@ const WHOP_CHECKOUT_SCRIPT = 'https://js.whop.com/static/checkout/loader.js';
  * details are entered on their origin and never touch Reklu's. Reklu never
  * sees, stores or transmits a card number.
  *
- * `workspaceId` rides along as the checkout session so the webhook can attach
- * the resulting membership to the right workspace. Matching on email would be
- * wrong — someone may pay with a different address than they signed up with,
+ * `sessionId` is a `ch_…` id minted server-side with the workspace in its
+ * metadata, which is how the webhook knows whose plan to change. It used to be
+ * the raw workspace id, which Whop simply does not accept there — the payment
+ * would go through carrying no metadata at all, and the customer would be
+ * charged without being upgraded. Matching on email instead would be worse
+ * still: someone may pay with a different address than they signed up with,
  * and a wrong guess upgrades a stranger.
  */
 export function WhopCheckout({
   planId,
-  workspaceId,
+  sessionId,
   returnUrl,
 }: {
   readonly planId: string;
-  readonly workspaceId: string;
+  readonly sessionId: string;
   readonly returnUrl: string;
 }) {
   return (
@@ -38,7 +41,7 @@ export function WhopCheckout({
       <div
         data-whop-checkout-plan-id={planId}
         data-whop-checkout-return-url={returnUrl}
-        data-whop-checkout-session={workspaceId}
+        data-whop-checkout-session={sessionId}
         data-whop-checkout-theme="dark"
         className="min-h-[32rem] w-full overflow-hidden rounded-xl border border-border"
       />

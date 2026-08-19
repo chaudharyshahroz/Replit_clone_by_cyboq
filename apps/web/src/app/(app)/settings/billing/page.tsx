@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, CreditCard } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
-import { billingConfig } from '@reklu/billing';
+import { billingConfig, createCheckoutSession } from '@reklu/billing';
 import { db, plans, subscriptions } from '@reklu/database';
-import { eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
+import { isRekluError, logger } from '@reklu/shared';
 import { absoluteAppUrl } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
 import { WhopCheckout } from '@/components/billing/whop-checkout';
@@ -30,8 +31,51 @@ export default async function BillingPage({
     .where(eq(subscriptions.workspaceId, workspace.workspaceId))
     .limit(1);
 
+  /*
+   * Prices come from the plans table, not from constants in this file. They
+   * have to match what is configured in Whop — Reklu displays the price but
+   * Whop is what actually charges, so a mismatch here would advertise one
+   * number and take another.
+   */
+  const purchasable = await db
+    .select({
+      key: plans.key,
+      name: plans.name,
+      description: plans.description,
+      priceMonthlyUsd: plans.priceMonthlyUsd,
+    })
+    .from(plans)
+    .where(inArray(plans.key, ['pro', 'team']))
+    .orderBy(asc(plans.priceMonthlyUsd));
+
   const wantedPlanId =
     wanted === 'team' ? config.planIds.team : wanted === 'pro' ? config.planIds.pro : undefined;
+
+  const returnUrl = absoluteAppUrl('/settings/billing');
+
+  /*
+   * The session is minted here, on the server, because that is the only way
+   * the workspace id reaches the webhook. A failure is reported rather than
+   * rendering an embed that would take a payment nobody could attribute.
+   */
+  let session: { id: string } | undefined;
+  let checkoutError: string | undefined;
+
+  if (wantedPlanId && config.available && config.apiKey) {
+    try {
+      session = await createCheckoutSession({
+        apiKey: config.apiKey,
+        whopPlanId: wantedPlanId,
+        workspaceId: workspace.workspaceId,
+        returnUrl,
+      });
+    } catch (error) {
+      checkoutError = isRekluError(error)
+        ? error.userMessage
+        : 'Could not start checkout. Please try again.';
+      logger.error('Could not create a Whop checkout session', { error });
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
@@ -104,34 +148,48 @@ export default async function BillingPage({
             Payment is handled by Whop. Card details are entered on their form and
             never reach Reklu.
           </p>
-          <div className="mt-4">
-            <WhopCheckout
-              planId={wantedPlanId}
-              workspaceId={workspace.workspaceId}
-              returnUrl={absoluteAppUrl('/settings/billing')}
-            />
-          </div>
+
+          {checkoutError ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-lg border border-danger/40 bg-danger/10 px-3.5 py-3 text-sm text-text"
+            >
+              {checkoutError}
+            </p>
+          ) : session ? (
+            <div className="mt-4">
+              <WhopCheckout
+                planId={wantedPlanId}
+                sessionId={session.id}
+                returnUrl={returnUrl}
+              />
+            </div>
+          ) : null}
         </section>
       ) : (
         <section className="mt-6 grid gap-3 sm:grid-cols-2">
-          {(['pro', 'team'] as const)
-            .filter((key) => config.planIds[key])
-            .map((key) => (
+          {purchasable
+            // Only plans this deployment can actually sell: a card for a plan
+            // with no Whop id would lead to a checkout that cannot open.
+            .filter((plan) => config.planIds[plan.key as 'pro' | 'team'])
+            .map((plan) => (
               <Link
-                key={key}
-                href={`/settings/billing?plan=${key}`}
+                key={plan.key}
+                href={`/settings/billing?plan=${plan.key}`}
                 className="rounded-xl border border-border bg-surface/40 p-5 transition-colors hover:border-border-strong"
               >
-                <p className="text-sm font-medium text-text">
-                  {key === 'pro' ? 'Pro' : 'Team'}
+                <p className="text-sm font-medium text-text">{plan.name}</p>
+                <p className="mt-1 text-2xl text-text">
+                  ${Number(plan.priceMonthlyUsd).toFixed(0)}
+                  <span className="text-sm text-text-muted"> /month</span>
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-                  {key === 'pro'
-                    ? 'More AI units, longer research runs, and priority models.'
-                    : 'Everything in Pro, plus shared workspaces for your team.'}
-                </p>
+                {plan.description ? (
+                  <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+                    {plan.description}
+                  </p>
+                ) : null}
                 <span className="mt-3 inline-block text-xs font-medium text-accent">
-                  Choose {key === 'pro' ? 'Pro' : 'Team'} →
+                  Choose {plan.name} →
                 </span>
               </Link>
             ))}

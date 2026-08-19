@@ -646,6 +646,8 @@ one part that calls a model — is still only covered by unit tests.
 | Item | State | Evidence |
 | ---- | ----- | -------- |
 | Whop embedded checkout | ✅ | `/settings/billing`; card details never touch Reklu |
+| Checkout session carries the workspace | ✅ | minted via Whop's API so the webhook can attach the membership |
+| Plan prices shown from the `plans` table | ✅ | must match the Whop plans the ids point at |
 | Webhook signature verification | ✅ | raw body, constant-time, replay-bounded, rotation-aware |
 | Membership → subscription | ✅ | idempotent; a downgrade deletes nothing |
 | Quota enforced on every model path | ✅ | guarded by `pnpm verify:repo` |
@@ -654,7 +656,16 @@ one part that calls a model — is still only covered by unit tests.
 | HSTS, no `X-Powered-By` | ✅ | `pnpm verify:security` |
 | Auth required on every app route | ✅ | asserted against a running origin |
 
-**Not verified:** no live Whop delivery received and no payment taken.
+**Not verified:** no live Whop delivery received and no payment taken. The
+checkout-session call is written against Whop's documented
+`POST /api/v1/checkout_configurations` contract and covered by tests against a
+stubbed transport, but no real session has been minted. The first live purchase
+is what proves the workspace id survives the round trip into the webhook, and
+that is the one thing that cannot be proven from here.
+
+`WHOP_API_KEY` is required, not optional: without it there is no checkout
+session, so a payment arrives carrying nothing that identifies the workspace
+and the customer is charged without being upgraded.
 
 **Accessibility** — axe runs against the served HTML of `/`, `/login` and
 `/signup` via `pnpm verify:a11y`. No serious or critical violations. Colour
