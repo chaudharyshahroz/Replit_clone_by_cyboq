@@ -60,11 +60,18 @@ const MODES: readonly { value: ResearchMode; label: string; hint: string }[] = [
 export function ResearchView({
   webSearchConfigured,
   searchEnvVars,
+  initialQuery,
 }: {
   webSearchConfigured: boolean;
   searchEnvVars: readonly string[];
+  /** Carried from the chat composer's Research tool. */
+  initialQuery?: string;
 }) {
-  const [query, setQuery] = useState('');
+  /*
+   * Prefilled, not auto-run: research spends real money and time, so arriving
+   * here should still leave the decision to start with the person.
+   */
+  const [query, setQuery] = useState(initialQuery ?? '');
   const [mode, setMode] = useState<ResearchMode>('research');
   const [running, setRunning] = useState(false);
   const [stages, setStages] = useState<StageEntry[]>([]);

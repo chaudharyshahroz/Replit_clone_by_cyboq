@@ -26,9 +26,25 @@ const KINDS = [
  * disabled one with a reason is a deployment that has not been configured yet
  * (spec §25).
  */
-export function CreateForm({ availability }: { availability: readonly Availability[] }) {
+export function CreateForm({
+  availability,
+  initialPrompt,
+  initialKind,
+}: {
+  availability: readonly Availability[];
+  /** Carried from the chat composer's Image tool. */
+  initialPrompt?: string;
+  initialKind?: string;
+}) {
   const [state, action, pending] = useActionState<CreateFormState, FormData>(createAction, {});
-  const [kind, setKind] = useState<string>(state.submitted?.kind ?? 'document');
+  /*
+   * A failed submission's own kind wins over the incoming link: after an error
+   * the form should show what the person actually tried, not reset to whatever
+   * they arrived with.
+   */
+  const [kind, setKind] = useState<string>(
+    state.submitted?.kind ?? initialKind ?? 'document',
+  );
 
   const byKind = new Map(availability.map((entry) => [entry.kind, entry]));
   const selected = KINDS.find((entry) => entry.kind === kind)!;
@@ -77,7 +93,7 @@ export function CreateForm({ availability }: { availability: readonly Availabili
           required
           minLength={8}
           disabled={!usable}
-          defaultValue={state.submitted?.prompt}
+          defaultValue={state.submitted?.prompt ?? initialPrompt}
           placeholder={selected.placeholder || 'Not available on this instance.'}
           className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-3 text-sm leading-relaxed text-text outline-none placeholder:text-text-muted focus:border-accent disabled:opacity-50"
         />

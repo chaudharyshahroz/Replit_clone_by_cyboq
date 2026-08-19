@@ -111,6 +111,32 @@ describe('navigation', () => {
     await waitFor(() => expect(screen.queryByRole('menu', { name: 'More' })).toBeNull());
   });
 
+  /**
+   * The bug this pins down: the panel was absolutely positioned inside the
+   * chat list, whose `overflow-y-auto` clipped it — the menu rendered half
+   * cut off with the row behind painting over it. Being a child of <body> is
+   * what makes it immune, so that is what gets asserted.
+   */
+  it('renders the menu outside the scrolling list so it cannot be clipped', async () => {
+    const user = userEvent.setup();
+    const { container } = renderSidebar();
+
+    await user.click(screen.getByRole('button', { name: /Actions for Quarterly plan/ }));
+    const menu = screen.getByRole('menu');
+
+    expect(container.contains(menu)).toBe(false);
+    expect(document.body.contains(menu)).toBe(true);
+
+    // Anything with a scroll container between it and <body> can be clipped.
+    let node = menu.parentElement;
+    const ancestors: string[] = [];
+    while (node && node !== document.body) {
+      ancestors.push(node.className);
+      node = node.parentElement;
+    }
+    expect(ancestors.filter((c) => c.includes('overflow-y-auto'))).toEqual([]);
+  });
+
   it('shows the signed-in account', () => {
     renderSidebar();
     expect(screen.getByText('Shahroz')).toBeDefined();

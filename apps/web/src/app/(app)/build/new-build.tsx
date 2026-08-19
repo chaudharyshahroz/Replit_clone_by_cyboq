@@ -19,7 +19,7 @@ function Submit() {
   );
 }
 
-export function NewBuildForm() {
+export function NewBuildForm({ initialPrompt }: { initialPrompt?: string }) {
   const [state, formAction] = useActionState<BuildFormState, FormData>(createBuildAction, {});
 
   return (
@@ -43,6 +43,8 @@ export function NewBuildForm() {
           name="prompt"
           rows={3}
           required
+          /* Carried from the chat composer's Build tool. */
+          defaultValue={initialPrompt}
           placeholder="An AI calorie tracking mobile app with meal logging, progress charts and subscriptions…"
           className="w-full resize-none bg-transparent px-4 pt-4 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
         />

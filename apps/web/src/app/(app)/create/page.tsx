@@ -7,9 +7,14 @@ import { CreateForm } from '@/components/create/create-form';
 export const metadata: Metadata = { title: 'Create' };
 export const dynamic = 'force-dynamic';
 
-export default async function CreatePage() {
+export default async function CreatePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; kind?: string }>;
+}) {
   await getAppContext();
   const availability = await createAvailability();
+  const { q, kind } = await searchParams;
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
@@ -31,6 +36,10 @@ export default async function CreatePage() {
             available: entry.available,
             detail: entry.detail,
           }))}
+          // Capped, and the kind is only honoured if it is one this deployment
+          // actually offers.
+          initialPrompt={q?.slice(0, 2_000)}
+          initialKind={availability.some((entry) => entry.kind === kind) ? kind : undefined}
         />
       </div>
     </div>

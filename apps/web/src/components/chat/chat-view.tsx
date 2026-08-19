@@ -7,15 +7,94 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ImagePlus,
   Loader2,
   ExternalLink,
   Paperclip,
   PanelRightClose,
+  Plus,
   Sparkles,
   Square,
+  Telescope,
+  Wrench,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Menu, MenuItem, MenuSeparator } from '@/components/ui/menu';
 import { Markdown } from './markdown';
+
+/**
+ * The composer's tools.
+ *
+ * Picking one does not change how chat replies — it hands the request to the
+ * surface that already does that work. Build, Image and Research each have a
+ * real implementation with its own quota, streaming and failure handling;
+ * re-implementing a thin version of each inside the composer would produce
+ * three shallower copies of features that already work.
+ *
+ * With no tool selected this is ordinary chat, which is the default because it
+ * is what most requests are.
+ */
+export type ToolKey = 'chat' | 'build' | 'image' | 'research';
+
+interface ToolDefinition {
+  readonly label: string;
+  readonly icon: LucideIcon;
+  readonly placeholder: string;
+  /** The surface this hands off to, which prefills from `?q=`. */
+  readonly href: string;
+  /** Extra query the target needs — Create serves several kinds. */
+  readonly params?: Readonly<Record<string, string>>;
+  readonly hint: string;
+  readonly suggestions: readonly string[];
+}
+
+const TOOLS: Record<Exclude<ToolKey, 'chat'>, ToolDefinition> = {
+  build: {
+    label: 'Build',
+    icon: Wrench,
+    placeholder: 'Describe the app or site you want built…',
+    href: '/build',
+    hint: 'Reklu writes the code and runs it in an isolated sandbox.',
+    suggestions: [
+      'A booking page for a barber shop with opening hours',
+      'A landing page for a productivity app, with pricing',
+      'A dashboard showing sales by region from a CSV',
+    ],
+  },
+  image: {
+    label: 'Image',
+    icon: ImagePlus,
+    placeholder: 'Describe the image you want…',
+    href: '/create',
+    params: { kind: 'image' },
+    hint: 'Generated images are saved to Artifacts.',
+    suggestions: [
+      'A minimal logo for a coffee roastery, flat vector',
+      'A hero illustration of a city at dusk, muted palette',
+      'A product photo of a ceramic mug on linen',
+    ],
+  },
+  research: {
+    label: 'Research',
+    icon: Telescope,
+    placeholder: 'What should Reklu research?',
+    href: '/research',
+    hint: 'Answers come back with sources you can open and check.',
+    suggestions: [
+      'Compare the three biggest AI note-taking apps on pricing and privacy',
+      'What changed in EU data rules for SaaS in the last year?',
+      'Who are the main competitors in home espresso machines?',
+    ],
+  },
+};
+
+/** Openers for plain chat, shown when no tool is selected. */
+const CHAT_SUGGESTIONS: readonly string[] = [
+  'Explain what this codebase does',
+  'Draft a launch email for a new feature',
+  'Turn these notes into a summary',
+];
 
 export interface SelectableModel {
   readonly key: string;
@@ -71,11 +150,14 @@ function ModelSelector({
   value,
   onChange,
   disabled,
+  placement = 'up',
 }: {
   models: readonly SelectableModel[];
   value: string;
   onChange: (key: string) => void;
   disabled: boolean;
+  /** The header sits at the top of the screen, so its list opens downward. */
+  placement?: 'up' | 'down';
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -125,7 +207,9 @@ function ModelSelector({
       {open ? (
         <div
           role="listbox"
-          className="absolute bottom-full left-0 z-30 mb-2 max-h-96 w-80 overflow-y-auto rounded-xl border border-border-strong bg-surface-raised p-1.5 shadow-2xl shadow-black/50"
+          className={`absolute left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-xl border border-border-strong bg-surface-raised p-1.5 shadow-2xl shadow-black/50 ${
+            placement === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
+          }`}
         >
           <button
             type="button"
@@ -223,6 +307,8 @@ export function ChatView({
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [tool, setTool] = useState<ToolKey>('chat');
+  const [dragging, setDragging] = useState(false);
   const [artifact, setArtifact] = useState<
     { id: string; title: string; type: string } | undefined
   >(undefined);
@@ -240,6 +326,19 @@ export function ChatView({
   const send = useCallback(
     async (text: string) => {
       if (!text.trim() || streaming) return;
+
+      /**
+       * A tool hands the request to the surface that implements it, carrying
+       * the prompt in `?q=`. Nothing is streamed here, because Build, Image
+       * and Research each have their own streaming, quota and error handling
+       * that this composer has no business duplicating.
+       */
+      if (tool !== 'chat') {
+        const definition = TOOLS[tool];
+        const query = new URLSearchParams({ ...definition.params, q: text.trim() });
+        router.push(`${definition.href}?${query.toString()}`);
+        return;
+      }
 
       setError(undefined);
       setRoutingReason(undefined);
@@ -363,7 +462,7 @@ export function ChatView({
         }
       }
     },
-    [attachments, conversationId, modelKey, router, streaming],
+    [attachments, conversationId, modelKey, router, streaming, tool],
   );
 
   const upload = useCallback(async (fileList: FileList | null) => {
@@ -404,6 +503,12 @@ export function ChatView({
   const isEmpty = messages.length === 0 && !streaming;
 
   /*
+   * Only on an empty conversation, or when a tool is chosen mid-thread and the
+   * composer is blank. Once there is a transcript to read, openers are clutter.
+   */
+  const showSuggestions = (isEmpty || tool !== 'chat') && input.trim().length === 0;
+
+  /*
    * Extracted so the empty state and the running conversation render the
    * *same* composer. Two copies would drift — and the one people meet first
    * is the one that would fall behind.
@@ -415,8 +520,40 @@ export function ChatView({
         event.preventDefault();
         void send(input);
       }}
-      className="rounded-xl border border-border-strong bg-surface focus-within:border-text-muted"
+      /*
+       * Files can be dropped anywhere on the composer, not only through the
+       * file picker. dragenter/dragover must both preventDefault or the
+       * browser navigates to the dropped file instead of handing it over.
+       */
+      onDragEnter={(event) => {
+        event.preventDefault();
+        if (event.dataTransfer.types.includes('Files')) setDragging(true);
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+      }}
+      onDragLeave={(event) => {
+        // Ignore the events fired while crossing between child elements.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDragging(false);
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        if (event.dataTransfer.files.length > 0) void upload(event.dataTransfer.files);
+      }}
+      className={`relative rounded-xl border bg-surface transition-colors ${
+        dragging
+          ? 'border-accent bg-accent-subtle/30'
+          : 'border-border-strong focus-within:border-text-muted'
+      }`}
     >
+      {dragging ? (
+        <p className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-canvas/80 text-sm font-medium text-accent">
+          Drop files to attach
+        </p>
+      ) : null}
       <label htmlFor="composer" className="sr-only">
         Ask Reklu anything
       </label>
@@ -433,7 +570,7 @@ export function ChatView({
             void send(input);
           }
         }}
-        placeholder="Ask Reklu anything..."
+        placeholder={tool === 'chat' ? 'Ask Reklu anything…' : TOOLS[tool].placeholder}
         className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
       />
 
@@ -482,27 +619,84 @@ export function ChatView({
           className="sr-only"
           onChange={(event) => void upload(event.target.files)}
         />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={streaming || uploading}
-          aria-label="Attach files"
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-2.5 text-xs text-text-secondary transition-colors hover:text-text disabled:opacity-40"
+        {/*
+          One + for everything you can add to a request: files, or a tool that
+          sends it somewhere other than plain chat.
+        */}
+        <Menu
+          label="Add files or a tool"
+          side="top"
+          panelClassName="w-60"
+          triggerClassName="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong text-text-secondary transition-colors hover:text-text disabled:opacity-40"
+          trigger={
+            uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+            ) : (
+              <Plus className="h-4 w-4" strokeWidth={2} />
+            )
+          }
         >
-          {uploading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
-          ) : (
-            <Paperclip className="h-3.5 w-3.5" strokeWidth={1.75} />
-          )}
-          Attach
-        </button>
+          {(close) => (
+            <>
+              <MenuItem
+                onSelect={() => {
+                  fileInputRef.current?.click();
+                  close();
+                }}
+              >
+                <Paperclip className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                Attach files
+              </MenuItem>
 
-        <ModelSelector
-          models={models}
-          value={modelKey}
-          onChange={setModelKey}
-          disabled={streaming}
-        />
+              <MenuSeparator label="Tools" />
+
+              {(Object.keys(TOOLS) as Exclude<ToolKey, 'chat'>[]).map((key) => {
+                const definition = TOOLS[key];
+                const Icon = definition.icon;
+                const selected = tool === key;
+                return (
+                  <MenuItem
+                    key={key}
+                    onSelect={() => {
+                      // Choosing the tool already active turns it off, so the
+                      // same control both sets and clears.
+                      setTool(selected ? 'chat' : key);
+                      close();
+                    }}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                    <span className="flex-1">{definition.label}</span>
+                    {selected ? (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.5} />
+                    ) : null}
+                  </MenuItem>
+                );
+              })}
+            </>
+          )}
+        </Menu>
+
+        {/* The active tool, always visible and always removable. */}
+        {tool !== 'chat'
+          ? (() => {
+              const definition = TOOLS[tool];
+              const Icon = definition.icon;
+              return (
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-accent-border bg-accent-subtle px-2.5 text-xs font-medium text-accent">
+                  <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  {definition.label}
+                  <button
+                    type="button"
+                    onClick={() => setTool('chat')}
+                    aria-label={`Turn off ${definition.label}`}
+                    className="rounded text-accent/70 transition-colors hover:text-accent"
+                  >
+                    <X className="h-3 w-3" strokeWidth={2.5} />
+                  </button>
+                </span>
+              );
+            })()
+          : null}
 
         <div className="ml-auto">
           {streaming ? (
@@ -527,6 +721,34 @@ export function ChatView({
         </div>
       </div>
     </form>
+
+    {/*
+      Openers, not decoration: clicking one puts it in the composer so it can
+      still be edited before sending. They follow the selected tool, because a
+      good research prompt is not a good image prompt.
+    */}
+    {showSuggestions ? (
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        {(tool === 'chat' ? CHAT_SUGGESTIONS : TOOLS[tool].suggestions).map((suggestion) => (
+          <button
+            key={suggestion}
+            type="button"
+            onClick={() => {
+              setInput(suggestion);
+              textareaRef.current?.focus();
+            }}
+            className="max-w-full truncate rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-border-strong hover:text-text"
+          >
+            {suggestion}
+          </button>
+        ))}
+      </div>
+    ) : null}
+
+    {tool !== 'chat' ? (
+      <p className="mt-3 text-center text-[11px] text-text-muted">{TOOLS[tool].hint}</p>
+    ) : null}
+
     <p className="mt-2 text-center text-[11px] text-text-muted">
       Reklu can make mistakes. Verify important information.
     </p>
@@ -537,6 +759,22 @@ export function ChatView({
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
+        {/*
+          The model belongs to the conversation, not to one message, so it sits
+          in a header rather than inside the composer — visible and changeable
+          at any point, without competing with the controls that act on what
+          you are typing.
+        */}
+        <header className="flex h-12 shrink-0 items-center border-b border-border px-4">
+          <ModelSelector
+            models={models}
+            value={modelKey}
+            onChange={setModelKey}
+            disabled={streaming}
+            placement="down"
+          />
+        </header>
+
         {isEmpty ? (
           /*
            * Nothing has been said yet, so the composer is the page: heading and

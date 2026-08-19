@@ -1,7 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 /**
  * A small popover menu.
@@ -35,8 +44,48 @@ export function Menu({
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+  const [position, setPosition] = useState<{ top: number; left: number } | undefined>();
+
+  /**
+   * The panel is rendered into <body>, not beside its trigger.
+   *
+   * Positioned absolutely it was clipped by the first ancestor with
+   * `overflow: auto` — which, for the chat list in the sidebar, is the
+   * scrolling panel the menu lives in. The menu appeared half-cut with the
+   * row behind it painting over the top. No z-index fixes that: a clipped
+   * child cannot escape its scroll container.
+   */
+  const place = useCallback((): void => {
+    const anchor = triggerRef.current?.getBoundingClientRect();
+    const panel = panelRef.current?.getBoundingClientRect();
+    if (!anchor) return;
+
+    const width = panel?.width ?? 208;
+    const height = panel?.height ?? 0;
+    const GAP = 6;
+    const MARGIN = 8;
+
+    let left = align === 'right' ? anchor.right - width : anchor.left;
+    let top = side === 'top' ? anchor.top - height - GAP : anchor.bottom + GAP;
+
+    // Keep it on screen: a menu opened near an edge should slide back into
+    // view rather than disappear past it.
+    left = Math.min(Math.max(MARGIN, left), window.innerWidth - width - MARGIN);
+    if (top + height > window.innerHeight - MARGIN) {
+      top = Math.max(MARGIN, anchor.top - height - GAP);
+    }
+    top = Math.max(MARGIN, top);
+
+    setPosition({ top, left });
+  }, [align, side]);
+
+  // Before paint, so the panel never shows at the wrong place first.
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open, place]);
 
   const close = (): void => {
     setOpen(false);
@@ -60,16 +109,31 @@ export function Menu({
      * otherwise unmount before its own click resolved.
      */
     const onPointerDown = (event: MouseEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      // The panel is no longer a descendant of the root, so it has to be
+      // checked separately or clicking inside the menu would dismiss it.
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
+
+    /*
+     * `capture: true` catches scrolling of any ancestor, not just the window —
+     * a panel pinned to <body> would otherwise stay behind while the list it
+     * belongs to scrolls away underneath it.
+     */
+    const onReflow = (): void => place();
 
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('scroll', onReflow, true);
+    window.addEventListener('resize', onReflow);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('scroll', onReflow, true);
+      window.removeEventListener('resize', onReflow);
     };
-  }, [open]);
+  }, [open, place]);
 
   return (
     <div ref={rootRef} className="relative">
@@ -86,18 +150,26 @@ export function Menu({
         {trigger}
       </button>
 
-      {open ? (
-        <div
-          id={panelId}
-          role="menu"
-          aria-label={label}
-          className={`absolute z-50 min-w-48 rounded-xl border border-border-strong bg-surface-raised p-1 shadow-2xl shadow-black/50 ${
-            align === 'right' ? 'right-0' : 'left-0'
-          } ${side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} ${panelClassName}`}
-        >
-          {children(close)}
-        </div>
-      ) : null}
+      {open && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              ref={panelRef}
+              id={panelId}
+              role="menu"
+              aria-label={label}
+              style={{
+                top: position?.top ?? 0,
+                left: position?.left ?? 0,
+                // Hidden until measured, so it cannot flash at 0,0.
+                visibility: position ? 'visible' : 'hidden',
+              }}
+              className={`fixed z-50 min-w-48 rounded-xl border border-border-strong bg-surface-raised p-1 shadow-2xl shadow-black/50 ${panelClassName}`}
+            >
+              {children(close)}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

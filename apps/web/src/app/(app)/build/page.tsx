@@ -10,9 +10,14 @@ import { NewBuildForm } from './new-build';
 export const metadata: Metadata = { title: 'Build' };
 export const dynamic = 'force-dynamic';
 
-export default async function BuildPage() {
+export default async function BuildPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const { workspace } = await getAppContext();
   const status = sandboxStatus();
+  const { q } = await searchParams;
 
   const projects = await db
     .select({
@@ -71,7 +76,8 @@ export default async function BuildPage() {
 
       {status.available ? (
         <section className="mt-8">
-          <NewBuildForm />
+          {/* Capped so a crafted link cannot paste an unbounded string. */}
+          <NewBuildForm initialPrompt={q?.slice(0, 2_000)} />
         </section>
       ) : null}
 
