@@ -143,6 +143,17 @@ interface StreamError {
  * is erased at build time and allowed past the server-only check — and is
  * worth doing next time this list is touched.
  */
+/** Server stage names, in the words a reader would use. */
+const STAGE_LABELS: Record<string, string> = {
+  planning: 'Planning the research',
+  discovering_sources: 'Finding sources',
+  fetching_sources: 'Reading sources',
+  extracting: 'Pulling out the relevant passages',
+  cross_checking: 'Cross-checking claims',
+  writing_report: 'Writing the answer',
+  generating: 'Generating the image',
+};
+
 type ServerEvent =
   | { type: 'start'; modelKey: string; routingReason?: string }
   | {
@@ -327,6 +338,8 @@ export function ChatView({
   const [tool, setTool] = useState<ToolKey>('chat');
   const [dragging, setDragging] = useState(false);
   const [streamSources, setStreamSources] = useState<readonly CitedSource[]>([]);
+  /** The stage the server is currently in, when it reports one. */
+  const [stage, setStage] = useState<{ label: string; detail?: string } | undefined>();
   const [artifact, setArtifact] = useState<
     { id: string; title: string; type: string } | undefined
   >(undefined);
@@ -352,6 +365,7 @@ export function ChatView({
       setStreamText('');
       // Belongs to the turn being sent, not the one before it.
       setStreamSources([]);
+      setStage(undefined);
       const attachedNames = attachments.map((file) => file.filename);
       setMessages((prev) => [
         ...prev,
@@ -363,6 +377,7 @@ export function ChatView({
       const controller = new AbortController();
       abortRef.current = controller;
       let assembled = '';
+      let capturedSources: readonly CitedSource[] = [];
       let usedModelKey: string | undefined;
       let createdConversationId: string | undefined;
 
@@ -432,9 +447,23 @@ export function ChatView({
             } else if (event.type === 'text-delta') {
               assembled += event.text;
               setStreamText(assembled);
+            } else if (event.type === 'status') {
+              /*
+               * Real stages from the server, not a spinner pretending to know
+               * what is happening. Research reports "finding sources",
+               * "reading sources" and so on as it enters each one.
+               */
+              setStage({ label: STAGE_LABELS[event.stage] ?? event.stage, detail: event.detail });
             } else if (event.type === 'sources') {
-              // Held until the turn is committed, then attached to the message
-              // they belong to — sources outlive the stream that carried them.
+              /*
+               * Kept in a local as well as in state.
+               *
+               * The commit below runs inside this same closure, where the state
+               * variable is still whatever it was when `send` was created —
+               * empty. Reading it there attached nothing, so the sources panel
+               * never appeared even though the sources had arrived.
+               */
+              capturedSources = event.sources;
               setStreamSources(event.sources);
             } else if (event.type === 'artifact') {
               // Spec §20: a substantial output opens beside the chat.
@@ -453,7 +482,7 @@ export function ChatView({
               role: 'assistant',
               text: assembled,
               modelKey: usedModelKey,
-              ...(streamSources.length > 0 ? { sources: streamSources } : {}),
+              ...(capturedSources.length > 0 ? { sources: capturedSources } : {}),
             },
           ]);
         }
@@ -466,6 +495,7 @@ export function ChatView({
             { id: `assistant-${Date.now()}`, role: 'assistant', text: assembled, modelKey: usedModelKey },
           ]);
         }
+        setStage(undefined);
       } finally {
         setStreaming(false);
         setStreamText('');
@@ -851,11 +881,26 @@ export function ChatView({
                         </p>
                       ) : null}
                       {streamText ? (
-                        <Markdown content={streamText} />
+                        <Markdown content={streamText} citations={streamSources} />
                       ) : (
+                        /*
+                         * The stage the server actually reported, when it
+                         * reported one. "Thinking…" is the honest fallback for
+                         * a plain chat turn, where there are no stages to show
+                         * — inventing some would be fake progress (spec §106).
+                         */
                         <p className="flex items-center gap-2 text-sm text-text-muted">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
-                          Thinking…
+                          {stage ? (
+                            <>
+                              {stage.label}
+                              {stage.detail ? (
+                                <span className="text-text-muted/70">· {stage.detail}</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            'Thinking…'
+                          )}
                         </p>
                       )}
                     </div>

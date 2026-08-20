@@ -30,25 +30,49 @@ const sources: CitedSource[] = [
 ];
 
 describe('citation markers', () => {
-  it('shows what the marker points at', () => {
+  /**
+   * The marker names its publication rather than showing a number. A
+   * government statistics office and an SEO listicle are not equivalent
+   * evidence, and "[1]" hides which one the claim rests on.
+   */
+  it('names the source on the marker itself', () => {
+    render(<Markdown content={'Claim [1](https://a.example/one).'} citations={sources} />);
+
+    // Twice: once on the chip, once in the card it reveals.
+    expect(screen.getAllByText('a.example').length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: /a\.example/ })).toBeDefined();
+  });
+
+  it('shows the headline and passage behind the marker', () => {
     render(<Markdown content={'Claim [1](https://a.example/one).'} citations={sources} />);
 
     expect(screen.getByText('Ewallets dominate ecommerce')).toBeDefined();
-    expect(screen.getByText('a.example')).toBeDefined();
     expect(screen.getByText(/Digital wallets handled/)).toBeDefined();
   });
 
   it('still links to the source itself', () => {
     render(<Markdown content={'Claim [1](https://a.example/one).'} citations={sources} />);
-    expect(screen.getByRole('link', { name: '1' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: /a\.example/ }).getAttribute('href')).toBe(
       'https://a.example/one',
     );
+  });
+
+  /** A group stays one word wide: the first source, then how many more. */
+  it('counts the rest of a grouped marker rather than listing them', () => {
+    render(<Markdown content={'Both [1, 2](https://a.example/one).'} citations={sources} />);
+    expect(screen.getByText('+1')).toBeDefined();
   });
 
   /** A grouped marker previews the source its link actually goes to. */
   it('previews the first source of a grouped marker', () => {
     render(<Markdown content={'Both [1, 2](https://a.example/one).'} citations={sources} />);
     expect(screen.getByText('Ewallets dominate ecommerce')).toBeDefined();
+  });
+
+  /** Falls back to the number when there is no source to name. */
+  it('keeps the bare number when the source is missing', () => {
+    render(<Markdown content={'Claim [9](https://x.example).'} citations={sources} />);
+    expect(screen.getByRole('link', { name: '9' })).toBeDefined();
   });
 
   /**

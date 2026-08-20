@@ -494,7 +494,26 @@ export async function POST(request: Request): Promise<Response> {
             const answerText = linkCitations(outcome.answer ?? outcome.report, cited);
 
             text = `${answerText}\n\n_${retrieval}_\n\n[Open the full research session](/research/${session!.id})`;
-            send({ type: 'text-delta', text });
+
+            /**
+             * Delivered in pieces rather than as one block.
+             *
+             * The report is finished before it gets here — the pipeline writes
+             * it in one go — so this is pacing, not progress. It is worth doing
+             * because a wall of text appearing at once gives the reader nowhere
+             * to start, while text that arrives in order can be read as it
+             * lands. The stages above are the honest progress; this is
+             * typography.
+             *
+             * Split on paragraph boundaries so a heading or list item never
+             * appears half-formed.
+             */
+            const pieces = text.split(/(?<=\n\n)/);
+            for (const piece of pieces) {
+              if (request.signal.aborted) break;
+              send({ type: 'text-delta', text: piece });
+              await new Promise((resolve) => setTimeout(resolve, 40));
+            }
 
             if (cited.length > 0) {
               send({
