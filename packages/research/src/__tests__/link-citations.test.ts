@@ -8,11 +8,11 @@
  * fine and mislead.
  */
 import { describe, expect, it } from 'vitest';
-import { linkCitations, type CitedSource } from '@/components/research/research-view';
+import { linkCitations, type LinkableSource } from '../citations';
 
-const sources: CitedSource[] = [
-  { index: 1, url: 'https://a.example/one', title: 'One', domain: 'a.example' },
-  { index: 2, url: 'https://b.example/two', title: 'Two', domain: 'b.example' },
+const sources: LinkableSource[] = [
+  { index: 1, url: 'https://a.example/one' },
+  { index: 2, url: 'https://b.example/two' },
 ];
 
 describe('linkCitations', () => {

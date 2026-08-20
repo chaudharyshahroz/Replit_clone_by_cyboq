@@ -135,7 +135,13 @@ type Block =
   | { readonly kind: 'paragraph'; readonly lines: string[] }
   | { readonly kind: 'heading'; readonly level: number; readonly text: string }
   | { readonly kind: 'code'; readonly language: string; readonly code: string }
-  | { readonly kind: 'list'; readonly ordered: boolean; readonly items: string[] }
+  | {
+      readonly kind: 'list';
+      readonly ordered: boolean;
+      readonly items: string[];
+      /** The number the author wrote, so a split list keeps counting. */
+      readonly start: number;
+    }
   | { readonly kind: 'quote'; readonly lines: string[] }
   | { readonly kind: 'rule' };
 
@@ -191,11 +197,25 @@ function parseBlocks(markdown: string): Block[] {
       const ordered = numbered.test(line);
       const items: string[] = [];
       const matcher = ordered ? numbered : bullet;
+
+      /**
+       * Where an ordered list starts counting.
+       *
+       * Only consecutive matching lines form one list, and models routinely
+       * write `1. Idea` followed by indented bullets, then `2. Idea`. Each
+       * number therefore opens a *new* <ol> — and every <ol> restarts at one,
+       * so a ten-item list rendered as "1." ten times.
+       *
+       * Carrying the author's own number across fixes it without trying to
+       * merge blocks that are genuinely separate.
+       */
+      const start = ordered ? Number(/\d+/.exec(line)?.[0] ?? 1) : 1;
+
       while (index < lines.length && matcher.test(lines[index]!)) {
         items.push(lines[index]!.replace(matcher, ''));
         index++;
       }
-      blocks.push({ kind: 'list', ordered, items });
+      blocks.push({ kind: 'list', ordered, items, start });
       continue;
     }
 
@@ -259,9 +279,11 @@ export function Markdown({ content }: { content: string }) {
 
           case 'list': {
             const Tag = block.ordered ? 'ol' : 'ul';
+            const startAt = block.ordered && block.start > 1 ? { start: block.start } : {};
             return (
               <Tag
                 key={index}
+                {...startAt}
                 className={`space-y-1.5 pl-5 ${block.ordered ? 'list-decimal' : 'list-disc'} marker:text-text-muted`}
               >
                 {block.items.map((item, itemIndex) => (

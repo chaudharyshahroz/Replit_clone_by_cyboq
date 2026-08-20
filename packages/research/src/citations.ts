@@ -202,3 +202,38 @@ function sentenceAround(text: string, offset: number): string {
   // paths agree on what a cleaned sentence looks like.
   return tidyAfterRemoval(withoutMarkers.replace(/\s*\n\s*/g, ' ')).trim();
 }
+
+
+/** A source a report cites, with somewhere to send the reader. */
+export interface LinkableSource {
+  readonly index: number;
+  readonly url: string;
+}
+
+/**
+ * Turn `[1]` and `[1, 2]` markers into links to the sources they name.
+ *
+ * The pipeline writes plain markers, which are honest but inert — a reader can
+ * see a claim is sourced and has no way to check it. As markdown links each
+ * marker becomes openable, and a numeric link renders as a footnote pill
+ * rather than underlined prose.
+ *
+ * A marker naming a source that is not in the list is left exactly as it was.
+ * Pointing it at some other source would read as verified and be false.
+ */
+export function linkCitations(report: string, sources: readonly LinkableSource[]): string {
+  if (sources.length === 0) return report;
+
+  const byIndex = new Map(sources.map((source) => [source.index, source.url]));
+
+  return report.replace(/\[(\d+(?:\s*,\s*\d+)*)\](?!\()/g, (marker, group: string) => {
+    const numbers = group.split(',').map((part) => Number(part.trim()));
+
+    // Grouped markers link to the first source they name; splitting one into
+    // several pills would change what the writer wrote.
+    const first = numbers.find((n) => byIndex.has(n));
+    if (first === undefined) return marker;
+
+    return `[${group}](${byIndex.get(first)!})`;
+  });
+}

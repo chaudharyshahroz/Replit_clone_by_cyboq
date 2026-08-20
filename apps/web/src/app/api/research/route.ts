@@ -32,6 +32,7 @@ import {
   createWorkspaceAdapter,
   runResearch,
   type ResearchStage,
+  linkCitations,
 } from '@reklu/research';
 import { enqueue } from '@reklu/queue';
 import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared';
@@ -291,9 +292,26 @@ export async function POST(request: Request): Promise<Response> {
             })
             .where(eq(researchSessions.id, sessionId));
 
+          /*
+           * Markers are linked here rather than in the browser: the research
+           * package is server-only, and doing it once on the way out means
+           * every surface that renders a report gets clickable citations —
+           * including chat, which had inert markers because the transform
+           * lived in the research page's own component.
+           */
+          const citedSources = outcome.sources
+            .filter((source) => source.citationIndex !== null && source.url)
+            .sort((a, b) => (a.citationIndex ?? 0) - (b.citationIndex ?? 0))
+            .map((source) => ({
+              index: source.citationIndex!,
+              url: source.url!,
+              title: source.title,
+              domain: source.domain,
+            }));
+
           send({
             type: 'done',
-            report: outcome.report,
+            report: linkCitations(outcome.report, citedSources),
             answer: outcome.answer,
             sourcesUsed: outcome.sourcesUsed,
             sourcesFailed: outcome.sourcesFailed,
@@ -304,17 +322,7 @@ export async function POST(request: Request): Promise<Response> {
              * refers to. Sources that were read and not used would pad the
              * list and imply support that was never claimed.
              */
-            citedSources: outcome.sources
-              // A workspace source has no URL; there is nothing to open, so it
-              // does not belong in a list of links.
-              .filter((source) => source.citationIndex !== null && source.url)
-              .sort((a, b) => (a.citationIndex ?? 0) - (b.citationIndex ?? 0))
-              .map((source) => ({
-                index: source.citationIndex!,
-                url: source.url!,
-                title: source.title,
-                domain: source.domain,
-              })),
+            citedSources,
           });
         } catch (error) {
           const rekluError = toRekluError(error);

@@ -38,35 +38,6 @@ export interface CitedSource {
   readonly domain: string | null;
 }
 
-/**
- * Turn `[1]` and `[1, 2]` markers into links to the sources they name.
- *
- * The pipeline writes plain markers, which are honest but inert — a reader can
- * see that a claim is sourced and has no way to check it. Rewriting them as
- * markdown links makes each one openable, and the renderer draws a numeric
- * link as a footnote pill rather than underlined prose.
- *
- * A marker naming a source that is not in the list is left exactly as it was:
- * turning it into a link to something else would be worse than leaving it
- * inert.
- */
-export function linkCitations(report: string, sources: readonly CitedSource[]): string {
-  if (sources.length === 0) return report;
-
-  const byIndex = new Map(sources.map((source) => [source.index, source.url]));
-
-  return report.replace(/\[(\d+(?:\s*,\s*\d+)*)\](?!\()/g, (marker, group: string) => {
-    const numbers = group.split(',').map((part) => Number(part.trim()));
-
-    // Grouped markers link to the first source they name; splitting one into
-    // several pills would change what the writer wrote.
-    const first = numbers.find((n) => byIndex.has(n));
-    if (first === undefined) return marker;
-
-    return `[${group}](${byIndex.get(first)!})`;
-  });
-}
-
 interface StageEntry {
   readonly stage: string;
   readonly detail?: string;
@@ -412,7 +383,8 @@ export function ResearchView({
           ) : null}
 
           <article className="rounded-xl border border-border bg-surface/40 p-6">
-            <Markdown content={linkCitations(report, citedSources)} />
+            {/* Markers arrive already linked — the server does it, so chat gets it too. */}
+            <Markdown content={report} />
           </article>
 
           {summary ? (

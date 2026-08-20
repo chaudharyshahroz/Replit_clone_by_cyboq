@@ -50,6 +50,7 @@ import { generateBrief } from '@reklu/build';
 import {
   createWebAdapter,
   createWorkspaceAdapter,
+  linkCitations,
   runResearch,
   type StageReporter,
 } from '@reklu/research';
@@ -466,10 +467,44 @@ export async function POST(request: Request): Promise<Response> {
              */
             const retrieval =
               outcome.sourcesFailed > 0
-                ? `\n\n_${outcome.sourcesUsed} of ${outcome.sourcesDiscovered} sources used; ${outcome.sourcesFailed} could not be retrieved._`
-                : `\n\n_${outcome.sourcesUsed} sources used._`;
+                ? `${outcome.sourcesUsed} of ${outcome.sourcesDiscovered} sources used; ${outcome.sourcesFailed} could not be retrieved.`
+                : `${outcome.sourcesUsed} sources used.`;
 
-            text = `${outcome.answer ?? outcome.report}${retrieval}\n\n[Open the full research session](/research/${session!.id})`;
+            const cited = outcome.sources
+              .filter((source) => source.citationIndex !== null && source.url)
+              .sort((a, b) => (a.citationIndex ?? 0) - (b.citationIndex ?? 0))
+              .map((source) => ({
+                index: source.citationIndex!,
+                url: source.url!,
+                title: source.title,
+                domain: source.domain,
+              }));
+
+            /**
+             * Chat used to end at the retrieval count: a claim of sourcing with
+             * nothing to open. The markers were inert text and the sources were
+             * never sent at all, because the transform lived in the research
+             * page's own component rather than on the way out of the server.
+             *
+             * Now the answer arrives with its citations already linked and the
+             * sources listed beneath it, so the two surfaces show the same
+             * thing.
+             */
+            const sourceList =
+              cited.length > 0
+                ? `\n\n---\n\n**Sources**\n\n${cited
+                    .map(
+                      (source) =>
+                        `${source.index}. [${source.title}](${source.url})${
+                          source.domain ? ` — ${source.domain}` : ''
+                        }`,
+                    )
+                    .join('\n')}`
+                : '';
+
+            const answerText = linkCitations(outcome.answer ?? outcome.report, cited);
+
+            text = `${answerText}${sourceList}\n\n_${retrieval}_\n\n[Open the full research session](/research/${session!.id})`;
             send({ type: 'text-delta', text });
           } else {
           for await (const event of provider.stream({
