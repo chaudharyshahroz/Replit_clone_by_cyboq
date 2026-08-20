@@ -336,6 +336,14 @@ export async function POST(request: Request): Promise<Response> {
     const started = Date.now();
     let firstTokenAt: number | undefined;
     let text = '';
+    /** Filled by a tool that cites sources; empty for an ordinary reply. */
+    let citedSources: {
+      index: number;
+      url: string;
+      title: string;
+      domain: string | null;
+      snippet?: string | null;
+    }[] = [];
     let usage: TokenUsage = {
       inputTokens: 0,
       outputTokens: 0,
@@ -515,6 +523,8 @@ export async function POST(request: Request): Promise<Response> {
               await new Promise((resolve) => setTimeout(resolve, 40));
             }
 
+            citedSources = cited;
+
             if (cited.length > 0) {
               send({
                 type: 'sources',
@@ -560,6 +570,9 @@ export async function POST(request: Request): Promise<Response> {
               content: [{ type: 'text', text }],
               contentText: text,
               modelKey: model.key,
+              // Stored with the message, so reopening the conversation still
+              // shows what each claim rests on.
+              sources: citedSources,
               sequence: nextSequence + 1,
               inputTokens: usage.inputTokens,
               outputTokens: usage.outputTokens,

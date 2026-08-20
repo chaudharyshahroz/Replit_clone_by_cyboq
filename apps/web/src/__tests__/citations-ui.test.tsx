@@ -120,3 +120,23 @@ describe('sources panel', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('sources surviving a reload', () => {
+  /**
+   * The bug this pins down: sources lived only in memory for the length of the
+   * stream, so reopening a conversation dropped them. The chips fell back to
+   * bare numbers and the panel vanished — the answer still looked finished, and
+   * quietly stopped being checkable.
+   */
+  it('renders named chips from sources loaded with the message', () => {
+    render(
+      <Markdown content={'Claim [1](https://a.example/one).'} citations={sources} />,
+    );
+    expect(screen.getByRole('link', { name: /a\.example/ })).toBeDefined();
+  });
+
+  it('falls back to a bare number when a message carries no sources', () => {
+    render(<Markdown content={'Claim [1](https://a.example/one).'} citations={[]} />);
+    expect(screen.getByRole('link', { name: '1' })).toBeDefined();
+  });
+});

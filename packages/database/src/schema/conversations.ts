@@ -116,6 +116,27 @@ export const messages = pgTable(
     editedAt: tsColumn('edited_at'),
     /** Artifacts produced by this turn. */
     artifactIds: jsonb('artifact_ids').$type<string[]>().notNull().default([]),
+
+    /**
+     * Sources this reply cites, stored with the message that cites them.
+     *
+     * They were held in memory for the length of the stream and nowhere else,
+     * so reopening a conversation lost them: the citation chips fell back to
+     * bare numbers and the sources panel disappeared. A claim is only checkable
+     * if what it rests on outlives the request that produced it.
+     */
+    sources: jsonb('sources')
+      .$type<
+        {
+          index: number;
+          url: string;
+          title: string;
+          domain: string | null;
+          snippet?: string | null;
+        }[]
+      >()
+      .notNull()
+      .default([]),
     ...timestamps,
     ...softDelete,
   },

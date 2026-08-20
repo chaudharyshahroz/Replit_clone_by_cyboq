@@ -97,6 +97,7 @@ export async function loadConversation(
       role: messages.role,
       contentText: messages.contentText,
       modelKey: messages.modelKey,
+      sources: messages.sources,
       sequence: messages.sequence,
     })
     .from(messages)
@@ -120,6 +121,8 @@ export async function loadConversation(
         role: row.role as 'user' | 'assistant',
         text: row.contentText ?? '',
         modelKey: row.modelKey,
+        // Carried back so a reopened conversation still shows its citations.
+        ...(row.sources.length > 0 ? { sources: row.sources } : {}),
       })),
   };
 }
