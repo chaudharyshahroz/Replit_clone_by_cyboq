@@ -760,8 +760,12 @@ export function ChatView({
           in a header rather than inside the composer — visible and changeable
           at any point, without competing with the controls that act on what
           you are typing.
+
+          No rule under it: the chip is its own anchor, and a full-width line
+          across an otherwise empty screen reads as a seam rather than a
+          divider.
         */}
-        <header className="flex h-12 shrink-0 items-center border-b border-border px-4">
+        <header className="flex h-12 shrink-0 items-center px-4">
           <ModelSelector
             models={models}
             value={modelKey}
