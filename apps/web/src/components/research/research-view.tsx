@@ -202,7 +202,7 @@ export function ResearchView({
       Same reasoning as the chat column: rem widths shrank with the type scale,
       and the sources panel needs room beside the answer.
     */
-    <div className="mx-auto max-w-[104ch] px-6 py-14">
+    <div className="mx-auto max-w-[150ch] px-6 py-14">
       <header>
         <h1 className="display flex items-center gap-2.5 text-3xl text-text">
           <Telescope className="h-7 w-7 text-accent" strokeWidth={1.5} />
@@ -360,13 +360,13 @@ export function ResearchView({
             view while the claim is read. Stacked below `lg`, where there is no
             width to spare.
           */}
-          <div className="lg:flex lg:items-start lg:gap-6">
-            <article className="min-w-0 rounded-xl border border-border bg-surface/40 p-6 lg:flex-1">
+          <div className="lg:flex lg:items-start lg:justify-between lg:gap-10">
+            <article className="min-w-0 max-w-[72ch] rounded-xl border border-border bg-surface/40 p-6">
               {/* Markers arrive already linked — the server does it, so chat gets it too. */}
               <Markdown content={report} citations={citedSources} />
             </article>
 
-            <div className="mt-4 lg:sticky lg:top-6 lg:mt-0 lg:w-72 lg:shrink-0">
+            <div className="mt-4 lg:sticky lg:top-6 lg:ml-auto lg:mt-0 lg:w-80 lg:shrink-0">
               <SourcesPanel sources={citedSources} />
             </div>
           </div>

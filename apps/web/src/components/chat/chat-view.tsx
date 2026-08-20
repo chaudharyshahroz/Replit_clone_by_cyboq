@@ -550,6 +550,14 @@ export function ChatView({
 
   const isEmpty = messages.length === 0 && !streaming;
 
+  /*
+   * Whether anything in view carries sources, which decides how wide the
+   * transcript runs. Checked across the thread rather than per message so the
+   * column does not jump width between turns as you scroll.
+   */
+  const hasSources =
+    streamSources.length > 0 || messages.some((message) => (message.sources?.length ?? 0) > 0);
+
   /**
    * Two widths, because they answer different questions.
    *
@@ -569,6 +577,21 @@ export function ChatView({
    */
   const COLUMN = 'w-full max-w-[104ch]';
   const PROSE = 'max-w-[72ch]';
+
+  /**
+   * A research answer is wider than a conversation.
+   *
+   * It carries a sources panel, and centring that inside the ordinary column
+   * left a wide empty margin on both sides while squeezing the panel against
+   * the text. This lets those turns use the room: the prose keeps its measure
+   * on the left, the panel goes to the right edge, and the space between them
+   * is space rather than cramped columns.
+   *
+   * Only for turns that have sources. An ordinary reply has nothing to put out
+   * there, and a lone sentence stretched across a wide screen reads worse, not
+   * better.
+   */
+  const WIDE = 'w-full max-w-[150ch]';
 
   /*
    * Only on an empty conversation. Once there is a transcript to read, openers
@@ -886,7 +909,7 @@ export function ChatView({
             {/* Once the conversation is running the transcript leads and the
                 composer docks below it. */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
-              <div className={`mx-auto ${COLUMN} px-6 py-10`}>
+              <div className={`mx-auto ${hasSources ? WIDE : COLUMN} px-6 py-10`}>
                 <div className="space-y-6">
                   {messages.map((message) => (
                     <Bubble key={message.id} message={message} models={models} prose={PROSE} />
@@ -1066,11 +1089,13 @@ function Bubble({
         instead — beside is a luxury of width, not a requirement.
       */}
       {message.sources && message.sources.length > 0 ? (
-        <div className="lg:flex lg:items-start lg:gap-6">
-          <div className={`min-w-0 lg:flex-1 ${prose}`}>
+        <div className="lg:flex lg:items-start lg:justify-between lg:gap-10">
+          <div className={`min-w-0 ${prose}`}>
             <Markdown content={message.text} citations={message.sources} />
           </div>
-          <div className="mt-4 lg:sticky lg:top-4 lg:mt-0 lg:w-72 lg:shrink-0">
+          {/* ml-auto rather than flex-1 on the prose: the panel sits at the
+              right edge, and the gap between them is deliberate. */}
+          <div className="mt-4 lg:sticky lg:top-4 lg:ml-auto lg:mt-0 lg:w-80 lg:shrink-0">
             <SourcesPanel sources={message.sources} />
           </div>
         </div>
