@@ -30,6 +30,43 @@ const STAGE_LABELS: Record<string, string> = {
   writing_report: 'Writing the report',
 };
 
+/** A source the report cites, in citation order. */
+export interface CitedSource {
+  readonly index: number;
+  readonly url: string;
+  readonly title: string;
+  readonly domain: string | null;
+}
+
+/**
+ * Turn `[1]` and `[1, 2]` markers into links to the sources they name.
+ *
+ * The pipeline writes plain markers, which are honest but inert — a reader can
+ * see that a claim is sourced and has no way to check it. Rewriting them as
+ * markdown links makes each one openable, and the renderer draws a numeric
+ * link as a footnote pill rather than underlined prose.
+ *
+ * A marker naming a source that is not in the list is left exactly as it was:
+ * turning it into a link to something else would be worse than leaving it
+ * inert.
+ */
+export function linkCitations(report: string, sources: readonly CitedSource[]): string {
+  if (sources.length === 0) return report;
+
+  const byIndex = new Map(sources.map((source) => [source.index, source.url]));
+
+  return report.replace(/\[(\d+(?:\s*,\s*\d+)*)\](?!\()/g, (marker, group: string) => {
+    const numbers = group.split(',').map((part) => Number(part.trim()));
+
+    // Grouped markers link to the first source they name; splitting one into
+    // several pills would change what the writer wrote.
+    const first = numbers.find((n) => byIndex.has(n));
+    if (first === undefined) return marker;
+
+    return `[${group}](${byIndex.get(first)!})`;
+  });
+}
+
 interface StageEntry {
   readonly stage: string;
   readonly detail?: string;
@@ -44,6 +81,7 @@ type ServerEvent =
       type: 'done';
       report: string;
       answer: string | null;
+      citedSources: readonly CitedSource[];
       sourcesUsed: number;
       sourcesFailed: number;
       fabricatedRemoved: number;
@@ -77,6 +115,7 @@ export function ResearchView({
   const [stages, setStages] = useState<StageEntry[]>([]);
   const [counts, setCounts] = useState<{ discovered: number; fetched: number; failed: number }>();
   const [report, setReport] = useState('');
+  const [citedSources, setCitedSources] = useState<readonly CitedSource[]>([]);
   const [summary, setSummary] = useState<{
     sourcesUsed: number;
     sourcesFailed: number;
@@ -164,6 +203,7 @@ export function ResearchView({
           } else if (event.type === 'done') {
             setStages((prev) => prev.map((entry) => ({ ...entry, done: true })));
             setReport(event.report);
+            setCitedSources(event.citedSources ?? []);
             setSummary({
               sourcesUsed: event.sourcesUsed,
               sourcesFailed: event.sourcesFailed,
@@ -332,8 +372,47 @@ export function ResearchView({
 
       {report ? (
         <section className="mt-8">
+          {/*
+            Sources first, then the answer.
+            
+            The order is the argument: what this rests on is visible before what
+            it claims, so a reader can judge the basis before reading the
+            conclusion. Numbered to match the [n] markers in the text.
+          */}
+          {citedSources.length > 0 ? (
+            <div className="mb-6">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                Sources
+              </h2>
+              <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {citedSources.map((source) => (
+                  <li key={source.index}>
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      className="flex h-full gap-2.5 rounded-xl border border-border bg-surface/40 p-3 transition-colors hover:border-border-strong hover:bg-surface"
+                    >
+                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded bg-surface-raised text-[0.65rem] font-medium text-text-secondary">
+                        {source.index}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs text-text-muted">
+                          {source.domain ?? 'source'}
+                        </span>
+                        <span className="mt-0.5 line-clamp-2 block text-sm leading-snug text-text">
+                          {source.title}
+                        </span>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
           <article className="rounded-xl border border-border bg-surface/40 p-6">
-            <Markdown content={report} />
+            <Markdown content={linkCitations(report, citedSources)} />
           </article>
 
           {summary ? (

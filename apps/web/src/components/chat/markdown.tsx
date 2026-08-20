@@ -96,7 +96,18 @@ function InlineRun({ text }: { text: string }) {
                 {part.text}
               </em>
             );
-          case 'link':
+          case 'link': {
+            /**
+             * A link whose text is only a number is a citation, not prose.
+             *
+             * Research writes `[1]` markers and the view turns each into a link
+             * to the source it refers to. Rendered as an underlined inline link
+             * those markers break the sentence they sit in; as a small raised
+             * pill they read the way a footnote should — present, checkable,
+             * and out of the way.
+             */
+            const isCitation = /^\d+(?:\s*,\s*\d+)*$/.test(part.text);
+
             return (
               <a
                 key={index}
@@ -104,11 +115,16 @@ function InlineRun({ text }: { text: string }) {
                 target="_blank"
                 // noreferrer also prevents the target learning the opener.
                 rel="noopener noreferrer nofollow"
-                className="text-accent underline underline-offset-2 hover:text-accent-hover"
+                className={
+                  isCitation
+                    ? 'mx-0.5 inline-flex min-w-[1.15em] -translate-y-px items-center justify-center rounded border border-border-strong bg-surface-raised px-1 align-super text-[0.7em] font-medium leading-tight text-text-secondary no-underline transition-colors hover:border-accent hover:text-accent'
+                    : 'text-accent underline underline-offset-2 hover:text-accent-hover'
+                }
               >
                 {part.text}
               </a>
             );
+          }
         }
       })}
     </>

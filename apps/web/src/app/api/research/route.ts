@@ -58,6 +58,19 @@ type ResearchEvent =
       sourcesFailed: number;
       fabricatedRemoved: number;
       artifactId: string | null;
+      /**
+       * The sources the report actually cites, in citation order.
+       *
+       * Sent so the reader can open what a claim rests on. Without them the
+       * client only had counts — "14 sources used" with no way to check any of
+       * them, which is the opposite of the point.
+       */
+      citedSources: readonly {
+        index: number;
+        url: string;
+        title: string;
+        domain: string | null;
+      }[];
     }
   | { type: 'error'; code: string; message: string; retryable: boolean };
 
@@ -286,6 +299,22 @@ export async function POST(request: Request): Promise<Response> {
             sourcesFailed: outcome.sourcesFailed,
             fabricatedRemoved: outcome.fabricatedCitationsRemoved,
             artifactId,
+            /*
+             * Only sources that earned a citation index — the ones the report
+             * refers to. Sources that were read and not used would pad the
+             * list and imply support that was never claimed.
+             */
+            citedSources: outcome.sources
+              // A workspace source has no URL; there is nothing to open, so it
+              // does not belong in a list of links.
+              .filter((source) => source.citationIndex !== null && source.url)
+              .sort((a, b) => (a.citationIndex ?? 0) - (b.citationIndex ?? 0))
+              .map((source) => ({
+                index: source.citationIndex!,
+                url: source.url!,
+                title: source.title,
+                domain: source.domain,
+              })),
           });
         } catch (error) {
           const rekluError = toRekluError(error);
