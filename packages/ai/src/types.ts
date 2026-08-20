@@ -160,6 +160,20 @@ export type StreamEvent =
   | { readonly type: 'tool-result'; readonly toolResult: ToolResultPart }
   | { readonly type: 'status'; readonly stage: string; readonly detail?: string }
   | {
+      /**
+       * Sources the reply cites, so the client can show what each [n] marker
+       * points at rather than only how many there were.
+       */
+      readonly type: 'sources';
+      readonly sources: readonly {
+        readonly index: number;
+        readonly url: string;
+        readonly title: string;
+        readonly domain: string | null;
+        readonly snippet?: string | null;
+      }[];
+    }
+  | {
       /** A substantial reply was saved as an artifact; the client opens it beside the chat. */
       readonly type: 'artifact';
       readonly artifact: { readonly id: string; readonly title: string; readonly type: string };

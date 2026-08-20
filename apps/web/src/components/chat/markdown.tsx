@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
+import { Citation } from './citation';
+import type { CitedSource } from '@/lib/citations';
 
 /**
  * Markdown rendering for assistant messages (spec §14).
@@ -68,7 +70,13 @@ function parseInline(text: string): Inline[] {
   return out;
 }
 
-function InlineRun({ text }: { text: string }) {
+function InlineRun({
+  text,
+  sources,
+}: {
+  text: string;
+  sources?: Map<number, CitedSource>;
+}) {
   const parts = parseInline(text);
   return (
     <>
@@ -108,6 +116,20 @@ function InlineRun({ text }: { text: string }) {
              */
             const isCitation = /^\d+(?:\s*,\s*\d+)*$/.test(part.text);
 
+            if (isCitation) {
+              // A grouped marker previews the first source it names, which is
+              // the one its link goes to.
+              const first = Number(part.text.split(',')[0]!.trim());
+              return (
+                <Citation
+                  key={index}
+                  label={part.text}
+                  href={part.href}
+                  source={sources?.get(first)}
+                />
+              );
+            }
+
             return (
               <a
                 key={index}
@@ -115,11 +137,7 @@ function InlineRun({ text }: { text: string }) {
                 target="_blank"
                 // noreferrer also prevents the target learning the opener.
                 rel="noopener noreferrer nofollow"
-                className={
-                  isCitation
-                    ? 'mx-0.5 inline-flex min-w-[1.15em] -translate-y-px items-center justify-center rounded border border-border-strong bg-surface-raised px-1 align-super text-[0.7em] font-medium leading-tight text-text-secondary no-underline transition-colors hover:border-accent hover:text-accent'
-                    : 'text-accent underline underline-offset-2 hover:text-accent-hover'
-                }
+                className="text-accent underline underline-offset-2 hover:text-accent-hover"
               >
                 {part.text}
               </a>
@@ -243,10 +261,21 @@ function parseBlocks(markdown: string): Block[] {
   return blocks;
 }
 
-export function Markdown({ content }: { content: string }) {
+export function Markdown({
+  content,
+  citations,
+}: {
+  content: string;
+  /** Sources behind [n] markers, so each one can show what it points at. */
+  citations?: readonly CitedSource[];
+}) {
   // Streaming re-renders this on every delta; parsing is cheap but memoizing
   // keeps it off the critical path for long messages.
   const blocks = useMemo(() => parseBlocks(content), [content]);
+  const sourcesByIndex = useMemo(
+    () => new Map((citations ?? []).map((source) => [source.index, source])),
+    [citations],
+  );
 
   return (
     <div className="space-y-3 leading-relaxed text-text">
@@ -260,7 +289,7 @@ export function Markdown({ content }: { content: string }) {
                 key={index}
                 className={`mt-5 font-semibold text-text ${sizes[block.level - 1] ?? 'text-sm'}`}
               >
-                <InlineRun text={block.text} />
+                <InlineRun sources={sourcesByIndex} text={block.text} />
               </Tag>
             );
           }
@@ -288,7 +317,7 @@ export function Markdown({ content }: { content: string }) {
               >
                 {block.items.map((item, itemIndex) => (
                   <li key={itemIndex}>
-                    <InlineRun text={item} />
+                    <InlineRun sources={sourcesByIndex} text={item} />
                   </li>
                 ))}
               </Tag>
@@ -301,7 +330,7 @@ export function Markdown({ content }: { content: string }) {
                 key={index}
                 className="border-l-2 border-border-strong pl-4 text-text-secondary"
               >
-                <InlineRun text={block.lines.join(' ')} />
+                <InlineRun sources={sourcesByIndex} text={block.lines.join(' ')} />
               </blockquote>
             );
 
@@ -311,7 +340,7 @@ export function Markdown({ content }: { content: string }) {
           case 'paragraph':
             return (
               <p key={index}>
-                <InlineRun text={block.lines.join('\n')} />
+                <InlineRun sources={sourcesByIndex} text={block.lines.join('\n')} />
               </p>
             );
         }

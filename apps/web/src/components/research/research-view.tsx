@@ -12,6 +12,7 @@ import {
   Telescope,
 } from 'lucide-react';
 import { Markdown } from '@/components/chat/markdown';
+import { SourcesPanel } from '@/components/chat/sources-panel';
 
 export type ResearchMode = 'quick' | 'research' | 'deep';
 
@@ -350,42 +351,21 @@ export function ResearchView({
             it claims, so a reader can judge the basis before reading the
             conclusion. Numbered to match the [n] markers in the text.
           */}
-          {citedSources.length > 0 ? (
-            <div className="mb-6">
-              <h2 className="text-xs font-medium uppercase tracking-wider text-text-muted">
-                Sources
-              </h2>
-              <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {citedSources.map((source) => (
-                  <li key={source.index}>
-                    <a
-                      href={source.url}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow"
-                      className="flex h-full gap-2.5 rounded-xl border border-border bg-surface/40 p-3 transition-colors hover:border-border-strong hover:bg-surface"
-                    >
-                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded bg-surface-raised text-[0.65rem] font-medium text-text-secondary">
-                        {source.index}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs text-text-muted">
-                          {source.domain ?? 'source'}
-                        </span>
-                        <span className="mt-0.5 line-clamp-2 block text-sm leading-snug text-text">
-                          {source.title}
-                        </span>
-                      </span>
-                    </a>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
+          {/*
+            Answer and sources side by side, so what a claim rests on stays in
+            view while the claim is read. Stacked below `lg`, where there is no
+            width to spare.
+          */}
+          <div className="lg:flex lg:items-start lg:gap-6">
+            <article className="min-w-0 rounded-xl border border-border bg-surface/40 p-6 lg:flex-1">
+              {/* Markers arrive already linked — the server does it, so chat gets it too. */}
+              <Markdown content={report} citations={citedSources} />
+            </article>
 
-          <article className="rounded-xl border border-border bg-surface/40 p-6">
-            {/* Markers arrive already linked — the server does it, so chat gets it too. */}
-            <Markdown content={report} />
-          </article>
+            <div className="mt-4 lg:sticky lg:top-6 lg:mt-0 lg:w-72 lg:shrink-0">
+              <SourcesPanel sources={citedSources} />
+            </div>
+          </div>
 
           {summary ? (
             <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-text-muted">

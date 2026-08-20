@@ -22,6 +22,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Menu, MenuItem, MenuSeparator } from '@/components/ui/menu';
 import { Markdown } from './markdown';
+import { SourcesPanel } from './sources-panel';
+import type { CitedSource } from '@/lib/citations';
 
 /**
  * The composer's tools.
@@ -101,6 +103,8 @@ export interface SelectableModel {
 }
 
 export interface ChatMessage {
+  /** Sources this reply cites, when it is a research answer. */
+  readonly sources?: readonly CitedSource[];
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
@@ -130,8 +134,27 @@ interface StreamError {
 }
 
 /** Server event shape, mirroring @reklu/ai StreamEvent. */
+/**
+ * A hand-written copy of the server's StreamEvent union.
+ *
+ * It drifts. A `sources` event was added to the protocol and this file kept
+ * compiling and silently ignored it, because nothing ties the two together.
+ * Importing the type from @reklu/ai would fix that permanently — `import type`
+ * is erased at build time and allowed past the server-only check — and is
+ * worth doing next time this list is touched.
+ */
 type ServerEvent =
   | { type: 'start'; modelKey: string; routingReason?: string }
+  | {
+      type: 'sources';
+      sources: readonly {
+        index: number;
+        url: string;
+        title: string;
+        domain: string | null;
+        snippet?: string | null;
+      }[];
+    }
   | { type: 'text-delta'; text: string }
   | { type: 'reasoning-delta'; text: string }
   | { type: 'status'; stage: string; detail?: string }
@@ -303,6 +326,7 @@ export function ChatView({
   const [uploading, setUploading] = useState(false);
   const [tool, setTool] = useState<ToolKey>('chat');
   const [dragging, setDragging] = useState(false);
+  const [streamSources, setStreamSources] = useState<readonly CitedSource[]>([]);
   const [artifact, setArtifact] = useState<
     { id: string; title: string; type: string } | undefined
   >(undefined);
@@ -326,6 +350,8 @@ export function ChatView({
       setInput('');
       setStreaming(true);
       setStreamText('');
+      // Belongs to the turn being sent, not the one before it.
+      setStreamSources([]);
       const attachedNames = attachments.map((file) => file.filename);
       setMessages((prev) => [
         ...prev,
@@ -406,6 +432,10 @@ export function ChatView({
             } else if (event.type === 'text-delta') {
               assembled += event.text;
               setStreamText(assembled);
+            } else if (event.type === 'sources') {
+              // Held until the turn is committed, then attached to the message
+              // they belong to — sources outlive the stream that carried them.
+              setStreamSources(event.sources);
             } else if (event.type === 'artifact') {
               // Spec §20: a substantial output opens beside the chat.
               setArtifact(event.artifact);
@@ -423,6 +453,7 @@ export function ChatView({
               role: 'assistant',
               text: assembled,
               modelKey: usedModelKey,
+              ...(streamSources.length > 0 ? { sources: streamSources } : {}),
             },
           ]);
         }
@@ -958,7 +989,24 @@ function Bubble({
           ) : null}
         </p>
       ) : null}
-      <Markdown content={message.text} />
+
+      {/*
+        A research answer reads as two columns on a wide screen: the answer,
+        and what it rests on. Below `lg` the panel stacks above the text
+        instead — beside is a luxury of width, not a requirement.
+      */}
+      {message.sources && message.sources.length > 0 ? (
+        <div className="lg:flex lg:items-start lg:gap-5">
+          <div className="min-w-0 lg:flex-1">
+            <Markdown content={message.text} citations={message.sources} />
+          </div>
+          <div className="mt-4 lg:sticky lg:top-4 lg:mt-0 lg:w-64 lg:shrink-0">
+            <SourcesPanel sources={message.sources} />
+          </div>
+        </div>
+      ) : (
+        <Markdown content={message.text} />
+      )}
     </div>
   );
 }

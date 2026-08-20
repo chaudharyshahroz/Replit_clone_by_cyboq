@@ -478,34 +478,36 @@ export async function POST(request: Request): Promise<Response> {
                 url: source.url!,
                 title: source.title,
                 domain: source.domain,
+                // The retrieved passage, trimmed — enough to judge relevance
+                // without pasting a whole page into a hover card.
+                snippet: source.snippet?.slice(0, 240) ?? null,
               }));
 
             /**
-             * Chat used to end at the retrieval count: a claim of sourcing with
-             * nothing to open. The markers were inert text and the sources were
-             * never sent at all, because the transform lived in the research
-             * page's own component rather than on the way out of the server.
+             * Sources travel as data, not as a list appended to the prose.
              *
-             * Now the answer arrives with its citations already linked and the
-             * sources listed beneath it, so the two surfaces show the same
-             * thing.
+             * Written into the markdown they sat at the very bottom of a long
+             * report, which is where nobody looks — and they could not be shown
+             * beside the answer or behind a marker. As structured events the
+             * client can put them where they are useful.
              */
-            const sourceList =
-              cited.length > 0
-                ? `\n\n---\n\n**Sources**\n\n${cited
-                    .map(
-                      (source) =>
-                        `${source.index}. [${source.title}](${source.url})${
-                          source.domain ? ` — ${source.domain}` : ''
-                        }`,
-                    )
-                    .join('\n')}`
-                : '';
-
             const answerText = linkCitations(outcome.answer ?? outcome.report, cited);
 
-            text = `${answerText}${sourceList}\n\n_${retrieval}_\n\n[Open the full research session](/research/${session!.id})`;
+            text = `${answerText}\n\n_${retrieval}_\n\n[Open the full research session](/research/${session!.id})`;
             send({ type: 'text-delta', text });
+
+            if (cited.length > 0) {
+              send({
+                type: 'sources',
+                sources: cited.map((source) => ({
+                  index: source.index,
+                  url: source.url,
+                  title: source.title,
+                  domain: source.domain,
+                  snippet: source.snippet,
+                })),
+              });
+            }
           } else {
           for await (const event of provider.stream({
             modelIdentifier: model.modelIdentifier,
