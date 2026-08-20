@@ -550,6 +550,26 @@ export function ChatView({
 
   const isEmpty = messages.length === 0 && !streaming;
 
+  /**
+   * Two widths, because they answer different questions.
+   *
+   * `max-w-3xl` is 48rem, and rem now resolves against a 77% root — so the
+   * whole column silently shrank by a quarter along with the type, leaving a
+   * ribbon of text between two very wide empty margins.
+   *
+   * Widening the text to fill that space would trade one problem for a worse
+   * one: a line much past ~75 characters is measurably harder to read, and the
+   * eye loses its place returning to the left edge. So the *container* grows to
+   * use the room, and the *prose* stays at a readable measure — the freed space
+   * goes to the sources panel, which is reference material and reads fine
+   * narrow.
+   *
+   * Both are in `ch`, tied to the font itself, so neither drifts again the next
+   * time the type scale moves.
+   */
+  const COLUMN = 'w-full max-w-[104ch]';
+  const PROSE = 'max-w-[72ch]';
+
   /*
    * Only on an empty conversation. Once there is a transcript to read, openers
    * are clutter — and they were still showing mid-thread whenever a tool was
@@ -844,7 +864,7 @@ export function ChatView({
            * blank expanse.
            */
           <div className="flex flex-1 items-center justify-center overflow-y-auto px-6 py-10">
-            <div className="w-full max-w-3xl">
+            <div className={COLUMN}>
               <div className="text-center">
                 <h1 className="display text-3xl text-text">What do you want to do?</h1>
                 <p className="mt-3 text-text-secondary">
@@ -866,10 +886,10 @@ export function ChatView({
             {/* Once the conversation is running the transcript leads and the
                 composer docks below it. */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-3xl px-6 py-10">
+              <div className={`mx-auto ${COLUMN} px-6 py-10`}>
                 <div className="space-y-6">
                   {messages.map((message) => (
-                    <Bubble key={message.id} message={message} models={models} />
+                    <Bubble key={message.id} message={message} models={models} prose={PROSE} />
                   ))}
 
                   {streaming ? (
@@ -881,7 +901,9 @@ export function ChatView({
                         </p>
                       ) : null}
                       {streamText ? (
-                        <Markdown content={streamText} citations={streamSources} />
+                        <div className={PROSE}>
+                          <Markdown content={streamText} citations={streamSources} />
+                        </div>
                       ) : (
                         /*
                          * The stage the server actually reported, when it
@@ -935,7 +957,7 @@ export function ChatView({
             </div>
 
             <div className="border-t border-border bg-canvas">
-              <div className="mx-auto max-w-3xl px-6 py-4">{composer}</div>
+              <div className={`mx-auto ${COLUMN} px-6 py-4`}>{composer}</div>
             </div>
           </>
         )}
@@ -993,9 +1015,12 @@ export function ChatView({
 function Bubble({
   message,
   models,
+  prose,
 }: {
   message: ChatMessage;
   models: readonly SelectableModel[];
+  /** The readable measure for body text, set by the view. */
+  prose: string;
 }) {
   if (message.role === 'user') {
     return (
@@ -1041,16 +1066,18 @@ function Bubble({
         instead — beside is a luxury of width, not a requirement.
       */}
       {message.sources && message.sources.length > 0 ? (
-        <div className="lg:flex lg:items-start lg:gap-5">
-          <div className="min-w-0 lg:flex-1">
+        <div className="lg:flex lg:items-start lg:gap-6">
+          <div className={`min-w-0 lg:flex-1 ${prose}`}>
             <Markdown content={message.text} citations={message.sources} />
           </div>
-          <div className="mt-4 lg:sticky lg:top-4 lg:mt-0 lg:w-64 lg:shrink-0">
+          <div className="mt-4 lg:sticky lg:top-4 lg:mt-0 lg:w-72 lg:shrink-0">
             <SourcesPanel sources={message.sources} />
           </div>
         </div>
       ) : (
-        <Markdown content={message.text} />
+        <div className={prose}>
+          <Markdown content={message.text} />
+        </div>
       )}
     </div>
   );

@@ -198,7 +198,11 @@ export function ResearchView({
   }, [mode, query, running]);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-14">
+    /*
+      Same reasoning as the chat column: rem widths shrank with the type scale,
+      and the sources panel needs room beside the answer.
+    */
+    <div className="mx-auto max-w-[104ch] px-6 py-14">
       <header>
         <h1 className="display flex items-center gap-2.5 text-3xl text-text">
           <Telescope className="h-7 w-7 text-accent" strokeWidth={1.5} />
