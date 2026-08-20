@@ -34,7 +34,7 @@ export function CostChart({ points }: { points: readonly Point[] }) {
           />
         ))}
       </div>
-      <figcaption className="mt-2 flex justify-between text-[11px] text-text-muted">
+      <figcaption className="mt-2 flex justify-between text-[0.6875rem] text-text-muted">
         <span>{points[0]?.day}</span>
         <span>peak ${max.toFixed(4)}/day</span>
         <span>{points[points.length - 1]?.day}</span>

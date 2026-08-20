@@ -75,7 +75,7 @@ export function TrafficChart({ points }: { points: readonly Point[] }) {
         </svg>
       </div>
 
-      <figcaption className="mt-3 flex flex-wrap gap-4 text-[11px] text-text-secondary">
+      <figcaption className="mt-3 flex flex-wrap gap-4 text-[0.6875rem] text-text-secondary">
         {series.map((entry) => (
           <span key={entry.key} className="inline-flex items-center gap-1.5">
             <span

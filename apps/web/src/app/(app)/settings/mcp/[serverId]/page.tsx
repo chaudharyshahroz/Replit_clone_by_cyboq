@@ -32,7 +32,7 @@ export default async function McpServerPage({
 
       <header className="mt-4">
         <h1 className="display text-2xl text-text">{server.name}</h1>
-        <p className="mt-1.5 truncate font-mono text-[11px] text-text-muted">{server.endpoint}</p>
+        <p className="mt-1.5 truncate font-mono text-[0.6875rem] text-text-muted">{server.endpoint}</p>
       </header>
 
       <ServerToolPanel

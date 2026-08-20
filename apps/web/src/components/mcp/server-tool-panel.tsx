@@ -147,14 +147,14 @@ export function ServerToolPanel({
               <div className="flex flex-wrap items-center gap-2">
                 <code className="font-mono text-xs text-text">{tool.name}</code>
                 <span
-                  className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                  className={`rounded border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${
                     RISK_TONE[tool.riskClass] ?? RISK_TONE.update
                   }`}
                 >
                   {tool.riskClass.replace(/_/g, ' ')}
                 </span>
                 {tool.executionCount > 0 ? (
-                  <span className="text-[11px] text-text-muted">
+                  <span className="text-[0.6875rem] text-text-muted">
                     ran {tool.executionCount}×
                   </span>
                 ) : null}
@@ -163,7 +163,7 @@ export function ServerToolPanel({
               <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
                 {tool.description ?? 'No description provided.'}
               </p>
-              <p className="mt-1 text-[11px] text-text-muted">{tool.riskDescription}</p>
+              <p className="mt-1 text-[0.6875rem] text-text-muted">{tool.riskDescription}</p>
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
                 <label className="inline-flex items-center gap-2 text-xs text-text">
@@ -199,7 +199,7 @@ export function ServerToolPanel({
                     Run without asking
                   </label>
                 ) : (
-                  <span className="text-[11px] text-text-muted">Always asks before running</span>
+                  <span className="text-[0.6875rem] text-text-muted">Always asks before running</span>
                 )}
               </div>
             </li>

@@ -74,7 +74,7 @@ export default async function AdminBillingPage() {
             <table className="w-full min-w-[36rem] border-collapse text-sm">
               <caption className="sr-only">Provider spend by model and operation</caption>
               <thead>
-                <tr className="bg-surface-raised text-left text-[11px] uppercase tracking-wider text-text-muted">
+                <tr className="bg-surface-raised text-left text-[0.6875rem] uppercase tracking-wider text-text-muted">
                   <th scope="col" className="px-3 py-2 font-medium">Model</th>
                   <th scope="col" className="px-3 py-2 font-medium">Operation</th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">Calls</th>

@@ -69,12 +69,12 @@ export default async function BuildDetailPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-medium text-text">{project.name}</h1>
-          <span className="rounded-md border border-border-strong px-2 py-0.5 text-[11px] text-text-secondary">
+          <span className="rounded-md border border-border-strong px-2 py-0.5 text-[0.6875rem] text-text-secondary">
             {project.target.replace(/_/g, ' ')}
           </span>
-          <span className="text-[11px] text-text-muted">{project.status}</span>
+          <span className="text-[0.6875rem] text-text-muted">{project.status}</span>
           {project.statusDetail ? (
-            <span className="text-[11px] text-warning">{project.statusDetail}</span>
+            <span className="text-[0.6875rem] text-warning">{project.statusDetail}</span>
           ) : null}
         </div>
       </header>

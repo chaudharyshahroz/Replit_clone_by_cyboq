@@ -113,7 +113,7 @@ export function ExportPanel({ buildId, hasFiles }: ExportPanelProps) {
             <ExternalLink className="h-3 w-3" strokeWidth={2} />
           </a>
           {result.status === 'deploying' ? (
-            <p className="mt-1.5 text-[11px] text-text-muted">
+            <p className="mt-1.5 text-[0.6875rem] text-text-muted">
               This link will 404 until the build finishes.
             </p>
           ) : null}

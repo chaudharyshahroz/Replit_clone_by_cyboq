@@ -38,7 +38,7 @@ export function SocialSignIn({ returnTo }: { readonly returnTo?: string }) {
     <div className="mt-6">
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
-        <span className="text-[11px] uppercase tracking-wider text-text-muted">or</span>
+        <span className="text-[0.6875rem] uppercase tracking-wider text-text-muted">or</span>
         <span className="h-px flex-1 bg-border" />
       </div>
 
@@ -64,7 +64,7 @@ export function SocialSignIn({ returnTo }: { readonly returnTo?: string }) {
         verified address already has a Reklu account joins that account rather
         than creating a second one.
       */}
-      <p className="mt-3 text-center text-[11px] leading-relaxed text-text-muted">
+      <p className="mt-3 text-center text-[0.6875rem] leading-relaxed text-text-muted">
         If your provider email already has a Reklu account, you will be signed
         into it.
       </p>

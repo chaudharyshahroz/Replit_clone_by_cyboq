@@ -63,7 +63,7 @@ export function UserTable({ rows }: { rows: readonly Row[] }) {
         <table className="w-full min-w-[52rem] border-collapse text-sm">
           <caption className="sr-only">Accounts with plan, status and administrative controls</caption>
           <thead>
-            <tr className="bg-surface-raised text-left text-[11px] uppercase tracking-wider text-text-muted">
+            <tr className="bg-surface-raised text-left text-[0.6875rem] uppercase tracking-wider text-text-muted">
               <th scope="col" className="px-3 py-2 font-medium">Account</th>
               <th scope="col" className="px-3 py-2 font-medium">Plan</th>
               <th scope="col" className="px-3 py-2 font-medium">Status</th>
@@ -191,12 +191,12 @@ export function UserTable({ rows }: { rows: readonly Row[] }) {
                 {content.conversations.map((conversation) => (
                   <li key={conversation.id} className="rounded-lg border border-border bg-surface p-3">
                     <p className="text-xs font-medium text-text">{conversation.title}</p>
-                    <p className="text-[11px] text-text-muted">
+                    <p className="text-[0.6875rem] text-text-muted">
                       {new Date(conversation.createdAt).toLocaleString()}
                     </p>
                     <ul className="mt-2 space-y-1.5">
                       {conversation.messages.map((message, index) => (
-                        <li key={index} className="text-[11px] leading-relaxed text-text-secondary">
+                        <li key={index} className="text-[0.6875rem] leading-relaxed text-text-secondary">
                           <span className="font-mono uppercase text-text-muted">{message.role}</span>{' '}
                           {message.text}
                         </li>
@@ -222,7 +222,7 @@ function Tag({ tone, children }: { tone: 'ok' | 'warn' | 'accent' | 'muted'; chi
   } as const;
 
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${tones[tone]}`}>
+    <span className={`rounded border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${tones[tone]}`}>
       {children}
     </span>
   );
@@ -246,7 +246,7 @@ function IconButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded border border-border bg-surface px-2 py-1 text-[11px] text-text-secondary hover:bg-surface-hover disabled:opacity-50"
+      className="inline-flex items-center gap-1 rounded border border-border bg-surface px-2 py-1 text-[0.6875rem] text-text-secondary hover:bg-surface-hover disabled:opacity-50"
     >
       {children}
     </button>

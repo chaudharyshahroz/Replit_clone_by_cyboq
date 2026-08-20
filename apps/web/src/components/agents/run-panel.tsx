@@ -107,7 +107,7 @@ export function RunPanel({
             <summary className="cursor-pointer text-xs text-text-muted">
               Exactly what will run
             </summary>
-            <pre className="mt-2 overflow-x-auto rounded-lg bg-surface p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+            <pre className="mt-2 overflow-x-auto rounded-lg bg-surface p-3 font-mono text-[0.6875rem] leading-relaxed text-text-secondary">
               {approval.payload}
             </pre>
           </details>
@@ -134,7 +134,7 @@ export function RunPanel({
           </div>
 
           {approval.expiresAt ? (
-            <p className="mt-2 text-[11px] text-text-muted">
+            <p className="mt-2 text-[0.6875rem] text-text-muted">
               Expires {new Date(approval.expiresAt).toLocaleString()} — an unanswered
               approval does not block the run forever.
             </p>
@@ -176,7 +176,7 @@ export function RunPanel({
               <div className="flex flex-wrap items-center gap-2">
                 <StepIcon status={step.status} />
                 <span className="text-sm text-text">{step.title}</span>
-                <span className="rounded bg-surface-raised px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-muted">
+                <span className="rounded bg-surface-raised px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-text-muted">
                   {step.toolName ?? step.kind}
                 </span>
               </div>

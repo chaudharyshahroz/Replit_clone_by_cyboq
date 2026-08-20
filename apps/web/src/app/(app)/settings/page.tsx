@@ -186,7 +186,7 @@ export default async function SettingsPage() {
                   {capability.label}
                 </span>
                 {!on ? (
-                  <code className="truncate font-mono text-[11px] text-text-muted">
+                  <code className="truncate font-mono text-[0.6875rem] text-text-muted">
                     {capability.env}
                   </code>
                 ) : null}

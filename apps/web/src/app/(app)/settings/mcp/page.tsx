@@ -74,7 +74,7 @@ export default async function McpPage() {
                     {server.name}
                   </Link>
                   <span
-                    className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                    className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${
                       server.status === 'connected'
                         ? 'border border-success-border bg-success-subtle text-success'
                         : 'border border-warning/40 bg-warning/5 text-warning'
@@ -83,14 +83,14 @@ export default async function McpPage() {
                     {STATUS_LABEL[server.status] ?? server.status}
                   </span>
                   {!server.schemaApproved ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-warning">
+                    <span className="inline-flex items-center gap-1 text-[0.6875rem] text-warning">
                       <ShieldQuestion className="h-3 w-3" strokeWidth={2} />
                       Needs review
                     </span>
                   ) : null}
                 </div>
 
-                <p className="mt-1.5 truncate font-mono text-[11px] text-text-muted">
+                <p className="mt-1.5 truncate font-mono text-[0.6875rem] text-text-muted">
                   {server.endpoint}
                 </p>
                 <p className="mt-1 text-xs text-text-secondary">
@@ -129,14 +129,14 @@ export default async function McpPage() {
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" strokeWidth={2} />
                 )}
                 <span className="font-mono text-xs text-text">{run.toolName}</span>
-                <span className="rounded bg-surface-raised px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-muted">
+                <span className="rounded bg-surface-raised px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-text-muted">
                   {run.riskClass.replace(/_/g, ' ')}
                 </span>
                 <span className="text-xs text-text-secondary">{run.status.replace(/_/g, ' ')}</span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-text-muted">
+                <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-text-muted">
                   {run.deniedReason ?? run.errorMessage ?? ''}
                 </span>
-                <span className="text-[11px] text-text-muted">
+                <span className="text-[0.6875rem] text-text-muted">
                   {new Date(run.createdAt).toLocaleString()}
                 </span>
               </li>

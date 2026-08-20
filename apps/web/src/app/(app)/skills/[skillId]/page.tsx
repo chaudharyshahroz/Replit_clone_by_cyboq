@@ -40,15 +40,15 @@ export default async function SkillPage({
       <header className="mt-4">
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="display text-2xl text-text">{skill.name}</h1>
-          <code className="rounded bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-text-muted">
+          <code className="rounded bg-surface-raised px-1.5 py-0.5 font-mono text-[0.6875rem] text-text-muted">
             @{skill.handle}
           </code>
           {skill.isBuiltIn ? (
-            <span className="rounded border border-accent-border bg-accent-subtle px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+            <span className="rounded border border-accent-border bg-accent-subtle px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-accent">
               Built-in
             </span>
           ) : null}
-          <span className="inline-flex items-center gap-1 text-[11px] text-text-muted">
+          <span className="inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
             {skill.visibility === 'public' ? (
               <>
                 <Globe className="h-3 w-3" strokeWidth={2} /> Public

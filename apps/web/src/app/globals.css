@@ -120,6 +120,20 @@
 }
 
 html {
+  /**
+   * The one number that sets type size for the whole product.
+   *
+   * Every size in the UI is in rem — Tailwind's scale is rem by default, and
+   * the handful of fixed pixel sizes were converted to match — so this
+   * percentage scales all of it together. 70% is a 30% reduction from the
+   * browser default.
+   *
+   * A percentage rather than a pixel value on purpose: someone who has raised
+   * their browser's default font size still gets that preference, scaled
+   * proportionally, instead of having it overridden.
+   */
+  font-size: 70%;
+
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
 }

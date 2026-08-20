@@ -64,7 +64,7 @@ export default async function AgentsPage() {
                     {run.objective}
                   </Link>
                   <span
-                    className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                    className={`rounded border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${
                       STATUS_TONE[run.status] ?? STATUS_TONE.cancelled
                     }`}
                   >

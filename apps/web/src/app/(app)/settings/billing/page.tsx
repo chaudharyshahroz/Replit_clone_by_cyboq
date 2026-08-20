@@ -143,7 +143,7 @@ export default async function BillingPage({
                 />
               </div>
             ) : null}
-            <p className="mt-2 text-[11px] text-text-muted">
+            <p className="mt-2 text-[0.6875rem] text-text-muted">
               Resets {new Date(quota.periodEnd).toLocaleDateString()}
             </p>
           </div>

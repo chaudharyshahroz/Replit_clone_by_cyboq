@@ -59,7 +59,7 @@ export function StartRunForm() {
         {pending ? 'Planning…' : 'Plan the work'}
       </button>
 
-      <p className="mt-2 text-[11px] text-text-muted">
+      <p className="mt-2 text-[0.6875rem] text-text-muted">
         Reklu plans first and shows you the steps. Nothing runs until you start it.
       </p>
     </form>

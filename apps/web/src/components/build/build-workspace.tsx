@@ -241,7 +241,7 @@ export function BuildWorkspace({
       <div className="flex min-h-0 flex-1">
         {/* ---- File explorer (spec §31) ---- */}
         <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface/30 md:flex">
-          <h2 className="px-3 py-2.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <h2 className="px-3 py-2.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
             Files
           </h2>
           <div className="flex-1 overflow-y-auto px-1.5 pb-3">
@@ -285,11 +285,11 @@ export function BuildWorkspace({
             {panel === 'code' ? (
               selected ? (
                 <div>
-                  <p className="border-b border-border px-4 py-2 font-mono text-[11px] text-text-muted">
+                  <p className="border-b border-border px-4 py-2 font-mono text-[0.6875rem] text-text-muted">
                     {selected.path}
                   </p>
                   <pre className="overflow-x-auto p-4">
-                    <code className="font-mono text-[12px] leading-relaxed text-text-secondary">
+                    <code className="font-mono text-[0.75rem] leading-relaxed text-text-secondary">
                       {selected.content}
                     </code>
                   </pre>
@@ -326,7 +326,7 @@ export function BuildWorkspace({
                       >
                         Open externally
                       </a>
-                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-text-muted">
+                      <span className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
                         <MousePointerClick className="h-3 w-3" strokeWidth={1.75} />
                         Alt+click an element to edit it
                       </span>
@@ -369,14 +369,14 @@ export function BuildWorkspace({
                     <button
                       type="submit"
                       disabled={editing || !instruction.trim()}
-                      className="shrink-0 rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-on-accent disabled:opacity-40"
+                      className="shrink-0 rounded-md bg-accent px-2 py-1 text-[0.6875rem] font-medium text-on-accent disabled:opacity-40"
                     >
                       {editing ? 'Applying…' : 'Apply'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelection(undefined)}
-                      className="shrink-0 rounded text-[11px] text-text-muted hover:text-text"
+                      className="shrink-0 rounded text-[0.6875rem] text-text-muted hover:text-text"
                     >
                       Cancel
                     </button>
@@ -408,7 +408,7 @@ export function BuildWorkspace({
             {panel === 'console' ? (
               (previewOutput || consoleOutput).trim().length > 0 ? (
                 <pre className="overflow-x-auto p-4">
-                  <code className="font-mono text-[12px] leading-relaxed text-text-secondary">
+                  <code className="font-mono text-[0.75rem] leading-relaxed text-text-secondary">
                     {previewOutput || consoleOutput}
                   </code>
                 </pre>
@@ -438,14 +438,14 @@ export function BuildWorkspace({
                         {checkpoint.checksPassed === false ? (
                           <span
                             title="Checks failed for this version"
-                            className="inline-flex items-center gap-1 text-[11px] text-warning"
+                            className="inline-flex items-center gap-1 text-[0.6875rem] text-warning"
                           >
                             <AlertTriangle className="h-3 w-3" strokeWidth={2} />
                             checks failed
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-1 text-[11px] text-text-muted">
+                      <p className="mt-1 text-[0.6875rem] text-text-muted">
                         {checkpoint.changedPaths.length} file
                         {checkpoint.changedPaths.length === 1 ? '' : 's'} changed ·{' '}
                         {new Date(checkpoint.createdAt).toLocaleString()}

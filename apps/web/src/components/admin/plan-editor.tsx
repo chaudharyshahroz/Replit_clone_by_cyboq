@@ -29,11 +29,11 @@ export interface AdminPlan {
  */
 function SyncBadge({ plan }: { plan: AdminPlan }) {
   if (!plan.isPurchasable) {
-    return <span className="text-[11px] text-text-muted">Not sold</span>;
+    return <span className="text-[0.6875rem] text-text-muted">Not sold</span>;
   }
   if (plan.whopSyncError) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-danger">
+      <span className="inline-flex items-center gap-1 text-[0.6875rem] text-danger">
         <AlertCircle className="h-3 w-3" strokeWidth={2} />
         Not synced
       </span>
@@ -41,13 +41,13 @@ function SyncBadge({ plan }: { plan: AdminPlan }) {
   }
   if (plan.whopSyncedAt) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-success">
+      <span className="inline-flex items-center gap-1 text-[0.6875rem] text-success">
         <Check className="h-3 w-3" strokeWidth={2.5} />
         In Whop
       </span>
     );
   }
-  return <span className="text-[11px] text-warning">Never synced</span>;
+  return <span className="text-[0.6875rem] text-warning">Never synced</span>;
 }
 
 function PlanCard({ plan }: { plan: AdminPlan }) {
@@ -84,7 +84,7 @@ function PlanCard({ plan }: { plan: AdminPlan }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-wider text-text-muted">
+          <p className="font-mono text-[0.6875rem] uppercase tracking-wider text-text-muted">
             {plan.key}
           </p>
           <p className="mt-0.5 text-xs text-text-muted">
@@ -197,7 +197,7 @@ function PlanCard({ plan }: { plan: AdminPlan }) {
       </div>
 
       {plan.whopPlanId ? (
-        <p className="mt-3 font-mono text-[11px] text-text-muted">{plan.whopPlanId}</p>
+        <p className="mt-3 font-mono text-[0.6875rem] text-text-muted">{plan.whopPlanId}</p>
       ) : null}
     </form>
   );

@@ -73,7 +73,7 @@ export function ConnectServerForm() {
 
         <label className="block">
           <span className="text-xs font-medium text-text">Endpoint URL</span>
-          <span className="ml-2 text-[11px] text-text-muted">Must be reachable over HTTPS.</span>
+          <span className="ml-2 text-[0.6875rem] text-text-muted">Must be reachable over HTTPS.</span>
           <input
             name="endpoint"
             required
@@ -86,7 +86,7 @@ export function ConnectServerForm() {
 
         <label className="block">
           <span className="text-xs font-medium text-text">Authorization header</span>
-          <span className="ml-2 text-[11px] text-text-muted">Optional. Stored encrypted.</span>
+          <span className="ml-2 text-[0.6875rem] text-text-muted">Optional. Stored encrypted.</span>
           <input
             name="credential"
             type="password"
@@ -97,7 +97,7 @@ export function ConnectServerForm() {
         </label>
       </div>
 
-      <p className="mt-4 text-[11px] leading-relaxed text-text-muted">
+      <p className="mt-4 text-[0.6875rem] leading-relaxed text-text-muted">
         Reklu will read the server&rsquo;s tool list and show it to you. Nothing runs
         until you enable a tool and approve its definitions.
       </p>

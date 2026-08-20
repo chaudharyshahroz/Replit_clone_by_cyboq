@@ -122,7 +122,7 @@ export function MemoryPanel({
               >
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-text">{memory.content}</span>
-                  <span className="mt-1 block text-[11px] text-text-muted">
+                  <span className="mt-1 block text-[0.6875rem] text-text-muted">
                     {KIND_LABEL[memory.kind]} · {SOURCE_LABEL[memory.source]}
                   </span>
                 </span>
@@ -168,7 +168,7 @@ export function MemoryPanel({
               <Brain className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm text-text">{memory.content}</span>
-                <span className="mt-1 block text-[11px] text-text-muted">
+                <span className="mt-1 block text-[0.6875rem] text-text-muted">
                   {KIND_LABEL[memory.kind]} · {SOURCE_LABEL[memory.source]}
                   {memory.sourceMessageId ? ' · from a chat message' : ''}
                   {memory.sourceFileId ? ' · from a file' : ''}

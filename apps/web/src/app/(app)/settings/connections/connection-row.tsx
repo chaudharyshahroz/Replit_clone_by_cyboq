@@ -78,9 +78,9 @@ export function ConnectionRow({
         </form>
       </div>
 
-      {message ? <p className="text-[11px] text-success">{message}</p> : null}
+      {message ? <p className="text-[0.6875rem] text-success">{message}</p> : null}
       {error ? (
-        <p role="alert" className="max-w-xs text-right text-[11px] text-warning">
+        <p role="alert" className="max-w-xs text-right text-[0.6875rem] text-warning">
           {error}
         </p>
       ) : null}

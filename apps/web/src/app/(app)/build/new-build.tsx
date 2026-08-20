@@ -46,10 +46,10 @@ export function NewBuildForm({ initialPrompt }: { initialPrompt?: string }) {
           /* Carried from the chat composer's Build tool. */
           defaultValue={initialPrompt}
           placeholder="An AI calorie tracking mobile app with meal logging, progress charts and subscriptions…"
-          className="w-full resize-none bg-transparent px-4 pt-4 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
+          className="w-full resize-none bg-transparent px-4 pt-4 text-[0.9375rem] text-text placeholder:text-text-muted focus:outline-none"
         />
         <div className="flex items-center justify-between px-3 pb-3">
-          <p className="text-[11px] text-text-muted">
+          <p className="text-[0.6875rem] text-text-muted">
             Reklu writes a brief first, so it builds the product — not just the example.
           </p>
           <Submit />

@@ -97,7 +97,7 @@ export default async function BuildPage({
                   className="block bg-surface/40 px-4 py-3.5 transition-colors hover:bg-surface-hover"
                 >
                   <p className="truncate text-sm text-text">{project.name}</p>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] text-text-muted">
+                  <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[0.6875rem] text-text-muted">
                     <span>{project.target.replace(/_/g, ' ')}</span>
                     <span>{project.status}</span>
                     <span>v{project.versionCount}</span>

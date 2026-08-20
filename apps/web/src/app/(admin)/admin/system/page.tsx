@@ -40,7 +40,7 @@ export default async function AdminSystemPage() {
             >
               <span className="text-text-secondary">{label}</span>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                className={`rounded px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${
                   on
                     ? 'border border-success-border bg-success-subtle text-success'
                     : 'border border-border bg-surface-raised text-text-muted'
@@ -65,7 +65,7 @@ export default async function AdminSystemPage() {
             ['Embedding provider', env.EMBEDDING_PROVIDER],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-border bg-surface px-3 py-2">
-              <dt className="text-[11px] uppercase tracking-wider text-text-muted">{label}</dt>
+              <dt className="text-[0.6875rem] uppercase tracking-wider text-text-muted">{label}</dt>
               <dd className="mt-0.5 font-mono text-xs text-text">{value}</dd>
             </div>
           ))}
@@ -92,10 +92,10 @@ export default async function AdminSystemPage() {
               <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-surface px-3.5 py-2">
                 <code className="font-mono text-xs text-text">{entry.action}</code>
                 <span className="text-xs text-text-secondary">{entry.actorEmail ?? 'unknown'}</span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-text-muted">
+                <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-text-muted">
                   {entry.resourceType} {entry.resourceId}
                 </span>
-                <span className="text-[11px] text-text-muted">
+                <span className="text-[0.6875rem] text-text-muted">
                   {new Date(entry.createdAt).toLocaleString()}
                 </span>
               </li>

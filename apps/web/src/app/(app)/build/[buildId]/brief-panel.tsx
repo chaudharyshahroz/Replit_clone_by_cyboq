@@ -59,7 +59,7 @@ export function BriefPanel({ brief, buildId }: { brief: BuildBrief; buildId: str
               .filter((section) => section.values.length > 0)
               .map((section) => (
                 <div key={section.label}>
-                  <dt className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+                  <dt className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
                     {section.label}
                   </dt>
                   <dd className="mt-1 space-y-0.5">
@@ -74,7 +74,7 @@ export function BriefPanel({ brief, buildId }: { brief: BuildBrief; buildId: str
           </dl>
 
           {(brief.needsAuth || brief.needsDatabase) ? (
-            <p className="mt-3 text-[11px] text-text-muted">
+            <p className="mt-3 text-[0.6875rem] text-text-muted">
               {brief.needsAuth ? 'Includes authentication. ' : ''}
               {brief.needsDatabase ? 'Includes a database.' : ''}
             </p>

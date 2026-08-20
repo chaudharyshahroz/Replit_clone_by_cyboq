@@ -91,11 +91,11 @@ export function HeroComposer() {
           rows={3}
           maxLength={2000}
           placeholder="Ask anything, or describe what you want built…"
-          className="w-full resize-none bg-transparent px-5 pb-14 pt-5 text-[15px] leading-relaxed text-text outline-none placeholder:text-text-muted"
+          className="w-full resize-none bg-transparent px-5 pb-14 pt-5 text-[0.9375rem] leading-relaxed text-text outline-none placeholder:text-text-muted"
         />
 
         <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-3">
-          <span className="text-[11px] text-text-muted">
+          <span className="text-[0.6875rem] text-text-muted">
             Free to start · no card needed
           </span>
 

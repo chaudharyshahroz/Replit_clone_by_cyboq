@@ -98,7 +98,7 @@ export default async function ResearchDetailPage({
                 className="rounded-xl border border-border bg-surface/40 p-4"
               >
                 <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-surface-raised font-mono text-[11px] text-text-muted">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-surface-raised font-mono text-[0.6875rem] text-text-muted">
                     {source.citationIndex ?? '–'}
                   </span>
 
@@ -124,7 +124,7 @@ export default async function ResearchDetailPage({
                     </div>
 
                     {source.domain ? (
-                      <p className="mt-0.5 text-[11px] text-text-muted">{source.domain}</p>
+                      <p className="mt-0.5 text-[0.6875rem] text-text-muted">{source.domain}</p>
                     ) : null}
 
                     {source.snippet ? (
@@ -151,12 +151,12 @@ export default async function ResearchDetailPage({
                             >
                               <p className="text-xs text-text">{citation.claim}</p>
                               {citation.passage ? (
-                                <blockquote className="mt-2 border-l-2 border-border-strong pl-2 text-[11px] leading-relaxed text-text-secondary">
+                                <blockquote className="mt-2 border-l-2 border-border-strong pl-2 text-[0.6875rem] leading-relaxed text-text-secondary">
                                   {citation.passage}
                                 </blockquote>
                               ) : (
                                 // Honest gap rather than a misleading exhibit.
-                                <p className="mt-2 text-[11px] text-text-muted">
+                                <p className="mt-2 text-[0.6875rem] text-text-muted">
                                   No supporting passage could be located in this source.
                                 </p>
                               )}
@@ -180,7 +180,7 @@ export default async function ResearchDetailPage({
             </h3>
             <ul className="mt-2 space-y-1">
               {failedSources.map((source) => (
-                <li key={source.id} className="text-[11px] text-text-secondary">
+                <li key={source.id} className="text-[0.6875rem] text-text-secondary">
                   <span className="text-text-muted">{source.domain ?? source.title}</span> —{' '}
                   {source.fetchError}
                 </li>

@@ -91,7 +91,7 @@ export function ProjectBrowser({ projects }: { projects: readonly ProjectCard[] 
                   </p>
                 ) : null}
 
-                <dl className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-text-muted">
+                <dl className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[0.6875rem] text-text-muted">
                   <div className="flex items-center gap-1">
                     <MessageSquare className="h-3 w-3" strokeWidth={1.75} />
                     <dt className="sr-only">Chats</dt>

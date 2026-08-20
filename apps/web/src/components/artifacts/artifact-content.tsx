@@ -86,7 +86,7 @@ export function ArtifactContent({
               key={`${slide.title}-${index}`}
               className="rounded-lg border border-border bg-surface p-4"
             >
-              <p className="text-[11px] uppercase tracking-wider text-text-muted">
+              <p className="text-[0.6875rem] uppercase tracking-wider text-text-muted">
                 {index + 1} · {slide.layout.replace(/-/g, ' ')}
               </p>
               <h3 className="mt-1 text-sm font-medium text-text">{slide.title}</h3>

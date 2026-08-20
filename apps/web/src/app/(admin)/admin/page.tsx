@@ -70,9 +70,9 @@ export default async function AdminOverviewPage() {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-border bg-surface/40 p-4">
-      <p className="text-[11px] uppercase tracking-wider text-text-muted">{label}</p>
+      <p className="text-[0.6875rem] uppercase tracking-wider text-text-muted">{label}</p>
       <p className="mt-1 text-xl tabular-nums text-text">{value}</p>
-      {hint ? <p className="text-[10px] text-text-muted">{hint}</p> : null}
+      {hint ? <p className="text-[0.625rem] text-text-muted">{hint}</p> : null}
     </div>
   );
 }

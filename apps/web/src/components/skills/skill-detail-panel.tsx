@@ -187,7 +187,7 @@ export function SkillDetailPanel({
 
             <label className="block">
               <span className="text-xs font-medium text-text">Variables</span>
-              <span className="ml-2 text-[11px] text-text-muted">
+              <span className="ml-2 text-[0.6875rem] text-text-muted">
                 One per line. <code>name* — description</code>; the asterisk marks it required.
               </span>
               <textarea
@@ -208,7 +208,7 @@ export function SkillDetailPanel({
               />
             </label>
 
-            <p className="text-[11px] leading-relaxed text-text-muted">
+            <p className="text-[0.6875rem] leading-relaxed text-text-muted">
               Saving publishes a new version. Anyone running an earlier version keeps
               it until they upgrade.
             </p>
@@ -236,7 +236,7 @@ export function SkillDetailPanel({
                 <li key={variable.name} className="text-xs text-text-secondary">
                   <code className="text-accent">{variable.name}</code>
                   {variable.required ? (
-                    <span className="ml-1.5 text-[10px] uppercase tracking-wide text-warning">
+                    <span className="ml-1.5 text-[0.625rem] uppercase tracking-wide text-warning">
                       required
                     </span>
                   ) : null}
@@ -296,14 +296,14 @@ export function SkillDetailPanel({
               >
                 <span className="font-mono text-xs text-text">v{version.version}</span>
                 {index === 0 ? (
-                  <span className="rounded border border-accent-border bg-accent-subtle px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                  <span className="rounded border border-accent-border bg-accent-subtle px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-accent">
                     Current
                   </span>
                 ) : null}
                 <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">
                   {version.changelog ?? '—'}
                 </span>
-                <span className="text-[11px] text-text-muted">
+                <span className="text-[0.6875rem] text-text-muted">
                   {new Date(version.createdAt).toLocaleDateString()}
                 </span>
                 {editable && index !== 0 ? (
@@ -311,7 +311,7 @@ export function SkillDetailPanel({
                     type="button"
                     disabled={pending}
                     onClick={() => run(() => rollbackSkillAction(skill.id, version.id))}
-                    className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface-hover disabled:opacity-60"
+                    className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[0.6875rem] text-text-secondary hover:bg-surface-hover disabled:opacity-60"
                   >
                     <RotateCcw className="h-3 w-3" strokeWidth={2} />
                     Restore
@@ -322,7 +322,7 @@ export function SkillDetailPanel({
           </ul>
         )}
 
-        <p className="mt-3 text-[11px] leading-relaxed text-text-muted">
+        <p className="mt-3 text-[0.6875rem] leading-relaxed text-text-muted">
           Restoring publishes a new version carrying the older content, so the
           history stays complete.
         </p>

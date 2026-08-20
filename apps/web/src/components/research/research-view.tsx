@@ -250,7 +250,7 @@ export function ResearchView({
             }
           }}
           placeholder="What do you want to find out?"
-          className="w-full resize-none bg-transparent px-4 pt-4 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
+          className="w-full resize-none bg-transparent px-4 pt-4 text-[0.9375rem] text-text placeholder:text-text-muted focus:outline-none"
         />
 
         <div className="flex flex-wrap items-center gap-2 px-3 pb-3">

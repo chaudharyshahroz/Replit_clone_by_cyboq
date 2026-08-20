@@ -56,7 +56,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         </nav>
 
         <div className="mt-auto flex flex-col gap-2 pt-4">
-          <p className="rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-2 text-[11px] leading-relaxed text-warning">
+          <p className="rounded-lg border border-warning/40 bg-warning/5 px-2.5 py-2 text-[0.6875rem] leading-relaxed text-warning">
             Every action here is written to the audit log.
           </p>
           {/*

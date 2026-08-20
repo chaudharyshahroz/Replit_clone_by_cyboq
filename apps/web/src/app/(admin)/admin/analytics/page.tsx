@@ -76,7 +76,7 @@ export default async function AdminAnalyticsPage() {
           <table className="w-full min-w-[28rem] border-collapse text-sm">
             <caption className="sr-only">Total and recent usage by feature</caption>
             <thead>
-              <tr className="bg-surface-raised text-left text-[11px] uppercase tracking-wider text-text-muted">
+              <tr className="bg-surface-raised text-left text-[0.6875rem] uppercase tracking-wider text-text-muted">
                 <th scope="col" className="px-3 py-2 font-medium">Feature</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">All time</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Last 7 days</th>
@@ -137,7 +137,7 @@ export default async function AdminAnalyticsPage() {
             const rate = row.total > 0 ? (row.failed / row.total) * 100 : 0;
             return (
               <div key={row.label} className="rounded-xl border border-border bg-surface p-4">
-                <p className="text-[11px] uppercase tracking-wider text-text-muted">{row.label}</p>
+                <p className="text-[0.6875rem] uppercase tracking-wider text-text-muted">{row.label}</p>
                 <p
                   className={`mt-1 text-xl tabular-nums ${
                     row.failed > 0 ? 'text-warning' : 'text-text'
@@ -145,7 +145,7 @@ export default async function AdminAnalyticsPage() {
                 >
                   {row.failed.toLocaleString()}
                 </p>
-                <p className="text-[11px] text-text-muted">
+                <p className="text-[0.6875rem] text-text-muted">
                   of {row.total.toLocaleString()} · {rate.toFixed(1)}%
                 </p>
               </div>
@@ -168,7 +168,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
-      <p className="text-[11px] uppercase tracking-wider text-text-muted">{label}</p>
+      <p className="text-[0.6875rem] uppercase tracking-wider text-text-muted">{label}</p>
       <p className={`mt-1 text-xl tabular-nums ${tone === 'warn' ? 'text-warning' : 'text-text'}`}>
         {value.toLocaleString()}
       </p>

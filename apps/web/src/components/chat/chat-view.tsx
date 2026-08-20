@@ -229,7 +229,7 @@ function ModelSelector({
 
           {[...groups.entries()].map(([providerName, list]) => (
             <div key={providerName} className="mt-1">
-              <p className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+              <p className="px-2.5 py-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
                 {providerName}
               </p>
               {list.map((model) => (
@@ -248,7 +248,7 @@ function ModelSelector({
                     <span className="flex items-center gap-1.5">
                       <span className="truncate text-sm text-text">{model.displayName}</span>
                       {model.isDevelopmentMock ? (
-                        <span className="shrink-0 rounded border border-warning/40 bg-warning/10 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-warning">
+                        <span className="shrink-0 rounded border border-warning/40 bg-warning/10 px-1 py-px text-[0.5625rem] font-medium uppercase tracking-wide text-warning">
                           Mock
                         </span>
                       ) : null}
@@ -567,7 +567,7 @@ export function ChatView({
           }
         }}
         placeholder={tool === 'chat' ? 'Ask Reklu anything…' : TOOLS[tool].placeholder}
-        className="w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none focus-visible:outline-none"
+        className="w-full resize-none bg-transparent px-4 pt-3.5 text-[0.9375rem] text-text placeholder:text-text-muted focus:outline-none focus-visible:outline-none"
       />
 
       {attachments.length > 0 ? (
@@ -601,7 +601,7 @@ export function ChatView({
 
       {/* Honest about files that were stored but could not be read. */}
       {attachments.some((f) => !f.usableInChat) ? (
-        <p className="px-3 pb-1 text-[11px] leading-relaxed text-warning">
+        <p className="px-3 pb-1 text-[0.6875rem] leading-relaxed text-warning">
           {attachments.find((f) => !f.usableInChat)?.statusDetail ??
             'Some attachments could not be read and will be described to the model rather than included.'}
         </p>
@@ -742,10 +742,10 @@ export function ChatView({
     ) : null}
 
     {tool !== 'chat' ? (
-      <p className="mt-3 text-center text-[11px] text-text-muted">{TOOLS[tool].hint}</p>
+      <p className="mt-3 text-center text-[0.6875rem] text-text-muted">{TOOLS[tool].hint}</p>
     ) : null}
 
-    <p className="mt-2 text-center text-[11px] text-text-muted">
+    <p className="mt-2 text-center text-[0.6875rem] text-text-muted">
       Reklu can make mistakes. Verify important information.
     </p>
     </>
@@ -870,7 +870,7 @@ export function ChatView({
               <span className="block truncate text-sm font-medium text-text">
                 {artifact.title}
               </span>
-              <span className="block text-[11px] text-text-muted">
+              <span className="block text-[0.6875rem] text-text-muted">
                 {artifact.type.replace(/_/g, ' ')} · saved to Artifacts
               </span>
             </span>
@@ -925,7 +925,7 @@ function Bubble({
             {message.attachments.map((name) => (
               <li
                 key={name}
-                className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-text-muted"
+                className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[0.6875rem] text-text-muted"
               >
                 <Paperclip className="h-3 w-3" strokeWidth={1.75} />
                 {name}
@@ -948,7 +948,7 @@ function Bubble({
         <p className="mb-1.5 flex items-center gap-1.5 text-xs text-text-muted">
           {model.displayName}
           {model.isDevelopmentMock ? (
-            <span className="rounded border border-warning/40 bg-warning/10 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-warning">
+            <span className="rounded border border-warning/40 bg-warning/10 px-1 py-px text-[0.5625rem] font-medium uppercase tracking-wide text-warning">
               Development Mock
             </span>
           ) : null}

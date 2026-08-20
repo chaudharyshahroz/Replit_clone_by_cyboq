@@ -139,7 +139,7 @@ export function SkillEditor() {
         Stated at authoring time, not discovered later: a skill guides the
         response, it does not change what the model is allowed to do.
       */}
-      <p className="mt-4 text-[11px] leading-relaxed text-text-muted">
+      <p className="mt-4 text-[0.6875rem] leading-relaxed text-text-muted">
         Instructions are applied as part of your request. A skill cannot grant
         itself permissions or override Reklu&rsquo;s guidelines.
       </p>
@@ -168,7 +168,7 @@ function Field({
   return (
     <label className="block">
       <span className="text-xs font-medium text-text">{label}</span>
-      {hint ? <span className="ml-2 text-[11px] text-text-muted">{hint}</span> : null}
+      {hint ? <span className="ml-2 text-[0.6875rem] text-text-muted">{hint}</span> : null}
       <div className="mt-1.5">{children}</div>
     </label>
   );

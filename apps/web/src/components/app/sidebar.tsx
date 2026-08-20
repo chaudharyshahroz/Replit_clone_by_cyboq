@@ -148,7 +148,7 @@ function ThreadRow({
           <Pin className="h-3 w-3 shrink-0 text-text-muted" strokeWidth={2} aria-label="Pinned" />
         ) : null}
         <span className="min-w-0 flex-1 truncate">{thread.title}</span>
-        <span className="shrink-0 text-[11px] text-text-muted group-hover:invisible">
+        <span className="shrink-0 text-[0.6875rem] text-text-muted group-hover:invisible">
           {timeAgo(thread.lastMessageAt)}
         </span>
       </Link>
@@ -170,7 +170,7 @@ function ThreadRow({
       </div>
 
       {error ? (
-        <p role="alert" className="px-2.5 pb-1 text-[11px] text-danger">
+        <p role="alert" className="px-2.5 pb-1 text-[0.6875rem] text-danger">
           {error}
         </p>
       ) : null}
@@ -413,7 +413,7 @@ export function Sidebar({
 
       {/* ---- History ---- */}
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-        <h2 className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+        <h2 className="px-2.5 pb-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
           Chats
         </h2>
 
@@ -452,7 +452,7 @@ export function Sidebar({
         >
           {(close) => (
             <>
-              <p className="px-2.5 pb-1 pt-1.5 text-[11px] uppercase tracking-wider text-text-muted">
+              <p className="px-2.5 pb-1 pt-1.5 text-[0.6875rem] uppercase tracking-wider text-text-muted">
                 {workspaceName}
               </p>
               <MenuSeparator />

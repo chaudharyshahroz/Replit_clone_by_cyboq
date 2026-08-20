@@ -60,11 +60,11 @@ export function AiControls({
 
             {/* A provider enabled without a key cannot serve anything — say so. */}
             {provider.hasKey ? (
-              <span className="rounded border border-success-border bg-success-subtle px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-success">
+              <span className="rounded border border-success-border bg-success-subtle px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-success">
                 key present
               </span>
             ) : (
-              <span className="rounded border border-warning/40 bg-warning/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
+              <span className="rounded border border-warning/40 bg-warning/5 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-warning">
                 no {provider.apiKeyEnvVar ?? 'key'}
               </span>
             )}
@@ -89,7 +89,7 @@ export function AiControls({
           <table className="w-full min-w-[40rem] border-collapse text-sm">
             <caption className="sr-only">Models with pricing and availability</caption>
             <thead>
-              <tr className="bg-surface-raised text-left text-[11px] uppercase tracking-wider text-text-muted">
+              <tr className="bg-surface-raised text-left text-[0.6875rem] uppercase tracking-wider text-text-muted">
                 <th scope="col" className="px-3 py-2 font-medium">Model</th>
                 <th scope="col" className="px-3 py-2 font-medium">Provider</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">In / M</th>
@@ -102,7 +102,7 @@ export function AiControls({
                 <tr key={model.id} className="border-t border-border bg-surface">
                   <td className="px-3 py-2">
                     <span className="block text-text">{model.displayName}</span>
-                    <code className="text-[10px] text-text-muted">{model.key}</code>
+                    <code className="text-[0.625rem] text-text-muted">{model.key}</code>
                   </td>
                   <td className="px-3 py-2 text-text-secondary">{model.providerKey}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-text-secondary">

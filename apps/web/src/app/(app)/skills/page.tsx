@@ -99,16 +99,16 @@ export default async function SkillsPage() {
                       >
                         {skill.name}
                       </Link>
-                      <code className="rounded bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-text-muted">
+                      <code className="rounded bg-surface-raised px-1.5 py-0.5 font-mono text-[0.6875rem] text-text-muted">
                         @{skill.handle}
                       </code>
                       {skill.isBuiltIn ? (
-                        <span className="rounded border border-accent-border bg-accent-subtle px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+                        <span className="rounded border border-accent-border bg-accent-subtle px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-accent">
                           Built-in
                         </span>
                       ) : null}
                       {skill.version ? (
-                        <span className="ml-auto font-mono text-[11px] text-text-muted">
+                        <span className="ml-auto font-mono text-[0.6875rem] text-text-muted">
                           v{skill.version}
                         </span>
                       ) : null}
@@ -121,14 +121,14 @@ export default async function SkillsPage() {
                         <summary className="cursor-pointer rounded text-xs text-text-muted transition-colors hover:text-text-secondary">
                           Instructions
                         </summary>
-                        <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-canvas p-4 font-mono text-[12px] leading-relaxed text-text-secondary">
+                        <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-canvas p-4 font-mono text-[0.75rem] leading-relaxed text-text-secondary">
                           {skill.instructions}
                         </pre>
                       </details>
                     ) : null}
 
                     {skill.preferredModelKey ? (
-                      <p className="mt-3 text-[11px] text-text-muted">
+                      <p className="mt-3 text-[0.6875rem] text-text-muted">
                         Prefers <span className="font-mono">{skill.preferredModelKey}</span>
                       </p>
                     ) : null}

@@ -71,7 +71,7 @@ export function Workflow() {
               <h3 className="mt-6 text-base font-medium text-text">{title}</h3>
               <p className="mt-2.5 text-sm leading-relaxed text-text-secondary">{body}</p>
 
-              <p className="mt-6 inline-flex rounded-md bg-surface-raised px-2 py-1 font-mono text-[11px] text-text-muted">
+              <p className="mt-6 inline-flex rounded-md bg-surface-raised px-2 py-1 font-mono text-[0.6875rem] text-text-muted">
                 {carries}
               </p>
             </li>

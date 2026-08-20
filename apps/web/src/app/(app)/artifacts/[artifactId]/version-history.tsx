@@ -58,14 +58,14 @@ export function VersionHistory({
                 <span className="block truncate text-sm text-text">
                   {version.changeSummary ?? 'Updated'}
                 </span>
-                <span className="block text-[11px] text-text-muted">
+                <span className="block text-[0.6875rem] text-text-muted">
                   {new Date(version.createdAt).toLocaleString()}
                   {version.modelKey ? ` · ${version.modelKey}` : ''}
                 </span>
               </span>
 
               {isCurrent ? (
-                <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-accent">
+                <span className="shrink-0 text-[0.6875rem] font-medium uppercase tracking-wide text-accent">
                   Current
                 </span>
               ) : (

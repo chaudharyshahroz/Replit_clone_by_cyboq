@@ -235,7 +235,7 @@ export function Markdown({ content }: { content: string }) {
                 key={index}
                 className="overflow-x-auto rounded-lg border border-border bg-surface p-4"
               >
-                <code className="font-mono text-[13px] leading-relaxed text-text-secondary">
+                <code className="font-mono text-[0.8125rem] leading-relaxed text-text-secondary">
                   {block.code}
                 </code>
               </pre>

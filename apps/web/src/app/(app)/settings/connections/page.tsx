@@ -122,7 +122,7 @@ export default async function ConnectionsPage({
                     <AlertTriangle className="h-3.5 w-3.5 text-warning" strokeWidth={2} />
                     An administrator must set {missingEnv.join(' and ')}
                   </p>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-text-muted">
+                  <p className="mt-1.5 text-[0.6875rem] leading-relaxed text-text-muted">
                     Register this callback URL with {provider.displayName}:{' '}
                     <code className="break-all text-text-secondary">{redirectUri}</code>
                   </p>
@@ -133,7 +133,7 @@ export default async function ConnectionsPage({
               {configured && !connection ? (
                 <dl className="mt-4 space-y-1.5 border-t border-border pt-3">
                   {Object.entries(provider.scopeDescriptions).map(([scope, description]) => (
-                    <div key={scope} className="flex gap-2 text-[11px] leading-relaxed">
+                    <div key={scope} className="flex gap-2 text-[0.6875rem] leading-relaxed">
                       <dt className="shrink-0 font-mono text-text-secondary">{scope}</dt>
                       <dd className="text-text-muted">{description}</dd>
                     </div>
@@ -142,7 +142,7 @@ export default async function ConnectionsPage({
               ) : null}
 
               {connection && connection.scopes.length > 0 ? (
-                <p className="mt-3 border-t border-border pt-3 text-[11px] text-text-muted">
+                <p className="mt-3 border-t border-border pt-3 text-[0.6875rem] text-text-muted">
                   Granted: {connection.scopes.join(', ')}
                 </p>
               ) : null}

@@ -153,7 +153,7 @@ export function CompareView({ models }: { models: readonly SelectableModel[] }) 
                 {on ? <Check className="h-3 w-3" strokeWidth={2.5} /> : null}
                 {model.displayName}
                 {model.isDevelopmentMock ? (
-                  <span className="rounded border border-warning/40 bg-warning/10 px-1 text-[9px] uppercase text-warning">
+                  <span className="rounded border border-warning/40 bg-warning/10 px-1 text-[0.5625rem] uppercase text-warning">
                     Mock
                   </span>
                 ) : null}
@@ -195,7 +195,7 @@ export function CompareView({ models }: { models: readonly SelectableModel[] }) 
                     {nameFor(column.modelKey)}
                   </h2>
                   {isMock(column.modelKey) ? (
-                    <span className="shrink-0 rounded border border-warning/40 bg-warning/10 px-1 text-[9px] uppercase text-warning">
+                    <span className="shrink-0 rounded border border-warning/40 bg-warning/10 px-1 text-[0.5625rem] uppercase text-warning">
                       Mock
                     </span>
                   ) : null}
@@ -248,7 +248,7 @@ export function CompareView({ models }: { models: readonly SelectableModel[] }) 
               }
             }}
             placeholder="Ask all selected models the same question..."
-            className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] text-text placeholder:text-text-muted focus:outline-none"
+            className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.9375rem] text-text placeholder:text-text-muted focus:outline-none"
           />
           <button
             type="submit"

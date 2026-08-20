@@ -235,7 +235,7 @@ export function MenuLink({
 export function MenuSeparator({ label }: { readonly label?: string }) {
   if (label) {
     return (
-      <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+      <p className="px-2.5 pb-1 pt-2 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
         {label}
       </p>
     );
