@@ -576,7 +576,16 @@ export function ChatView({
    * time the type scale moves.
    */
   const COLUMN = 'w-full max-w-[104ch]';
-  const PROSE = 'max-w-[72ch]';
+
+  /**
+   * The reading measure.
+   *
+   * 86ch rather than the ~72 that pure typography would pick: the answer sits
+   * beside a panel, and holding the text too narrow opened a corridor of dead
+   * space between the two. This is at the wide end of comfortable and closes
+   * the gap without the line becoming hard to track.
+   */
+  const PROSE = 'max-w-[86ch]';
 
   /**
    * A research answer is wider than a conversation.
@@ -591,7 +600,7 @@ export function ChatView({
    * there, and a lone sentence stretched across a wide screen reads worse, not
    * better.
    */
-  const WIDE = 'w-full max-w-[150ch]';
+  const WIDE = 'w-full max-w-[128ch]';
 
   /*
    * Only on an empty conversation. Once there is a transcript to read, openers
@@ -1047,7 +1056,14 @@ function Bubble({
 }) {
   if (message.role === 'user') {
     return (
-      <div className="flex flex-col items-end gap-1.5">
+      /*
+       * Held to the prose column rather than the full width.
+       *
+       * Right-aligned inside the wide research layout it drifted out over the
+       * sources panel, so a question sat above a column it had nothing to do
+       * with. It belongs above the answer it produced.
+       */
+      <div className={`flex flex-col items-end gap-1.5 ${prose}`}>
         {message.attachments && message.attachments.length > 0 ? (
           <ul className="flex flex-wrap justify-end gap-1.5">
             {message.attachments.map((name) => (
@@ -1089,13 +1105,11 @@ function Bubble({
         instead — beside is a luxury of width, not a requirement.
       */}
       {message.sources && message.sources.length > 0 ? (
-        <div className="lg:flex lg:items-start lg:justify-between lg:gap-10">
-          <div className={`min-w-0 ${prose}`}>
+        <div className="lg:flex lg:items-start lg:gap-6">
+          <div className={`min-w-0 lg:flex-1 ${prose}`}>
             <Markdown content={message.text} citations={message.sources} />
           </div>
-          {/* ml-auto rather than flex-1 on the prose: the panel sits at the
-              right edge, and the gap between them is deliberate. */}
-          <div className="mt-4 lg:sticky lg:top-4 lg:ml-auto lg:mt-0 lg:w-80 lg:shrink-0">
+          <div className="mt-4 lg:sticky lg:top-4 lg:mt-0 lg:w-72 lg:shrink-0">
             <SourcesPanel sources={message.sources} />
           </div>
         </div>
