@@ -138,6 +138,22 @@ html {
   scroll-behavior: smooth;
 }
 
+/**
+ * The landing page runs 15% larger than the product.
+ *
+ * A marketing page is read at arm's length by someone deciding whether to
+ * bother; the workspace is read by someone working, who wants more on screen.
+ * Those are different jobs and they do not want the same type size.
+ *
+ * It has to be set on `html` — rem resolves against the root element, so a
+ * font-size on a wrapper would scale nothing. `:has()` is what lets the root
+ * respond to which page is inside it, with no JavaScript and no flash of the
+ * wrong size.
+ */
+html:has([data-surface='marketing']) {
+  font-size: 88.55%;
+}
+
 body {
   background-color: var(--canvas);
   color: var(--text);
