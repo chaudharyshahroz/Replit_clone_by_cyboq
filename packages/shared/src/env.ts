@@ -171,10 +171,16 @@ const serverSchema = z.object({
   VIDEO_PROVIDER: optionalString,
 
   // ---- Research ------------------------------------------------------------
-  SEARCH_PROVIDER: optionalEnum(['brave', 'tavily', 'serper']),
+  SEARCH_PROVIDER: optionalEnum(['brave', 'tavily', 'serper', 'searxng']),
   BRAVE_SEARCH_API_KEY: optionalString,
   TAVILY_API_KEY: optionalString,
   SERPER_API_KEY: optionalString,
+  /**
+   * A self-hosted SearXNG instance, e.g. https://search.reklu.app or an
+   * internal http://searxng:8080 on the deployment's own network. It takes a
+   * URL rather than a key because you run it — there is nobody to bill you.
+   */
+  SEARXNG_URL: optionalString,
   RESEARCH_MAX_SOURCES: intWithDefault(32),
   RESEARCH_FETCH_TIMEOUT_MS: intWithDefault(15_000),
   RESEARCH_USER_AGENT: z.string().trim().default('RekluResearchBot/1.0 (+https://reklu.app/bot)'),
@@ -292,16 +298,25 @@ function crossFieldProblems(env: ServerEnv): string[] {
     problems.push('SANDBOX_DRIVER=e2b requires E2B_API_KEY.');
   }
 
-  const searchKeyFor = {
-    brave: env.BRAVE_SEARCH_API_KEY,
-    tavily: env.TAVILY_API_KEY,
-    serper: env.SERPER_API_KEY,
+  /**
+   * Each provider names the one variable it needs. SearXNG is the odd one: it
+   * is self-hosted, so what it needs is an address, not a credential.
+   */
+  const searchCredentialFor = {
+    brave: { value: env.BRAVE_SEARCH_API_KEY, name: 'BRAVE_SEARCH_API_KEY' },
+    tavily: { value: env.TAVILY_API_KEY, name: 'TAVILY_API_KEY' },
+    serper: { value: env.SERPER_API_KEY, name: 'SERPER_API_KEY' },
+    searxng: { value: env.SEARXNG_URL, name: 'SEARXNG_URL' },
   } as const;
-  if (env.SEARCH_PROVIDER && !searchKeyFor[env.SEARCH_PROVIDER]) {
-    const key = `${env.SEARCH_PROVIDER.toUpperCase()}${
-      env.SEARCH_PROVIDER === 'brave' ? '_SEARCH' : ''
-    }_API_KEY`;
-    problems.push(`SEARCH_PROVIDER=${env.SEARCH_PROVIDER} requires ${key}.`);
+  if (env.SEARCH_PROVIDER) {
+    const required = searchCredentialFor[env.SEARCH_PROVIDER];
+    if (!required.value) {
+      problems.push(`SEARCH_PROVIDER=${env.SEARCH_PROVIDER} requires ${required.name}.`);
+    }
+  }
+
+  if (env.SEARXNG_URL && !/^https?:\/\//.test(env.SEARXNG_URL)) {
+    problems.push('SEARXNG_URL must start with http:// or https://.');
   }
 
   if (env.STRIPE_SECRET_KEY && !env.STRIPE_WEBHOOK_SECRET) {
