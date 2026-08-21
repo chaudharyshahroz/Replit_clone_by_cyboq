@@ -24,6 +24,7 @@ import { Menu, MenuItem, MenuSeparator } from '@/components/ui/menu';
 import { Markdown } from './markdown';
 import { SourcesPanel } from './sources-panel';
 import type { CitedSource } from '@/lib/citations';
+import { composerSize } from '@/lib/composer-size';
 
 /**
  * The composer's tools.
@@ -348,6 +349,36 @@ export function ChatView({
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * The composer grows with what is typed, up to three lines.
+   *
+   * A fixed two-row box wastes half its height on an empty conversation and
+   * gives a long prompt no room at all. MAX_COMPOSER_LINES is where it stops:
+   * past that the box starts eating the conversation it belongs to, so it
+   * scrolls instead.
+   *
+   * Measured from the element's own computed styles rather than hard-coded
+   * pixels, so it stays correct as the type scale moves — which it has, three
+   * times.
+   */
+  useEffect(() => {
+    const field = textareaRef.current;
+    if (!field) return;
+
+    field.style.height = 'auto';
+
+    const styles = getComputedStyle(field);
+    const { height, overflowY } = composerSize({
+      scrollHeight: field.scrollHeight,
+      lineHeight: Number.parseFloat(styles.lineHeight) || 20,
+      paddingTop: Number.parseFloat(styles.paddingTop) || 0,
+      paddingBottom: Number.parseFloat(styles.paddingBottom) || 0,
+    });
+
+    field.style.height = `${height}px`;
+    field.style.overflowY = overflowY;
+  }, [input]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -669,7 +700,7 @@ export function ChatView({
       <textarea
         id="composer"
         ref={textareaRef}
-        rows={2}
+        rows={1}
         value={input}
         onChange={(event) => setInput(event.target.value)}
         onKeyDown={(event) => {
@@ -988,7 +1019,12 @@ export function ChatView({
               </div>
             </div>
 
-            <div className="border-t border-border bg-canvas">
+            {/*
+              No rule above the composer: the transcript already ends where the
+              composer begins, and a full-width line across the bottom of the
+              screen reads as a seam rather than a boundary.
+            */}
+            <div className="bg-canvas">
               <div className={`mx-auto ${COLUMN} px-6 py-4`}>{composer}</div>
             </div>
           </>

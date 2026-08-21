@@ -125,14 +125,14 @@ html {
    *
    * Every size in the UI is in rem — Tailwind's scale is rem by default, and
    * the handful of fixed pixel sizes were converted to match — so this
-   * percentage scales all of it together. 84.7% is the browser default reduced
-   * by 30%, then raised 10% twice.
+   * percentage scales all of it together. 93.2% is the browser default reduced
+   * by 30%, then raised 10% three times.
    *
    * A percentage rather than a pixel value on purpose: someone who has raised
    * their browser's default font size still gets that preference, scaled
    * proportionally, instead of having it overridden.
    */
-  font-size: 84.7%;
+  font-size: 93.2%;
 
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
