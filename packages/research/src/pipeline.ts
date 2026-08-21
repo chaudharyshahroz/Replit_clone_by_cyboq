@@ -348,6 +348,8 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
           '- When comparing three or more things across the same attributes, use a',
           '  markdown table with a header row and a |---|---| separator. Tables are',
           '  for comparison; never for a simple list.',
+          '- Do not put citation markers inside table cells. A cell is a few words',
+          '  wide and badges crowd out the fact. Cite in the prose around the table.',
           '- Start a list item with the term it is about in **bold** where that',
           '  helps the reader scan.',
           '- A bare list of one-line entries is not a report. If a point deserves a',

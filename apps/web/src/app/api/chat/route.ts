@@ -572,7 +572,16 @@ export async function POST(request: Request): Promise<Response> {
              */
             const answerText = linkCitations(outcome.answer ?? outcome.report, cited);
 
-            text = `${answerText}\n\n_${retrieval}_\n\n[Open the full research session](/research/${session!.id})`;
+            /*
+             * The answer ends where the answer ends.
+             *
+             * The retrieval count and the session link used to sit under every
+             * report, which put two lines of plumbing at the end of something
+             * meant to be read. The count moves into the sources panel, where
+             * it belongs and is still visible — dropping it would hide that
+             * sources failed, which is the one part of it that matters (§88).
+             */
+            text = answerText;
 
             /**
              * Delivered in pieces rather than as one block.
@@ -600,6 +609,10 @@ export async function POST(request: Request): Promise<Response> {
             if (cited.length > 0) {
               send({
                 type: 'sources',
+                // Reported honestly: how many were read, and how many could not
+                // be. Shown on the panel rather than appended to the prose.
+                failed: outcome.sourcesFailed,
+                discovered: outcome.sourcesDiscovered,
                 sources: cited.map((source) => ({
                   index: source.index,
                   url: source.url,

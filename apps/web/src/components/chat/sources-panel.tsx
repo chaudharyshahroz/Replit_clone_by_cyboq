@@ -16,7 +16,14 @@ import type { CitedSource } from '@/lib/citations';
  * because a reader who has already judged the sources should be able to put
  * them away.
  */
-export function SourcesPanel({ sources }: { sources: readonly CitedSource[] }) {
+export function SourcesPanel({
+  sources,
+  failed,
+}: {
+  sources: readonly CitedSource[];
+  /** Sources that could not be retrieved, when the run reported any. */
+  failed?: number | undefined;
+}) {
   const [open, setOpen] = useState(true);
 
   if (sources.length === 0) return null;
@@ -43,6 +50,17 @@ export function SourcesPanel({ sources }: { sources: readonly CitedSource[] }) {
           />
         </span>
       </button>
+
+      {/*
+        Retrieval failures are stated, not hidden (spec §88). They used to be a
+        line under the report; here they sit with the sources they are about,
+        and only appear when something actually failed.
+      */}
+      {open && failed && failed > 0 ? (
+        <p className="px-3.5 pb-2 text-[0.6875rem] text-warning">
+          {failed} could not be retrieved
+        </p>
+      ) : null}
 
       {open ? (
         <ol className="max-h-[28rem] space-y-3 overflow-y-auto px-3.5 pb-3.5">

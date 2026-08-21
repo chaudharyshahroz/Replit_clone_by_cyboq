@@ -101,3 +101,36 @@ describe('structure in an ordinary reply', () => {
     expect(screen.getByText('Frontend').tagName).toBe('STRONG');
   });
 });
+
+describe('citations inside tables', () => {
+  const withCitations = [
+    '| Idea | Pricing |',
+    '| --- | --- |',
+    '| Contract review [1](https://a.example) | $500/mo [1](https://a.example) [2](https://b.example) |',
+  ].join('\n');
+
+  /**
+   * A cell is a few words wide. Three source chips inside one turn it into a
+   * column of badges with the fact buried among them, which is exactly what
+   * research tables looked like.
+   */
+  it('keeps the fact and drops the badges', () => {
+    render(<Markdown content={withCitations} />);
+
+    expect(screen.getByRole('cell', { name: 'Contract review' })).toBeDefined();
+    expect(screen.getByRole('cell', { name: '$500/mo' })).toBeDefined();
+  });
+
+  it('leaves no citation links inside the table', () => {
+    const { container } = render(<Markdown content={withCitations} />);
+    expect(container.querySelectorAll('table a')).toHaveLength(0);
+  });
+
+  /** Prose outside the table keeps its citations. */
+  it('does not strip citations from the surrounding text', () => {
+    render(
+      <Markdown content={`A claim [1](https://a.example).\n\n${withCitations}`} />,
+    );
+    expect(screen.getByRole('link', { name: '1' })).toBeDefined();
+  });
+});

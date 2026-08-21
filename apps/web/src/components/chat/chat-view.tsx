@@ -109,6 +109,8 @@ export interface ChatMessage {
   readonly sources?: readonly CitedSource[];
   /** Whether the reader rated this reply. */
   readonly feedback?: 'up' | 'down';
+  /** Sources that could not be retrieved during this turn. */
+  readonly sourcesFailed?: number;
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
@@ -162,6 +164,8 @@ type ServerEvent =
   | { type: 'start'; modelKey: string; routingReason?: string }
   | {
       type: 'sources';
+      failed?: number;
+      discovered?: number;
       sources: readonly {
         index: number;
         url: string;
@@ -455,6 +459,7 @@ export function ChatView({
       abortRef.current = controller;
       let assembled = '';
       let capturedSources: readonly CitedSource[] = [];
+      let capturedFailed: number | undefined;
       let usedModelKey: string | undefined;
       let createdConversationId: string | undefined;
 
@@ -563,6 +568,7 @@ export function ChatView({
                * never appeared even though the sources had arrived.
                */
               capturedSources = event.sources;
+              capturedFailed = event.failed;
               setStreamSources(event.sources);
             } else if (event.type === 'artifact') {
               // Spec §20: a substantial output opens beside the chat.
@@ -582,6 +588,7 @@ export function ChatView({
               text: assembled,
               modelKey: usedModelKey,
               ...(capturedSources.length > 0 ? { sources: capturedSources } : {}),
+              ...(capturedFailed ? { sourcesFailed: capturedFailed } : {}),
             },
           ]);
         }
@@ -1269,7 +1276,7 @@ function Bubble({
             <Markdown content={message.text} citations={message.sources} />
           </div>
           <div className="mt-4 lg:sticky lg:top-4 lg:mt-0 lg:w-72 lg:shrink-0">
-            <SourcesPanel sources={message.sources} />
+            <SourcesPanel sources={message.sources} failed={message.sourcesFailed} />
           </div>
         </div>
       ) : (

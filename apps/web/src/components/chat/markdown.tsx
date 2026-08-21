@@ -70,6 +70,21 @@ function parseInline(text: string): Inline[] {
   return out;
 }
 
+/**
+ * Citation markers, removed.
+ *
+ * A table cell is a few words wide. Three source chips inside one turn it into
+ * a column of badges with the fact buried among them — the table stops being
+ * scannable, which is the only reason to use a table. The prose around it
+ * carries the citations; the cell carries the fact.
+ */
+function withoutCitations(text: string): string {
+  return text
+    .replace(/\[(\d+(?:\s*,\s*\d+)*)\]\([^)]*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function InlineRun({
   text,
   sources,
@@ -333,7 +348,7 @@ export function Markdown({
                           scope="col"
                           className="px-3 py-2 font-medium text-text"
                         >
-                          <InlineRun sources={sourcesByIndex} text={cell} />
+                          <InlineRun text={withoutCitations(cell)} />
                         </th>
                       ))}
                     </tr>
@@ -346,7 +361,7 @@ export function Markdown({
                             key={cellIndex}
                             className="px-3 py-2 align-top text-text-secondary"
                           >
-                            <InlineRun sources={sourcesByIndex} text={cell} />
+                            <InlineRun text={withoutCitations(cell)} />
                           </td>
                         ))}
                       </tr>

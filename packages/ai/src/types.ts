@@ -165,6 +165,9 @@ export type StreamEvent =
        * points at rather than only how many there were.
        */
       readonly type: 'sources';
+      /** Sources that could not be retrieved, reported rather than hidden. */
+      readonly failed?: number;
+      readonly discovered?: number;
       readonly sources: readonly {
         readonly index: number;
         readonly url: string;
