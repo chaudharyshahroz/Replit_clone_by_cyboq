@@ -54,6 +54,22 @@ const MODE_LIMITS: Record<ResearchMode, { queries: number; perQuery: number; rou
   deep: { queries: 5, perQuery: 6, rounds: 2 },
 };
 
+/**
+ * How much room the report gets.
+ *
+ * Every mode past quick shared a 3,000-token ceiling, and it showed: asked for
+ * eight ideas the model produced eight one-line entries, because there was no
+ * room to explain any of them. Reading a dozen sources and then summarising
+ * them into a list is the shape of a search results page, not research.
+ *
+ * Quick stays small on purpose — it is a two-sentence answer by definition.
+ */
+export const REPORT_TOKENS: Record<ResearchMode, number> = {
+  quick: 500,
+  research: 7_000,
+  deep: 12_000,
+};
+
 // ---------------------------------------------------------------------------
 // Structured-output helpers
 // ---------------------------------------------------------------------------
@@ -101,7 +117,12 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
       modelIdentifier: options.model.modelIdentifier,
       messages,
       system,
-      maxOutputTokens,
+      /*
+       * Clamped to what the model will actually accept. The report budget is
+       * set by mode, and a mode asking for more than the chosen model allows
+       * would be refused by the provider rather than shortened.
+       */
+      maxOutputTokens: Math.min(maxOutputTokens, options.model.maxOutputTokens),
       temperature: 0,
       ...(options.signal ? { signal: options.signal } : {}),
     });
@@ -306,15 +327,31 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
     options.mode === 'quick'
       ? '- Answer in two or three sentences.'
       : [
-          '- Structure the report with markdown headings written as "## Section".',
-          '  A section title on its own line without ## is not a heading and will',
-          '  render as body text.',
+          '',
+          'Write it to be understood, not skimmed:',
+          '- Open with a direct answer to the question in two or three sentences,',
+          '  before any heading. Say what you conclude, not what the report will',
+          '  cover.',
+          '- Explain each point rather than naming it. A reader who knows nothing',
+          '  about the subject should finish a section understanding why the point',
+          '  is true, not just that someone said it.',
+          '- Prefer the concrete over the general: the number, the date, the named',
+          '  company, the actual price. Take these from the sources.',
+          '- Where the sources let you, say what follows for the reader — the',
+          '  implication, the trade-off, what it would cost, what could go wrong.',
+          '- Say what the sources do not establish. A gap named is more useful than',
+          '  a gap papered over.',
+          '',
+          'Structure:',
+          '- Section titles are markdown headings written as "## Section". A title',
+          '  on its own line without ## is not a heading and renders as body text.',
           '- When comparing three or more things across the same attributes, use a',
           '  markdown table with a header row and a |---|---| separator. Tables are',
-          '  for comparison; do not use one for a simple list.',
+          '  for comparison; never for a simple list.',
           '- Start a list item with the term it is about in **bold** where that',
           '  helps the reader scan.',
-          '- Be specific and concrete.',
+          '- A bare list of one-line entries is not a report. If a point deserves a',
+          '  place in the answer, it deserves a sentence explaining it.',
         ].join('\n'),
   ].join('\n');
 
@@ -324,7 +361,7 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
       : await ask(
           reportSystem,
           [`Question: ${options.query}`, '', 'Sources:', sourceBlock].join('\n'),
-          options.mode === 'quick' ? 500 : 3_000,
+          REPORT_TOKENS[options.mode],
         );
 
   // ---- Citation integrity --------------------------------------------------
