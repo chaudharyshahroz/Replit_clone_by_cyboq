@@ -12,7 +12,7 @@
  *      user may pay to reach again.
  */
 import { and, eq, or } from 'drizzle-orm';
-import { db, payments, plans, subscriptions, workspaces } from '@reklu/database';
+import { checkoutSessions, db, payments, plans, subscriptions, workspaces } from '@reklu/database';
 import { logger } from '@reklu/shared';
 import { planKeyForWhopPlan, type PayablePlanKey } from './config';
 
@@ -38,7 +38,7 @@ export interface ApplyResult {
  * a different address than they signed up with, and guessing would attach a
  * payment to the wrong account.
  */
-function workspaceIdFrom(data: Record<string, unknown>): string | undefined {
+export function workspaceIdFrom(data: Record<string, unknown>): string | undefined {
   const metadata = (data.metadata ?? {}) as Record<string, unknown>;
   const candidates = [
     metadata.workspace_id,
@@ -57,6 +57,56 @@ function workspaceIdFrom(data: Record<string, unknown>): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * The checkout session a membership or payment came from.
+ *
+ * Whop stamps this on both, and Reklu recorded the session when it minted it —
+ * so this is a link back to the workspace that does not depend on Whop echoing
+ * anything Reklu asked it to carry.
+ */
+export function checkoutSessionIdFrom(data: Record<string, unknown>): string | undefined {
+  const candidates = [
+    data.checkout_configuration_id,
+    data.checkoutConfigurationId,
+    (data.checkout_session as Record<string, unknown> | undefined)?.id,
+  ];
+  return candidates.find(
+    (value): value is string => typeof value === 'string' && value.startsWith('ch_'),
+  );
+}
+
+/** The workspace that session was minted for, if Reklu minted it. */
+async function workspaceIdFromCheckoutSession(
+  data: Record<string, unknown>,
+): Promise<string | undefined> {
+  const sessionId = checkoutSessionIdFrom(data);
+  if (!sessionId) return undefined;
+
+  const [row] = await db
+    .select({ workspaceId: checkoutSessions.workspaceId })
+    .from(checkoutSessions)
+    .where(eq(checkoutSessions.id, sessionId))
+    .limit(1);
+
+  return row?.workspaceId;
+}
+
+/** The plan key Reklu recorded against that session. */
+async function planKeyFromCheckoutSession(
+  data: Record<string, unknown>,
+): Promise<string | undefined> {
+  const sessionId = checkoutSessionIdFrom(data);
+  if (!sessionId) return undefined;
+
+  const [row] = await db
+    .select({ planKey: checkoutSessions.planKey })
+    .from(checkoutSessions)
+    .where(eq(checkoutSessions.id, sessionId))
+    .limit(1);
+
+  return row?.planKey;
 }
 
 /**
@@ -150,12 +200,15 @@ async function planIdFor(key: string): Promise<string | undefined> {
  * Updates the existing subscription rather than inserting a second one: a
  * workspace has exactly one, and two would make every quota query ambiguous.
  */
-async function setPlan(params: {
+export async function setPlan(params: {
   workspaceId: string;
   planKey: string;
   status: 'active' | 'canceled';
+  /** Whop's membership id, so there is a way back from Reklu to Whop. */
   externalId?: string | undefined;
   periodEnd?: Date | undefined;
+  manageUrl?: string | undefined;
+  cancelAtPeriodEnd?: boolean | undefined;
 }): Promise<boolean> {
   const planId = await planIdFor(params.planKey);
   if (!planId) {
@@ -173,7 +226,17 @@ async function setPlan(params: {
       status: params.status,
       currentPeriodStart: now,
       currentPeriodEnd: periodEnd,
-      ...(params.externalId ? { externalSubscriptionId: params.externalId } : {}),
+      /*
+       * `whopMembershipId`, not `externalSubscriptionId` — which was never a
+       * column. Drizzle drops an unknown key from `.set()` without a word, and
+       * a conditional spread puts it past TypeScript, so every membership id
+       * since the Whop migration was discarded on the way to the database.
+       */
+      ...(params.externalId ? { whopMembershipId: params.externalId } : {}),
+      ...(params.manageUrl ? { manageUrl: params.manageUrl } : {}),
+      ...(params.cancelAtPeriodEnd === undefined
+        ? {}
+        : { cancelAtPeriodEnd: params.cancelAtPeriodEnd }),
       updatedAt: now,
     })
     .where(eq(subscriptions.workspaceId, params.workspaceId))
@@ -202,13 +265,37 @@ function amountFrom(data: Record<string, unknown>): { amount: string; currency: 
 }
 
 /**
+ * What the customer paid with, as Whop described it.
+ *
+ * A brand and four digits, or the wallet's own name. Nothing here can be used
+ * to charge a card — it exists so someone reading their history can tell which
+ * of their cards was billed, which is the only question the line answers.
+ */
+export function cardFrom(data: Record<string, unknown>): {
+  brand?: string;
+  last4?: string;
+  label?: string;
+} {
+  const instrument = (data.payment_instrument ?? {}) as Record<string, unknown>;
+  const card = (instrument.card ?? {}) as Record<string, unknown>;
+  const pick = (...values: unknown[]): string | undefined =>
+    values.find((value): value is string => typeof value === 'string' && value.length > 0);
+
+  return {
+    brand: pick(data.card_brand, card.brand),
+    last4: pick(data.card_last4, card.last4),
+    label: pick(instrument.display_name),
+  };
+}
+
+/**
  * Record a payment, once.
  *
  * Whop retries deliveries, so the same payment can arrive several times. The
  * external id carries a unique index and a repeat is ignored rather than
  * doubling someone's visible history.
  */
-async function recordPayment(params: {
+export async function recordPayment(params: {
   workspaceId: string;
   planKey: string;
   data: Record<string, unknown>;
@@ -217,6 +304,7 @@ async function recordPayment(params: {
     typeof params.data.id === 'string' ? params.data.id : null;
   const { amount, currency } = amountFrom(params.data);
   const planId = await planIdFor(params.planKey);
+  const card = cardFrom(params.data);
 
   try {
     await db
@@ -228,6 +316,9 @@ async function recordPayment(params: {
         currency,
         externalPaymentId: externalId,
         status: 'succeeded',
+        cardBrand: card.brand ?? null,
+        cardLast4: card.last4 ?? null,
+        paymentMethodLabel: card.label ?? null,
       })
       .onConflictDoNothing({ target: payments.externalPaymentId });
   } catch (error) {
@@ -248,13 +339,30 @@ export async function applyMembershipEvent(params: {
   type: string;
   data: Record<string, unknown>;
 }): Promise<ApplyResult> {
-  const workspaceId = workspaceIdFrom(params.data);
+  /*
+   * Metadata first, then the checkout session.
+   *
+   * Metadata is what Reklu asks Whop to carry, and it is not guaranteed to come
+   * back — which is how a customer ended up charged and still on Free, with
+   * nothing in the logs but "no workspace id". The session id is stamped onto
+   * the membership and the payment by Whop itself, and Reklu recorded who it
+   * minted that session for, so it works even when the metadata does not
+   * survive.
+   */
+  const workspaceId =
+    workspaceIdFrom(params.data) ?? (await workspaceIdFromCheckoutSession(params.data));
 
   if (!workspaceId) {
+    logger.error('A Whop event named no workspace', {
+      type: params.type,
+      payloadKeys: Object.keys(params.data),
+      metadataKeys: Object.keys((params.data.metadata ?? {}) as Record<string, unknown>),
+      checkoutSessionId: checkoutSessionIdFrom(params.data) ?? null,
+    });
     return {
       outcome: 'ignored_unknown_workspace',
       detail:
-        'The event carried no Reklu workspace id in its metadata, so it cannot be applied.',
+        'The event carried neither a Reklu workspace id nor a checkout session Reklu minted, so it cannot be applied.',
     };
   }
 
@@ -295,12 +403,16 @@ export async function applyMembershipEvent(params: {
        * database has synced to that Whop id, then the legacy environment
        * variables.
        */
+      const fromSession = await planKeyFromCheckoutSession(params.data);
+
       const planKey =
         fromMetadata && (await isPayablePlanKey(fromMetadata))
           ? fromMetadata
-          : whopPlanId
-            ? ((await planKeyForWhopPlanId(whopPlanId)) ?? planKeyForWhopPlan(whopPlanId))
-            : undefined;
+          : fromSession && (await isPayablePlanKey(fromSession))
+            ? fromSession
+            : whopPlanId
+              ? ((await planKeyForWhopPlanId(whopPlanId)) ?? planKeyForWhopPlan(whopPlanId))
+              : undefined;
 
       if (!planKey) {
         /*
@@ -312,6 +424,7 @@ export async function applyMembershipEvent(params: {
           type: params.type,
           workspaceId,
           metadataPlanKey: fromMetadata ?? null,
+          sessionPlanKey: fromSession ?? null,
           whopPlanId: whopPlanId ?? null,
           payloadKeys: Object.keys(params.data),
           metadataKeys: Object.keys((params.data.metadata ?? {}) as Record<string, unknown>),

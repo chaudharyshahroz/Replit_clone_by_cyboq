@@ -127,6 +127,20 @@ export const subscriptions = pgTable(
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
 
+    /**
+     * Whop's membership, and the page where the customer manages it.
+     *
+     * `setPlan` used to write this as `externalSubscriptionId`, which is not a
+     * column. Drizzle silently drops an unknown key from `.set()` — it does not
+     * throw — and a conditional spread hides the mistake from TypeScript, so
+     * the id was quietly discarded on every event since the Whop migration.
+     * Without it there was no way back from a Reklu workspace to the Whop
+     * membership, which is exactly what reconciliation needs.
+     */
+    whopMembershipId: text('whop_membership_id'),
+    /** Whop's own manage page for this membership, when they gave us one. */
+    manageUrl: text('manage_url'),
+
     currentPeriodStart: tsColumn('current_period_start').notNull(),
     /** Usage quotas reset at this boundary. */
     currentPeriodEnd: tsColumn('current_period_end').notNull(),
@@ -182,12 +196,59 @@ export const payments = pgTable(
     externalPaymentId: text('external_payment_id'),
     status: text('status').notNull().default('succeeded'),
 
+    /*
+     * What the customer paid with, as Whop reported it.
+     *
+     * A brand and four digits are all Reklu ever learns and all it needs to
+     * show — enough for someone to recognise which card was charged, and
+     * nothing that could be used to charge it again. Null where Whop sent no
+     * card details, which is the honest state for a wallet or a bank transfer;
+     * `payment_instrument.display_name` covers those.
+     */
+    cardBrand: text('card_brand'),
+    cardLast4: text('card_last4'),
+    paymentMethodLabel: text('payment_method_label'),
+
     ...timestamps,
   },
   (table) => [
     index('payments_workspace_idx').on(table.workspaceId, table.createdAt),
     uniqueIndex('payments_external_idx').on(table.externalPaymentId),
   ],
+);
+
+/**
+ * Checkout sessions Reklu has minted, and who they were for.
+ *
+ * This is the durable link between a payment and a workspace, and it exists
+ * because the previous one was not durable: the workspace id was put into Whop
+ * checkout metadata and read back off the webhook, so if that metadata did not
+ * survive the round trip — or the delivery never arrived — a customer was
+ * charged and never upgraded, with nothing on Reklu's side to work back from.
+ *
+ * Whop stamps `checkout_configuration_id` onto the membership and the payment
+ * it creates. Recording the session at the moment it is minted means the
+ * workspace can always be recovered by asking Whop what happened, rather than
+ * waiting to be told.
+ */
+export const checkoutSessions = pgTable(
+  'checkout_sessions',
+  {
+    /** Whop's `ch_…` id. Theirs, so it is the primary key rather than a copy. */
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Reklu's plan key, not a Whop id: what the buyer chose. */
+    planKey: text('plan_key').notNull(),
+    /** 'monthly' | 'yearly' — which of the tier's two Whop plans was bought. */
+    period: text('period').notNull().default('monthly'),
+    whopPlanId: text('whop_plan_id'),
+    /** Set once a membership has been matched to this session. */
+    reconciledAt: tsColumn('reconciled_at'),
+    ...timestamps,
+  },
+  (table) => [index('checkout_sessions_workspace_idx').on(table.workspaceId, table.createdAt)],
 );
 
 export const usageLedger = pgTable(

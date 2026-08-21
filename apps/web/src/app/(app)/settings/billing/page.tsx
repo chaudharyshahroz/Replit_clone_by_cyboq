@@ -2,14 +2,15 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CreditCard } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
-import { billingConfig } from '@reklu/billing';
+import { billingConfig, reconcileWorkspaceBilling, renewalState } from '@reklu/billing';
 import { aiModels, db, payments as paymentsTable, plans, subscriptions } from '@reklu/database';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { getAppContext } from '@/lib/auth-context';
+import { describePaymentMethod } from '@/lib/payment-method';
 import { UpgradeButton } from '@/components/billing/upgrade-button';
+import { SyncPlanButton } from '@/components/billing/sync-plan-button';
 
 export const metadata: Metadata = { title: 'Billing' };
-export const dynamic = 'force-dynamic';
 
 export default async function BillingPage({
   searchParams,
@@ -19,7 +20,18 @@ export default async function BillingPage({
   const { workspace } = await getAppContext();
   const { status } = await searchParams;
 
+  /*
+   * Returning from checkout is the moment to check, not to promise.
+   *
+   * This page used to say the plan would update "as soon as Whop confirms it",
+   * which was a guess dressed as a fact — if the webhook never arrived, it
+   * never updated, and the page went on saying Free under a success banner.
+   * Asking Whop directly here makes the common case need no webhook at all.
+   */
+  if (status === 'success') await reconcileWorkspaceBilling(workspace.workspaceId);
+
   const config = billingConfig();
+  const renewal = await renewalState(workspace.workspaceId);
   const quota = await checkQuota(workspace.workspaceId);
 
   const [current] = await db
@@ -77,12 +89,18 @@ export default async function BillingPage({
       amountUsd: paymentsTable.amountUsd,
       createdAt: paymentsTable.createdAt,
       planName: plans.name,
+      cardBrand: paymentsTable.cardBrand,
+      cardLast4: paymentsTable.cardLast4,
+      methodLabel: paymentsTable.paymentMethodLabel,
     })
     .from(paymentsTable)
     .leftJoin(plans, eq(paymentsTable.planId, plans.id))
     .where(eq(paymentsTable.workspaceId, workspace.workspaceId))
     .orderBy(desc(paymentsTable.createdAt))
     .limit(20);
+
+  /* The most recent payment that named a method is the card now on file. */
+  const method = payments.map(describePaymentMethod).find((value) => value !== null) ?? null;
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 md:px-8">
@@ -96,8 +114,8 @@ export default async function BillingPage({
       {/* Checkout outcome, reported from the return URL. */}
       {status === 'success' ? (
         <p role="status" className="mt-6 rounded-lg border border-success/40 bg-success/10 px-3.5 py-3 text-sm text-text">
-          Payment received. Your plan updates as soon as Whop confirms it —
-          usually within a few seconds.
+          Payment received, and your plan has been checked against Whop. If it
+          still looks wrong below, use &ldquo;Check for a recent purchase&rdquo;.
         </p>
       ) : null}
       {status === 'error' ? (
@@ -115,15 +133,32 @@ export default async function BillingPage({
               {current?.status === 'canceled'
                 ? `Ends ${current.periodEnd ? new Date(current.periodEnd).toLocaleDateString() : 'at the end of the period'}`
                 : current?.periodEnd
-                  ? `Renews ${new Date(current.periodEnd).toLocaleDateString()}`
+                  ? `${renewal.autoRenews ? 'Renews automatically on' : 'Period ends'} ${new Date(current.periodEnd).toLocaleDateString()}`
                   : 'No renewal date'}
             </p>
+            {/*
+              Said only where it is true. A paid membership renews on Whop with
+              the card already on file, so nothing is re-entered; a free plan
+              renews nothing, and claiming otherwise on every plan would make
+              the line worthless on the one where it matters.
+            */}
+            {renewal.autoRenews ? (
+              <p className="mt-1 text-xs text-text-muted">
+                Renews on the card already on file — nothing to re-enter. Cancel any
+                time from Whop.
+              </p>
+            ) : null}
           </div>
           <Link href="/settings/usage" className="text-xs text-accent hover:underline">
             View usage
           </Link>
         </div>
 
+        {config.available ? (
+          <div className="mt-4 border-t border-border pt-4">
+            <SyncPlanButton />
+          </div>
+        ) : null}
       </section>
 
       {/*
@@ -178,6 +213,7 @@ export default async function BillingPage({
                   <span className="block text-sm text-text">{payment.planName ?? 'Payment'}</span>
                   <span className="block text-xs text-text-muted">
                     {new Date(payment.createdAt).toLocaleDateString()}
+                    {describePaymentMethod(payment) ? ` · ${describePaymentMethod(payment)}` : ''}
                   </span>
                 </span>
                 <span className="shrink-0 text-sm tabular-nums text-text">
@@ -196,13 +232,24 @@ export default async function BillingPage({
       */}
       <section className="mt-6 rounded-xl border border-border bg-surface/40 p-5">
         <h2 className="text-sm font-medium text-text">Payment method</h2>
-        <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-text-secondary">
+        {/*
+          The brand and last four are all Whop ever tells Reklu, and all that is
+          needed to recognise a card. Shown only when a payment actually carried
+          them — a masked card invented for the layout would be a fabrication.
+        */}
+        {method ? (
+          <p className="mt-2 flex items-center gap-2 text-sm text-text">
+            <CreditCard className="h-4 w-4 text-text-secondary" strokeWidth={1.5} />
+            {method}
+          </p>
+        ) : null}
+        <p className="mt-2 max-w-lg text-sm leading-relaxed text-text-secondary">
           Cards are held by Whop, not by Reklu — they are entered on Whop&rsquo;s form and
           never reach us. Change or remove a card, or cancel a subscription, from your
           Whop account.
         </p>
         <a
-          href="https://whop.com/orders"
+          href={renewal.manageUrl ?? 'https://whop.com/orders'}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-3 inline-block text-sm text-accent hover:underline"

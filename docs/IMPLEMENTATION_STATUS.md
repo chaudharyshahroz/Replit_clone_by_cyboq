@@ -649,6 +649,10 @@ one part that calls a model — is still only covered by unit tests.
 | Item | State | Evidence |
 | ---- | ----- | -------- |
 | Whop embedded checkout | ✅ | opens inside the plan picker, wherever it was opened from; card details never touch Reklu |
+| Checkout sessions recorded before payment | ✅ | `checkout_sessions`; the link back to a workspace that does not need metadata to survive |
+| Reconciliation against Whop's API | ✅ | runs on return from checkout and from a button; `reconcileWorkspaceBilling` |
+| Card brand and last four | ✅ | filed from `payment.succeeded` and from reconciliation; null where Whop sent none |
+| Auto-renewal | ✅ | Whop renewal plans; the line is shown only where the membership actually renews |
 | Checkout session carries the workspace | ✅ | minted via Whop's API so the webhook can attach the membership |
 | Plan prices shown from the `plans` table | ✅ | must match the Whop plans the ids point at |
 | Webhook signature verification | ✅ | raw body, constant-time, replay-bounded, rotation-aware |
@@ -820,6 +824,19 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+13. **A paid customer stayed on Free, and the cause is still not confirmed.**
+   The plan and the payment are two writes from one webhook and both were
+   missing, which means the delivery either never arrived or named no
+   workspace. Rather than guess, Reklu no longer depends on being told:
+   checkout sessions are recorded before payment, Whop stamps that id on the
+   membership, and `reconcileWorkspaceBilling` reads it back on return from
+   checkout. The webhook is now the fast path, not the only one.
+14. **`setPlan` wrote `externalSubscriptionId`, which is not a column.** Drizzle
+   drops an unknown key from `.set()` silently — confirmed against a live
+   database, it does not throw — and a conditional spread hid it from
+   TypeScript. Every Whop membership id since the migration was discarded, so
+   there was no way back from a workspace to its membership. Now
+   `whopMembershipId`, and reconciliation depends on it.
 12. **`pnpm test` can fail on a developer machine at full concurrency.** Turbo
    runs eighteen vitest instances at once; on a constrained host they die and
    turbo reports a test failure. `npx turbo run test --force --concurrency=4`

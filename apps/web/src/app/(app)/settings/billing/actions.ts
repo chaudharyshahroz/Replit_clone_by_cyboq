@@ -1,9 +1,15 @@
 'use server';
 
-import { billingConfig, createCheckoutSession } from '@reklu/billing';
+import {
+  billingConfig,
+  createCheckoutSession,
+  reconcileWorkspaceBilling,
+  rememberCheckoutSession,
+} from '@reklu/billing';
 import { db, plans } from '@reklu/database';
 import { eq } from 'drizzle-orm';
 import { absoluteAppUrl, isRekluError, logger } from '@reklu/shared';
+import { revalidatePath } from 'next/cache';
 import { getAppContext } from '@/lib/auth-context';
 
 export interface CheckoutStart {
@@ -80,6 +86,21 @@ export async function startCheckoutAction(
       },
     });
 
+    /*
+     * Recorded before the form opens, not after the payment.
+     *
+     * Whop stamps this session's id onto the membership it creates, so this row
+     * is what lets Reklu find the purchase later by asking. Written first
+     * because after the customer has paid is too late to start keeping track.
+     */
+    await rememberCheckoutSession({
+      sessionId: session.id,
+      workspaceId: workspace.workspaceId,
+      planKey: plan.key,
+      period: yearly ? 'yearly' : 'monthly',
+      whopPlanId: session.whopPlanId ?? undefined,
+    });
+
     return {
       sessionId: session.id,
       whopPlanId: session.whopPlanId ?? (yearly ? plan.whopPlanIdYearly : plan.whopPlanId) ?? '',
@@ -92,5 +113,40 @@ export async function startCheckoutAction(
         ? error.userMessage
         : 'Could not start checkout. Please try again.',
     };
+  }
+}
+
+/**
+ * Check with Whop whether this workspace's plan should have changed.
+ *
+ * Offered as a button as well as run on return from checkout, because the one
+ * thing someone who has paid and not been upgraded wants is a way to make the
+ * app look again — rather than being told to wait, which is what Reklu used to
+ * say and could not back up.
+ */
+export async function reconcileBillingAction(): Promise<{ readonly message: string }> {
+  const { workspace } = await getAppContext();
+  const result = await reconcileWorkspaceBilling(workspace.workspaceId);
+
+  switch (result.outcome) {
+    case 'applied':
+      revalidatePath('/settings/billing');
+      revalidatePath('/settings/usage');
+      return { message: 'Your plan is up to date.' };
+    case 'nothing_pending':
+      return { message: 'No recent purchase is waiting to be applied.' };
+    case 'no_membership_yet':
+      return {
+        message:
+          result.detail ??
+          'Whop has no completed purchase for this workspace yet. If you have just paid, try again in a moment.',
+      };
+    case 'unknown_plan':
+      return {
+        message:
+          'Your purchase was found, but it does not match a plan Reklu currently sells. Please contact support.',
+      };
+    case 'not_configured':
+      return { message: result.detail ?? 'Payments are not configured.' };
   }
 }

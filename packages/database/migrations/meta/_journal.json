@@ -43,6 +43,13 @@
       "when": 1787337606792,
       "tag": "0005_naive_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787339492612,
+      "tag": "0006_gigantic_stepford_cuckoos",
+      "breakpoints": true
     }
   ]
 }
