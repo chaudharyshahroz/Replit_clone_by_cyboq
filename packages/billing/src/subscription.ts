@@ -11,7 +11,7 @@
  *      the free plan; it does not remove projects, artifacts or history the
  *      user may pay to reach again.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { db, plans, subscriptions, workspaces } from '@reklu/database';
 import { logger } from '@reklu/shared';
 import { planKeyForWhopPlan, type PayablePlanKey } from './config';
@@ -85,6 +85,33 @@ function planKeyFromMetadata(data: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
+/**
+ * Find a plan by the Whop plan id it was synced to.
+ *
+ * This is the fallback when checkout metadata does not survive the round trip,
+ * and it has to read the database: plans are created in the admin panel and
+ * carry their own Whop ids, so a lookup against the two environment variables
+ * could only ever recognise Pro and Team. Anything an administrator added —
+ * which is the whole point of plan management — resolved to nothing and the
+ * payment was ignored.
+ *
+ * Both the monthly and the yearly object map back to the same plan.
+ */
+async function planKeyForWhopPlanId(whopPlanId: string): Promise<string | undefined> {
+  const [row] = await db
+    .select({ key: plans.key })
+    .from(plans)
+    .where(
+      and(
+        eq(plans.isPurchasable, true),
+        or(eq(plans.whopPlanId, whopPlanId), eq(plans.whopPlanIdYearly, whopPlanId)),
+      ),
+    )
+    .limit(1);
+
+  return row?.key;
+}
+
 /** Whether a key names a plan this deployment can actually sell. */
 async function isPayablePlanKey(key: string): Promise<boolean> {
   const [row] = await db
@@ -104,7 +131,15 @@ function whopPlanIdFrom(data: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-async function planIdFor(key: PayablePlanKey | 'free'): Promise<string | undefined> {
+/**
+ * Plan keys are data, not a union.
+ *
+ * These were typed as 'pro' | 'team' | 'free' — the set that existed when
+ * plans were seeded and unchangeable. Now an administrator creates them, so
+ * the type has to admit whatever they named it, and the check that it exists
+ * moves to the database lookup below, where it belongs.
+ */
+async function planIdFor(key: string): Promise<string | undefined> {
   const [row] = await db.select({ id: plans.id }).from(plans).where(eq(plans.key, key)).limit(1);
   return row?.id;
 }
@@ -117,7 +152,7 @@ async function planIdFor(key: PayablePlanKey | 'free'): Promise<string | undefin
  */
 async function setPlan(params: {
   workspaceId: string;
-  planKey: PayablePlanKey | 'free';
+  planKey: string;
   status: 'active' | 'canceled';
   externalId?: string | undefined;
   periodEnd?: Date | undefined;
@@ -198,15 +233,35 @@ export async function applyMembershipEvent(params: {
        * for anything created directly in Whop's dashboard.
        */
       const fromMetadata = planKeyFromMetadata(params.data);
+
+      /*
+       * Three ways to name the plan, tried in order of how much they can be
+       * trusted: what Reklu itself wrote into the checkout, then the plan the
+       * database has synced to that Whop id, then the legacy environment
+       * variables.
+       */
       const planKey =
         fromMetadata && (await isPayablePlanKey(fromMetadata))
-          ? (fromMetadata as PayablePlanKey)
+          ? fromMetadata
           : whopPlanId
-            ? planKeyForWhopPlan(whopPlanId)
+            ? ((await planKeyForWhopPlanId(whopPlanId)) ?? planKeyForWhopPlan(whopPlanId))
             : undefined;
 
       if (!planKey) {
-        // A plan Reklu does not recognise must not silently grant anything.
+        /*
+         * Logged with the payload's shape, not just its conclusion. Every time
+         * this has fired, the question has been "what did Whop actually send?"
+         * — and the answer was nowhere in the logs.
+         */
+        logger.error('Could not resolve a plan for a paid membership', {
+          type: params.type,
+          workspaceId,
+          metadataPlanKey: fromMetadata ?? null,
+          whopPlanId: whopPlanId ?? null,
+          payloadKeys: Object.keys(params.data),
+          metadataKeys: Object.keys((params.data.metadata ?? {}) as Record<string, unknown>),
+        });
+
         return {
           outcome: 'ignored_unknown_plan',
           detail: `Neither the checkout metadata (${fromMetadata ?? 'absent'}) nor the Whop plan ${whopPlanId ?? 'unknown'} names a Reklu plan that can be sold.`,

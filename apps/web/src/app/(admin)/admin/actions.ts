@@ -610,3 +610,58 @@ export async function readUserContent(
 
   return { conversations: withMessages };
 }
+
+/**
+ * Put a workspace on a plan by hand.
+ *
+ * A payment that succeeds in Whop but does not apply in Reklu leaves someone
+ * charged and on the free tier. Whatever caused it — a webhook that never
+ * arrived, metadata that did not survive the round trip — the customer should
+ * not have to wait for the cause to be found. This is the correction, and it
+ * is audited like every other privileged write.
+ *
+ * It changes what someone is entitled to without changing what they were
+ * charged, so it is deliberately not exposed anywhere a customer can reach.
+ */
+export async function setWorkspacePlan(
+  workspaceId: string,
+  planKey: string,
+): Promise<AdminActionState> {
+  const me = await actor();
+
+  const [plan] = await db
+    .select({ id: plans.id, name: plans.name })
+    .from(plans)
+    .where(eq(plans.key, planKey))
+    .limit(1);
+
+  if (!plan) return { error: `No plan with the key "${planKey}".` };
+
+  await audit({
+    actorId: me.id,
+    actorEmail: me.email,
+    action: 'workspace.plan.set',
+    resourceType: 'workspace',
+    resourceId: workspaceId,
+  });
+
+  const now = new Date();
+  const updated = await db
+    .update(subscriptions)
+    .set({
+      planId: plan.id,
+      status: 'active',
+      currentPeriodStart: now,
+      currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+      updatedAt: now,
+    })
+    .where(eq(subscriptions.workspaceId, workspaceId))
+    .returning({ id: subscriptions.id });
+
+  if (updated.length === 0) {
+    return { error: 'That workspace has no subscription row to update.' };
+  }
+
+  revalidatePath('/admin', 'layout');
+  return { notice: `Moved to ${plan.name}. Their quota resets from today.` };
+}

@@ -102,6 +102,9 @@ export interface AdminUserRow {
   readonly createdAt: Date;
   readonly workspaceName: string | null;
   readonly planName: string | null;
+  /** Needed to correct a plan by hand when a payment did not apply. */
+  readonly workspaceId: string | null;
+  readonly planKey: string | null;
 }
 
 export async function listUsers(params: {
@@ -122,6 +125,8 @@ export async function listUsers(params: {
       createdAt: users.createdAt,
       workspaceName: workspaces.name,
       planName: plans.name,
+      workspaceId: workspaces.id,
+      planKey: plans.key,
     })
     .from(users)
     .leftJoin(workspaceMembers, eq(workspaceMembers.userId, users.id))
@@ -162,6 +167,7 @@ export async function getUserDetail(userId: string): Promise<UserDetail | undefi
         workspaceId: workspaces.id,
         workspaceName: workspaces.name,
         planName: plans.name,
+        planKey: plans.key,
       })
       .from(users)
       .leftJoin(workspaceMembers, eq(workspaceMembers.userId, users.id))

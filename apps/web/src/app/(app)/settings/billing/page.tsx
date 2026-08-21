@@ -3,12 +3,13 @@ import Link from 'next/link';
 import { ArrowLeft, CreditCard } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
 import { billingConfig, createCheckoutSession } from '@reklu/billing';
-import { db, plans, subscriptions } from '@reklu/database';
-import { asc, eq } from 'drizzle-orm';
+import { aiModels, db, plans, subscriptions } from '@reklu/database';
+import { asc, eq, sql } from 'drizzle-orm';
 import { isRekluError, logger } from '@reklu/shared';
 import { absoluteAppUrl } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
 import { WhopCheckout } from '@/components/billing/whop-checkout';
+import { UpgradeButton } from '@/components/billing/upgrade-button';
 
 export const metadata: Metadata = { title: 'Billing' };
 export const dynamic = 'force-dynamic';
@@ -16,10 +17,11 @@ export const dynamic = 'force-dynamic';
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string; status?: string }>;
+  searchParams: Promise<{ plan?: string; status?: string; period?: string }>;
 }) {
   const { workspace } = await getAppContext();
-  const { plan: wanted, status } = await searchParams;
+  const { plan: wanted, status, period } = await searchParams;
+  const yearly = period === 'yearly';
 
   const config = billingConfig();
   const quota = await checkQuota(workspace.workspaceId);
@@ -47,13 +49,24 @@ export default async function BillingPage({
       name: plans.name,
       description: plans.description,
       priceMonthlyUsd: plans.priceMonthlyUsd,
+      priceYearlyUsd: plans.priceYearlyUsd,
+      yearlyEnabled: plans.yearlyEnabled,
       billingPeriodDays: plans.billingPeriodDays,
       currency: plans.currency,
       whopPlanId: plans.whopPlanId,
+      whopPlanIdYearly: plans.whopPlanIdYearly,
+      limits: plans.limits,
     })
     .from(plans)
     .where(eq(plans.isPurchasable, true))
     .orderBy(asc(plans.priceMonthlyUsd));
+
+  /* How many models exist, so a plan can say "all of them" truthfully. */
+  const [modelCount] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(aiModels)
+    .where(eq(aiModels.enabled, true));
+  const totalModels = Number(modelCount?.total ?? 0);
 
   const chosen = wanted ? purchasable.find((plan) => plan.key === wanted) : undefined;
 
@@ -74,16 +87,25 @@ export default async function BillingPage({
         workspaceId: workspace.workspaceId,
         returnUrl,
         planKey: chosen.key,
-        // Prefer the synced plan; describe it inline if it has never synced,
-        // so a newly created plan is buyable immediately.
-        whopPlanId: chosen.whopPlanId ?? undefined,
+        /*
+         * The period decides which Whop plan is bought. They are separate
+         * objects with separate prices, so picking the wrong one would charge
+         * a yearly buyer a monthly rate — or worse, monthly forever.
+         */
+        whopPlanId:
+          (yearly && chosen.yearlyEnabled
+            ? chosen.whopPlanIdYearly
+            : chosen.whopPlanId) ?? undefined,
         companyId: config.companyId,
         plan: {
-          key: chosen.key,
-          title: chosen.name,
+          key: yearly && chosen.yearlyEnabled ? `${chosen.key}-yearly` : chosen.key,
+          title: yearly && chosen.yearlyEnabled ? `${chosen.name} (yearly)` : chosen.name,
           description: chosen.description,
-          priceUsd: Number(chosen.priceMonthlyUsd),
-          billingPeriodDays: chosen.billingPeriodDays,
+          priceUsd:
+            yearly && chosen.yearlyEnabled
+              ? Number(chosen.priceYearlyUsd)
+              : Number(chosen.priceMonthlyUsd),
+          billingPeriodDays: yearly && chosen.yearlyEnabled ? 365 : chosen.billingPeriodDays,
           currency: chosen.currency,
         },
       });
@@ -185,28 +207,30 @@ export default async function BillingPage({
           ) : null}
         </section>
       ) : (
-        <section className="mt-6 grid gap-3 sm:grid-cols-2">
-          {purchasable.map((plan) => (
-              <Link
-                key={plan.key}
-                href={`/settings/billing?plan=${plan.key}`}
-                className="rounded-xl border border-border bg-surface/40 p-5 transition-colors hover:border-border-strong"
-              >
-                <p className="text-sm font-medium text-text">{plan.name}</p>
-                <p className="mt-1 text-2xl text-text">
-                  ${Number(plan.priceMonthlyUsd).toFixed(0)}
-                  <span className="text-sm text-text-muted"> /month</span>
-                </p>
-                {plan.description ? (
-                  <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-                    {plan.description}
-                  </p>
-                ) : null}
-                <span className="mt-3 inline-block text-xs font-medium text-accent">
-                  Choose {plan.name} →
-                </span>
-              </Link>
-          ))}
+        <section className="mt-6">
+          <h2 className="text-sm font-medium text-text">Change plan</h2>
+          <p className="mt-1.5 max-w-md text-xs leading-relaxed text-text-muted">
+            Compare what each plan includes, monthly or yearly.
+          </p>
+          <div className="mt-4">
+            <UpgradeButton
+              currentPlanKey={current?.key ?? null}
+              plans={purchasable.map((plan) => ({
+                key: plan.key,
+                name: plan.name,
+                description: plan.description,
+                priceMonthlyUsd: plan.priceMonthlyUsd,
+                priceYearlyUsd: plan.priceYearlyUsd,
+                yearlyEnabled: plan.yearlyEnabled,
+                aiUnitsPerMonth: plan.limits.aiUnitsPerMonth,
+                imageGenerationsPerMonth: plan.limits.imageGenerationsPerMonth,
+                deepResearchPerMonth: plan.limits.deepResearchPerMonth,
+                workspaceMembersMax: plan.limits.workspaceMembersMax,
+                allowedModelCount: plan.limits.allowedModelKeys.length,
+                totalModelCount: totalModels,
+              }))}
+            />
+          </div>
         </section>
       )}
     </div>
