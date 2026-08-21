@@ -12,6 +12,7 @@ import {
   jobs,
   messages,
   plans,
+  type PlanLimits,
   researchSessions,
   sessions,
   skills,
@@ -213,15 +214,20 @@ export interface PlanRow {
   readonly name: string;
   readonly description: string | null;
   readonly priceMonthlyUsd: string;
+  readonly priceYearlyUsd: string;
+  readonly yearlyEnabled: boolean;
   readonly billingPeriodDays: number;
   readonly currency: string;
   readonly isPublic: boolean;
   readonly isPurchasable: boolean;
   /** Set once the plan exists in Whop; null until it has been synced. */
   readonly whopPlanId: string | null;
+  readonly whopPlanIdYearly: string | null;
   readonly whopSyncedAt: Date | null;
   readonly whopSyncError: string | null;
   readonly subscribers: number;
+  /** What this plan allows, so the editor can show and change it. */
+  readonly limits: PlanLimits;
 }
 
 export async function listPlans(): Promise<PlanRow[]> {
@@ -232,13 +238,17 @@ export async function listPlans(): Promise<PlanRow[]> {
       name: plans.name,
       description: plans.description,
       priceMonthlyUsd: plans.priceMonthlyUsd,
+      priceYearlyUsd: plans.priceYearlyUsd,
+      yearlyEnabled: plans.yearlyEnabled,
       billingPeriodDays: plans.billingPeriodDays,
       currency: plans.currency,
       isPublic: plans.isPublic,
       isPurchasable: plans.isPurchasable,
       whopPlanId: plans.whopPlanId,
+      whopPlanIdYearly: plans.whopPlanIdYearly,
       whopSyncedAt: plans.whopSyncedAt,
       whopSyncError: plans.whopSyncError,
+      limits: plans.limits,
       subscribers: sql<number>`count(${subscriptions.id})`,
     })
     .from(plans)
@@ -249,13 +259,17 @@ export async function listPlans(): Promise<PlanRow[]> {
       plans.name,
       plans.description,
       plans.priceMonthlyUsd,
+      plans.priceYearlyUsd,
+      plans.yearlyEnabled,
       plans.billingPeriodDays,
       plans.currency,
       plans.isPublic,
       plans.isPurchasable,
       plans.whopPlanId,
+      plans.whopPlanIdYearly,
       plans.whopSyncedAt,
       plans.whopSyncError,
+      plans.limits,
       plans.sortOrder,
     )
     .orderBy(plans.sortOrder);

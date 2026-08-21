@@ -1,14 +1,17 @@
 import type { Metadata } from 'next';
 import { billingConfig } from '@reklu/billing';
-import { listPlans, spendBreakdown } from '@/lib/admin-data';
+import { listModels, listPlans, spendBreakdown } from '@/lib/admin-data';
 import { PlanEditor } from '@/components/admin/plan-editor';
+import { NewPlan } from '@/components/admin/new-plan';
+import { TIER_WEIGHT } from '@reklu/ai';
 
 export const metadata: Metadata = { title: 'Admin · Billing' };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminBillingPage() {
-  const [plansList, spend, config] = await Promise.all([
+  const [plansList, modelList, spend, config] = await Promise.all([
     listPlans(),
+    listModels(),
     spendBreakdown(30),
     Promise.resolve(billingConfig()),
   ]);
@@ -31,7 +34,10 @@ export default async function AdminBillingPage() {
       </section>
 
       <section>
-        <h2 className="text-sm font-medium text-text">Plans</h2>
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-sm font-medium text-text">Plans</h2>
+          <NewPlan />
+        </div>
         <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-text-muted">
           Plans are defined here. Saving one creates or updates its counterpart in
           Whop and publishes it to the billing page — no deploy, and no second
@@ -39,17 +45,36 @@ export default async function AdminBillingPage() {
         </p>
         <div className="mt-3">
           <PlanEditor
+            models={modelList
+              .filter((model) => model.enabled)
+              .map((model) => ({
+                key: model.key,
+                displayName: model.displayName,
+                costTier: model.costTier,
+                // From the same table the meter uses, so the number shown is
+                // the number charged.
+                creditsPerThousandTokens:
+                  TIER_WEIGHT[model.costTier as keyof typeof TIER_WEIGHT] ?? 1,
+              }))}
             plans={plansList.map((plan) => ({
               id: plan.id,
               key: plan.key,
               name: plan.name,
               description: plan.description,
               priceMonthlyUsd: plan.priceMonthlyUsd,
+              priceYearlyUsd: plan.priceYearlyUsd,
+              yearlyEnabled: plan.yearlyEnabled,
               billingPeriodDays: plan.billingPeriodDays,
               currency: plan.currency,
               isPublic: plan.isPublic,
               isPurchasable: plan.isPurchasable,
               whopPlanId: plan.whopPlanId,
+              whopPlanIdYearly: plan.whopPlanIdYearly,
+              aiUnitsPerMonth: plan.limits.aiUnitsPerMonth,
+              imageGenerationsPerMonth: plan.limits.imageGenerationsPerMonth,
+              deepResearchPerMonth: plan.limits.deepResearchPerMonth,
+              workspaceMembersMax: plan.limits.workspaceMembersMax,
+              allowedModelKeys: plan.limits.allowedModelKeys,
               // Serialised for the client boundary; Date does not cross it.
               whopSyncedAt: plan.whopSyncedAt ? plan.whopSyncedAt.toISOString() : null,
               whopSyncError: plan.whopSyncError,

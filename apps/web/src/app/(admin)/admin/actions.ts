@@ -12,6 +12,7 @@ import {
   featureFlags,
   messages,
   plans,
+  subscriptions,
   users,
 } from '@reklu/database';
 import { absoluteAppUrl, isRekluError, logger, newId } from '@reklu/shared';
@@ -185,15 +186,146 @@ export async function setModelEnabled(
 // Plans and flags
 // ---------------------------------------------------------------------------
 
+/**
+ * Create a plan.
+ *
+ * The key is the stable identifier everything else references — subscriptions,
+ * model allowances, the checkout metadata that tells the webhook which tier was
+ * bought — so it is normalised here and never editable afterwards. A plan whose
+ * key changed would strand every subscription pointing at the old one.
+ */
+export async function createPlan(input: {
+  readonly key: string;
+  readonly name: string;
+  readonly priceMonthlyUsd: string;
+}): Promise<AdminActionState> {
+  const me = await actor();
+
+  const key = input.key.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+  if (key.length === 0) return { error: 'A plan needs a key, like "pro" or "team".' };
+
+  const name = input.name.trim();
+  if (name.length === 0) return { error: 'A plan needs a name.' };
+
+  const price = Number(input.priceMonthlyUsd);
+  if (!Number.isFinite(price) || price < 0) return { error: 'Enter a price of zero or more.' };
+
+  const [existing] = await db.select({ id: plans.id }).from(plans).where(eq(plans.key, key)).limit(1);
+  if (existing) return { error: `A plan with the key "${key}" already exists.` };
+
+  await audit({
+    actorId: me.id,
+    actorEmail: me.email,
+    action: 'plan.create',
+    resourceType: 'plan',
+    resourceId: key,
+  });
+
+  const [created] = await db
+    .insert(plans)
+    .values({
+      key,
+      name,
+      priceMonthlyUsd: price.toFixed(2),
+      priceYearlyUsd: (price * 10).toFixed(2),
+      /*
+       * Starts unsold and unlisted. A new plan has default limits nobody has
+       * reviewed yet, and putting it on the billing page the moment it exists
+       * would sell it before anyone decided what it includes.
+       */
+      isPurchasable: false,
+      isPublic: false,
+      sortOrder: 100,
+      limits: {
+        aiUnitsPerMonth: 200,
+        deepResearchPerMonth: 5,
+        buildProjectsMax: 3,
+        imageGenerationsPerMonth: 10,
+        videoGenerationsPerMonth: 0,
+        fileUploadMaxMb: 20,
+        storageMaxGb: 1,
+        workspaceMembersMax: 1,
+        mcpServersMax: 2,
+        concurrentJobsMax: 1,
+        allowedModelKeys: [],
+        features: [],
+      },
+    })
+    .returning({ id: plans.id });
+
+  revalidatePath('/admin', 'layout');
+  return {
+    notice: `Created ${name}. Set its limits, then turn on "Sold on the billing page".`,
+    ...(created ? {} : {}),
+  };
+}
+
+/**
+ * Remove a plan, or refuse when someone is on it.
+ *
+ * A plan with subscribers cannot be deleted: their subscription row points at
+ * it, and quota checks read its limits every request. Deleting it would leave
+ * paying customers on a plan that no longer exists. Retiring it — unsold and
+ * unlisted — is the operation that is actually wanted, and it is offered by
+ * name rather than silently substituted.
+ */
+export async function deletePlan(planId: string): Promise<AdminActionState> {
+  const me = await actor();
+
+  const [plan] = await db
+    .select({ key: plans.key, name: plans.name })
+    .from(plans)
+    .where(eq(plans.id, planId))
+    .limit(1);
+
+  if (!plan) return { error: 'No such plan.' };
+  if (plan.key === 'free') {
+    return { error: 'The free plan cannot be removed; every workspace falls back to it.' };
+  }
+
+  const [subscriber] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(eq(subscriptions.planId, planId))
+    .limit(1);
+
+  if (subscriber) {
+    return {
+      error: `${plan.name} has subscribers, so it cannot be deleted. Turn off "Sold on the billing page" to retire it instead — existing subscribers keep it.`,
+    };
+  }
+
+  await audit({
+    actorId: me.id,
+    actorEmail: me.email,
+    action: 'plan.delete',
+    resourceType: 'plan',
+    resourceId: planId,
+  });
+
+  await db.delete(plans).where(eq(plans.id, planId));
+  revalidatePath('/admin', 'layout');
+  return { notice: `Deleted ${plan.name}.` };
+}
+
 export async function savePlan(
   planId: string,
   input: {
     readonly name: string;
     readonly description: string;
     readonly priceMonthlyUsd: string;
+    readonly priceYearlyUsd: string;
+    readonly yearlyEnabled: boolean;
     readonly billingPeriodDays: number;
     readonly isPurchasable: boolean;
     readonly isPublic: boolean;
+    /** null means unmetered, which is a real setting and not an empty field. */
+    readonly aiUnitsPerMonth: number | null;
+    readonly imageGenerationsPerMonth: number | null;
+    readonly deepResearchPerMonth: number | null;
+    readonly workspaceMembersMax: number | null;
+    /** Empty means every enabled model. */
+    readonly allowedModelKeys: readonly string[];
   },
 ): Promise<AdminActionState> {
   const me = await actor();
@@ -201,6 +333,14 @@ export async function savePlan(
   const price = Number(input.priceMonthlyUsd);
   if (!Number.isFinite(price) || price < 0) {
     return { error: 'Enter a price of zero or more.' };
+  }
+
+  const yearly = Number(input.priceYearlyUsd);
+  if (!Number.isFinite(yearly) || yearly < 0) {
+    return { error: 'Enter a yearly price of zero or more.' };
+  }
+  if (input.yearlyEnabled && yearly <= 0 && price > 0) {
+    return { error: 'A yearly option needs a yearly price.' };
   }
   if (!Number.isInteger(input.billingPeriodDays) || input.billingPeriodDays < 1) {
     return { error: 'Billing period must be a whole number of days.' };
@@ -216,15 +356,38 @@ export async function savePlan(
     resourceId: planId,
   });
 
+  /*
+   * Limits are merged onto whatever the row already holds rather than replaced.
+   * The form edits four of a dozen fields, and writing a fresh object would
+   * silently reset the rest to whatever the form did not know about.
+   */
+  const [current] = await db
+    .select({ limits: plans.limits })
+    .from(plans)
+    .where(eq(plans.id, planId))
+    .limit(1);
+
+  if (!current) return { error: 'No such plan.' };
+
   await db
     .update(plans)
     .set({
       name,
       description: input.description.trim() || null,
       priceMonthlyUsd: price.toFixed(2),
+      priceYearlyUsd: yearly.toFixed(2),
+      yearlyEnabled: input.yearlyEnabled,
       billingPeriodDays: input.billingPeriodDays,
       isPurchasable: input.isPurchasable,
       isPublic: input.isPublic,
+      limits: {
+        ...current.limits,
+        aiUnitsPerMonth: input.aiUnitsPerMonth,
+        imageGenerationsPerMonth: input.imageGenerationsPerMonth,
+        deepResearchPerMonth: input.deepResearchPerMonth,
+        workspaceMembersMax: input.workspaceMembersMax,
+        allowedModelKeys: [...input.allowedModelKeys],
+      },
     })
     .where(eq(plans.id, planId));
 
@@ -256,6 +419,8 @@ export async function syncPlan(planId: string): Promise<AdminActionState> {
       name: plans.name,
       description: plans.description,
       priceMonthlyUsd: plans.priceMonthlyUsd,
+      priceYearlyUsd: plans.priceYearlyUsd,
+      yearlyEnabled: plans.yearlyEnabled,
       billingPeriodDays: plans.billingPeriodDays,
       currency: plans.currency,
       isPurchasable: plans.isPurchasable,
@@ -291,12 +456,39 @@ export async function syncPlan(planId: string): Promise<AdminActionState> {
       },
     });
 
+    /*
+     * The yearly option is a second plan in Whop. A Whop plan carries one price
+     * and one period, so there is no way to express both on one object — and a
+     * yearly subscriber must be charged yearly, not billed monthly at a yearly
+     * price.
+     */
+    let yearlyId: string | undefined;
+    if (plan.yearlyEnabled && Number(plan.priceYearlyUsd) > 0) {
+      const yearly = await syncPlanToWhop({
+        apiKey: config.apiKey,
+        companyId: config.companyId,
+        returnUrl: absoluteAppUrl('/settings/billing'),
+        plan: {
+          // A distinct key, so Whop files it as its own product rather than
+          // replacing the monthly one.
+          key: `${plan.key}-yearly`,
+          title: `${plan.name} (yearly)`,
+          description: plan.description,
+          priceUsd: Number(plan.priceYearlyUsd),
+          billingPeriodDays: 365,
+          currency: plan.currency,
+        },
+      });
+      yearlyId = yearly.whopPlanId;
+    }
+
     await db
       .update(plans)
       .set({
         // Only overwrite when Whop actually named a plan. Clearing a known id
         // because one response omitted it would lose the link.
         ...(whopPlanId ? { whopPlanId } : {}),
+        ...(yearlyId ? { whopPlanIdYearly: yearlyId } : {}),
         whopSyncedAt: new Date(),
         whopSyncError: null,
       })

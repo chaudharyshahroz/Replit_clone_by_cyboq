@@ -77,6 +77,14 @@ export const plans = pgTable(
      * first paying customer discover it.
      */
     whopPlanId: text('whop_plan_id'),
+    /**
+     * The yearly plan is a separate object in Whop.
+     *
+     * A Whop plan carries one billing period and one price, so monthly and
+     * yearly cannot be the same object. Reklu keeps one row per tier and two
+     * ids, rather than two rows that would have to be kept in step by hand.
+     */
+    whopPlanIdYearly: text('whop_plan_id_yearly'),
     whopSyncedAt: tsColumn('whop_synced_at'),
     whopSyncError: text('whop_sync_error'),
 
@@ -94,6 +102,8 @@ export const plans = pgTable(
 
     /** Hidden from pricing but still honoured for existing subscribers. */
     isPublic: boolean('is_public').notNull().default(true),
+    /** Whether a yearly option is offered alongside the monthly one. */
+    yearlyEnabled: boolean('yearly_enabled').notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),
     ...timestamps,
   },

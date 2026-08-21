@@ -23,6 +23,10 @@ interface Model {
   readonly costTier: string;
   readonly inputCostPerMillion: string;
   readonly outputCostPerMillion: string;
+  /** Credits charged per 1,000 tokens, from the table the meter uses. */
+  readonly creditsPerThousandTokens: number;
+  /** Plans that grant access, or empty when every plan does. */
+  readonly plans: readonly string[];
 }
 
 export function AiControls({
@@ -92,6 +96,8 @@ export function AiControls({
               <tr className="bg-surface-raised text-left text-[0.6875rem] uppercase tracking-wider text-text-muted">
                 <th scope="col" className="px-3 py-2 font-medium">Model</th>
                 <th scope="col" className="px-3 py-2 font-medium">Provider</th>
+                <th scope="col" className="px-3 py-2 font-medium">Credit cost</th>
+                <th scope="col" className="px-3 py-2 font-medium">Plans</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">In / M</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Out / M</th>
                 <th scope="col" className="px-3 py-2 font-medium">Available</th>
@@ -105,6 +111,27 @@ export function AiControls({
                     <code className="text-[0.625rem] text-text-muted">{model.key}</code>
                   </td>
                   <td className="px-3 py-2 text-text-secondary">{model.providerKey}</td>
+                  <td className="px-3 py-2">
+                    {/*
+                      What a message on this model costs a customer, taken from
+                      the same weights the meter applies — not a second copy
+                      that could disagree with the bill.
+                    */}
+                    <span className="tabular-nums text-text">
+                      {model.creditsPerThousandTokens}
+                    </span>
+                    <span className="ml-1 text-[0.625rem] text-text-muted">cr / 1k</span>
+                    <span className="ml-2 rounded border border-border px-1 text-[0.625rem] uppercase tracking-wide text-text-muted">
+                      {model.costTier}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-text-secondary">
+                    {model.plans.length === 0 ? (
+                      <span className="text-text-muted">All plans</span>
+                    ) : (
+                      model.plans.join(', ')
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-text-secondary">
                     ${model.inputCostPerMillion}
                   </td>

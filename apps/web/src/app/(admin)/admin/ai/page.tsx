@@ -1,13 +1,18 @@
 import type { Metadata } from 'next';
 import { features } from '@reklu/shared';
-import { listModels, listProviders } from '@/lib/admin-data';
+import { listModels, listPlans, listProviders } from '@/lib/admin-data';
+import { TIER_WEIGHT } from '@reklu/ai';
 import { AiControls } from '@/components/admin/ai-controls';
 
 export const metadata: Metadata = { title: 'Admin · AI' };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminAiPage() {
-  const [providers, models] = await Promise.all([listProviders(), listModels()]);
+  const [providers, models, plansList] = await Promise.all([
+    listProviders(),
+    listModels(),
+    listPlans(),
+  ]);
   const configured = features();
 
   return (
@@ -45,6 +50,16 @@ export default async function AdminAiPage() {
               costTier: model.costTier,
               inputCostPerMillion: model.inputCostPerMillion,
               outputCostPerMillion: model.outputCostPerMillion,
+              creditsPerThousandTokens:
+                TIER_WEIGHT[model.costTier as keyof typeof TIER_WEIGHT] ?? 1,
+              /*
+               * A plan with no explicit list allows every model, so it is not
+               * named here — listing every plan against every model would say
+               * nothing. Only restrictions are worth showing.
+               */
+              plans: plansList
+                .filter((plan) => plan.limits.allowedModelKeys.includes(model.key))
+                .map((plan) => plan.name),
             }))}
           />
         </div>

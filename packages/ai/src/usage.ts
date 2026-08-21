@@ -43,7 +43,13 @@ export const microsToUsdString = (micros: number): string =>
  * about token prices, and Reklu must be able to re-price without changing what
  * a customer's quota means. One unit ≈ a standard-tier turn.
  */
-const TIER_WEIGHT: Record<RegisteredModel['costTier'], number> = {
+/**
+ * Credits charged per 1,000 tokens, by cost tier.
+ *
+ * Exported so the admin panel can state the real number rather than keep a
+ * second copy that drifts from the one doing the arithmetic.
+ */
+export const TIER_WEIGHT: Record<RegisteredModel['costTier'], number> = {
   economy: 0.25,
   standard: 1,
   premium: 4,
