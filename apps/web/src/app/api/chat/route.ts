@@ -32,7 +32,15 @@ import {
   subscriptions,
   type PlanLimits,
 } from '@reklu/database';
-import { errors, isRekluError, logger, newId, slugify, toRekluError } from '@reklu/shared';
+import {
+  errors,
+  isRekluError,
+  logger,
+  newId,
+  planPacing,
+  slugify,
+  toRekluError,
+} from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { buildAttachmentParts } from '@/lib/attachment-parts';
@@ -576,14 +584,15 @@ export async function POST(request: Request): Promise<Response> {
              * lands. The stages above are the honest progress; this is
              * typography.
              *
-             * Split on paragraph boundaries so a heading or list item never
-             * appears half-formed.
+             * Paced by word rather than by paragraph: paragraphs arrived in a
+             * handful of jumps that read as instant, which was the whole
+             * problem it was meant to solve.
              */
-            const pieces = text.split(/(?<=\n\n)/);
-            for (const piece of pieces) {
+            const pacing = planPacing(text);
+            for (const chunk of pacing.chunks) {
               if (request.signal.aborted) break;
-              send({ type: 'text-delta', text: piece });
-              await new Promise((resolve) => setTimeout(resolve, 40));
+              send({ type: 'text-delta', text: chunk });
+              await new Promise((resolve) => setTimeout(resolve, pacing.delayMs));
             }
 
             citedSources = cited;

@@ -35,7 +35,7 @@ import {
   linkCitations,
 } from '@reklu/research';
 import { enqueue } from '@reklu/queue';
-import { errors, isRekluError, logger, newId, toRekluError } from '@reklu/shared';
+import { errors, isRekluError, logger, newId, toRekluError, planPacing } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
 
 export const runtime = 'nodejs';
@@ -51,6 +51,8 @@ type ResearchEvent =
   | { type: 'start'; sessionId: string; modelKey: string; sources: string[] }
   | { type: 'stage'; stage: ResearchStage; detail?: string }
   | { type: 'sources'; discovered: number; fetched: number; failed: number }
+  /** A piece of the finished report, released so it can be read as it lands. */
+  | { type: 'report-delta'; text: string }
   | {
       type: 'done';
       report: string;
@@ -309,9 +311,26 @@ export async function POST(request: Request): Promise<Response> {
               domain: source.domain,
             }));
 
+          const linkedReport = linkCitations(outcome.report, citedSources);
+
+          /**
+           * Released in pieces so the page can be read from the top while the
+           * rest arrives, rather than appearing in one frame.
+           *
+           * Pacing, not progress — the report was finished before this loop
+           * started. The honest progress is the stage reporting above, which
+           * ran while the research was actually happening.
+           */
+          const pacing = planPacing(linkedReport);
+          for (const chunk of pacing.chunks) {
+            if (request.signal.aborted) break;
+            send({ type: 'report-delta', text: chunk });
+            await new Promise((resolve) => setTimeout(resolve, pacing.delayMs));
+          }
+
           send({
             type: 'done',
-            report: linkCitations(outcome.report, citedSources),
+            report: linkedReport,
             answer: outcome.answer,
             sourcesUsed: outcome.sourcesUsed,
             sourcesFailed: outcome.sourcesFailed,

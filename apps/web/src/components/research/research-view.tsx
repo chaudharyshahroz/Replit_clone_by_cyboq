@@ -49,6 +49,7 @@ type ServerEvent =
   | { type: 'start'; sessionId: string; modelKey: string; sources: string[] }
   | { type: 'stage'; stage: string; detail?: string }
   | { type: 'sources'; discovered: number; fetched: number; failed: number }
+  | { type: 'report-delta'; text: string }
   | {
       type: 'done';
       report: string;
@@ -109,6 +110,8 @@ export function ResearchView({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    /* Built up from the paced pieces, the way the chat view assembles a reply. */
+    let assembled = '';
 
     try {
       const response = await fetch('/api/research', {
@@ -166,6 +169,9 @@ export function ResearchView({
               ...prev.map((entry) => ({ ...entry, done: true })),
               { stage: event.stage, detail: event.detail, done: false },
             ]);
+          } else if (event.type === 'report-delta') {
+            assembled += event.text;
+            setReport(assembled);
           } else if (event.type === 'sources') {
             setCounts({
               discovered: event.discovered,
@@ -174,6 +180,8 @@ export function ResearchView({
             });
           } else if (event.type === 'done') {
             setStages((prev) => prev.map((entry) => ({ ...entry, done: true })));
+            // The paced pieces have already built the report; this is the
+            // authoritative copy, and setting it again is harmless.
             setReport(event.report);
             setCitedSources(event.citedSources ?? []);
             setSummary({
