@@ -64,7 +64,7 @@ export function AiControls({
 
             {/* A provider enabled without a key cannot serve anything — say so. */}
             {provider.hasKey ? (
-              <span className="rounded border border-success-border bg-success-subtle px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-success">
+              <span className="rounded border border-success/40 bg-success/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-success">
                 key present
               </span>
             ) : (

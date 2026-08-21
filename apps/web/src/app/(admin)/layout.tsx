@@ -15,5 +15,5 @@ import { requireSuperAdmin } from '@/lib/admin';
  */
 export default async function AdminRouteGroupLayout({ children }: { children: ReactNode }) {
   await requireSuperAdmin();
-  return <div className="min-h-screen bg-surface-sunk">{children}</div>;
+  return <div className="min-h-screen bg-canvas">{children}</div>;
 }

@@ -26,7 +26,7 @@ export default async function AdminBillingPage() {
         <p
           className={`mt-2 rounded-lg border px-3 py-2 text-xs leading-relaxed ${
             config.available
-              ? 'border-success-border bg-success-subtle text-success'
+              ? 'border-success/40 bg-success/10 text-success'
               : 'border-warning/40 bg-warning/5 text-text-secondary'
           }`}
         >

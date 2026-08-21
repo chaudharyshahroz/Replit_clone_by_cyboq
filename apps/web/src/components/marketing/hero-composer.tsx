@@ -103,7 +103,7 @@ export function HeroComposer() {
             type="submit"
             disabled={query.trim().length === 0 || going}
             aria-label="Start with this question"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-opacity hover:bg-accent-hover disabled:opacity-40"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent transition-opacity hover:bg-accent-hover disabled:opacity-40"
           >
             <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
           </button>

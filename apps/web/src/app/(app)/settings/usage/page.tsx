@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
-import { ArrowLeft, Gauge } from 'lucide-react';
+import { Gauge } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
 import { db, plans, subscriptions, usageLedger } from '@reklu/database';
 import { getAppContext } from '@/lib/auth-context';
@@ -60,16 +60,8 @@ export default async function UsagePage() {
   const percent = limit === null ? 0 : Math.min(100, (used / limit) * 100);
 
   return (
-    <div className="mx-auto max-w-[86ch] px-6 py-14">
-      <Link
-        href="/settings"
-        className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
-        Settings
-      </Link>
-
-      <header className="mt-4">
+    <div className="mx-auto max-w-[86ch] px-6 py-8 md:px-8">
+      <header>
         <h1 className="display flex items-center gap-2.5 text-2xl text-text">
           <Gauge className="h-6 w-6 text-accent" strokeWidth={1.5} />
           Usage

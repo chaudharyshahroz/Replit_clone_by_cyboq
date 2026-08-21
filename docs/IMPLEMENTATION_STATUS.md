@@ -128,8 +128,11 @@ Real dependency status; 503 when Postgres is down, `degraded` when only Redis is
 
 - `@reklu/ui` — the design system lives in `apps/web` and is used consistently.
   Extraction is worthwhile only when a second app consumes it.
-- Onboarding flow (§70) and the full Settings sections (§77) — Settings has
-  Account, Plan and System status; Appearance/AI/Security remain.
+- Onboarding flow (§70) and the full Settings sections (§77) — Settings is a
+  rail with Workspace (Overview, Connections, MCP), Account (Usage, Billing)
+  and User (Profile); Appearance/AI/Security remain. System status moved to
+  `/admin/system`: a customer cannot act on an unreachable database, and
+  showing it to them only makes a working product look broken.
 - Mobile navigation drawer.
 
 ---
@@ -645,7 +648,7 @@ one part that calls a model — is still only covered by unit tests.
 
 | Item | State | Evidence |
 | ---- | ----- | -------- |
-| Whop embedded checkout | ✅ | `/settings/billing`; card details never touch Reklu |
+| Whop embedded checkout | ✅ | opens inside the plan picker, wherever it was opened from; card details never touch Reklu |
 | Checkout session carries the workspace | ✅ | minted via Whop's API so the webhook can attach the membership |
 | Plan prices shown from the `plans` table | ✅ | must match the Whop plans the ids point at |
 | Webhook signature verification | ✅ | raw body, constant-time, replay-bounded, rotation-aware |
@@ -807,3 +810,17 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    implemented; both currently throw rather than falling back. See D18.
 7. **`STORAGE_DRIVER=local` in production is single-node only.** Scaling `web`
    past one replica silently breaks uploads. Move to S3/R2 before scaling.
+10. **Credit top-ups do not exist.** `/settings/usage` says so rather than
+   offering a button. They need a one-off purchase flow and a credit balance
+   held separately from the plan's monthly allowance; neither is built, and a
+   button would take money for something that would not arrive.
+11. **Twenty-seven colour classes named tokens that were never declared** —
+   `text-accent-foreground`, `bg-success-subtle`, `border-danger-border`,
+   `bg-surface-sunk`. Tailwind emits no rule for a class it cannot resolve, so
+   success banners had no background and danger borders no border, across
+   sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
+   on a colour class that resolves to nothing.
+12. **`pnpm test` can fail on a developer machine at full concurrency.** Turbo
+   runs eighteen vitest instances at once; on a constrained host they die and
+   turbo reports a test failure. `npx turbo run test --force --concurrency=4`
+   is the reliable local invocation — all 18 packages pass under it.

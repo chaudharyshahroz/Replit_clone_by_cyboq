@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Plug, ShieldQuestion } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Plug, ShieldQuestion } from 'lucide-react';
 import { listExecutions, listServers } from '@reklu/mcp';
 import { getAppContext } from '@/lib/auth-context';
 import { ConnectServerForm } from '@/components/mcp/connect-server-form';
@@ -23,16 +23,8 @@ export default async function McpPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-14">
-      <Link
-        href="/settings/connections"
-        className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
-        Connections
-      </Link>
-
-      <header className="mt-4">
+    <div className="mx-auto max-w-3xl px-6 py-8 md:px-8">
+      <header>
         <h1 className="display flex items-center gap-2.5 text-2xl text-text">
           <Plug className="h-6 w-6 text-accent" strokeWidth={1.5} />
           MCP servers
@@ -76,7 +68,7 @@ export default async function McpPage() {
                   <span
                     className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${
                       server.status === 'connected'
-                        ? 'border border-success-border bg-success-subtle text-success'
+                        ? 'border border-success/40 bg-success/10 text-success'
                         : 'border border-warning/40 bg-warning/5 text-warning'
                     }`}
                   >

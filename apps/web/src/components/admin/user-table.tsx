@@ -198,7 +198,7 @@ export function UserTable({
                   setContent(await readUserContent(viewing.id, reason));
                 })
               }
-              className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
+              className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
             >
               Record and show
             </button>
@@ -250,7 +250,7 @@ export function UserTable({
 
 function Tag({ tone, children }: { tone: 'ok' | 'warn' | 'accent' | 'muted'; children: string }) {
   const tones = {
-    ok: 'border-success-border bg-success-subtle text-success',
+    ok: 'border-success/40 bg-success/10 text-success',
     warn: 'border-warning/40 bg-warning/5 text-warning',
     accent: 'border-accent-border bg-accent-subtle text-accent',
     muted: 'border-border bg-surface-raised text-text-muted',

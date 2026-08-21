@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Check, X } from 'lucide-react';
+import { useState, useTransition } from 'react';
+import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
+import { startCheckoutAction } from '@/app/(app)/settings/billing/actions';
+import { WhopCheckout } from './whop-checkout';
 
 export interface PickablePlan {
   readonly key: string;
@@ -20,6 +21,14 @@ export interface PickablePlan {
 }
 
 type Period = 'monthly' | 'yearly';
+
+/** A checkout that has been minted and is ready for the embedded form. */
+interface OpenCheckout {
+  readonly planName: string;
+  readonly sessionId: string;
+  readonly whopPlanId: string;
+  readonly returnUrl: string;
+}
 
 const number = (value: number): string => value.toLocaleString();
 
@@ -92,8 +101,39 @@ export function PlanPicker({
   readonly onClose: () => void;
 }) {
   const [period, setPeriod] = useState<Period>('monthly');
+  const [checkout, setCheckout] = useState<OpenCheckout | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [starting, startCheckout] = useTransition();
 
   if (!open) return null;
+
+  const close = () => {
+    setCheckout(null);
+    setError(null);
+    onClose();
+  };
+
+  /*
+   * Buying happens here rather than on another page. The session has to be
+   * minted first — it is what carries the workspace and plan through to the
+   * webhook — so the button waits on the server before the form can appear.
+   */
+  const choose = (plan: PickablePlan, yearly: boolean) => {
+    setError(null);
+    startCheckout(async () => {
+      const started = await startCheckoutAction(plan.key, yearly ? 'yearly' : 'monthly');
+      if (started.error || !started.sessionId || !started.whopPlanId || !started.returnUrl) {
+        setError(started.error ?? 'Could not start checkout. Please try again.');
+        return;
+      }
+      setCheckout({
+        planName: plan.name,
+        sessionId: started.sessionId,
+        whopPlanId: started.whopPlanId,
+        returnUrl: started.returnUrl,
+      });
+    });
+  };
 
   /*
    * The best saving on offer, shown on the toggle. Advertising a discount that
@@ -115,7 +155,7 @@ export function PlanPicker({
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4 sm:p-8"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <div
@@ -125,12 +165,24 @@ export function PlanPicker({
         className="mx-auto w-full max-w-[104ch] rounded-2xl border border-border-strong bg-surface p-6 shadow-2xl shadow-black/60 sm:p-8"
       >
         <div className="flex items-start justify-between gap-4">
-          <h2 id="plan-picker-title" className="display text-2xl text-text">
-            Compare plans
-          </h2>
+          <div className="flex items-center gap-3">
+            {checkout ? (
+              <button
+                type="button"
+                onClick={() => setCheckout(null)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
+              >
+                <ArrowLeft className="h-4 w-4" strokeWidth={2} />
+                All plans
+              </button>
+            ) : null}
+            <h2 id="plan-picker-title" className="display text-2xl text-text">
+              {checkout ? checkout.planName : 'Compare plans'}
+            </h2>
+          </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             aria-label="Close"
             className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
           >
@@ -138,6 +190,16 @@ export function PlanPicker({
           </button>
         </div>
 
+        {checkout ? (
+          <div className="mt-6">
+            <WhopCheckout
+              planId={checkout.whopPlanId}
+              sessionId={checkout.sessionId}
+              returnUrl={checkout.returnUrl}
+            />
+          </div>
+        ) : (
+        <>
         {anyYearly ? (
           <div className="mt-6 flex justify-center">
             <div
@@ -221,17 +283,33 @@ export function PlanPicker({
                     Your current plan
                   </p>
                 ) : (
-                  <Link
-                    href={`/settings/billing?plan=${plan.key}&period=${showsYearly ? 'yearly' : 'monthly'}`}
-                    className="mt-5 inline-flex h-9 items-center justify-center rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
+                  <button
+                    type="button"
+                    disabled={starting}
+                    onClick={() => choose(plan, showsYearly)}
+                    className="mt-5 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-60"
                   >
+                    {starting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2.5} />
+                    ) : null}
                     Choose {plan.name}
-                  </Link>
+                  </button>
                 )}
               </section>
             );
           })}
         </div>
+
+        {error ? (
+          <p
+            role="alert"
+            className="mt-5 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+          >
+            {error}
+          </p>
+        ) : null}
+        </>
+        )}
 
         <p className="mt-6 text-center text-xs text-text-muted">
           Payment is handled by Whop. Card details are entered on their form and never

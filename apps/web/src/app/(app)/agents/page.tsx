@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Agents' };
 export const dynamic = 'force-dynamic';
 
 const STATUS_TONE: Record<string, string> = {
-  succeeded: 'border-success-border bg-success-subtle text-success',
+  succeeded: 'border-success/40 bg-success/10 text-success',
   running: 'border-accent-border bg-accent-subtle text-accent',
   planning: 'border-accent-border bg-accent-subtle text-accent',
   awaiting_approval: 'border-warning/40 bg-warning/5 text-warning',

@@ -34,12 +34,12 @@ interface ToolRow {
 
 /** Only read-only tools may ever run without a per-call prompt. */
 const RISK_TONE: Record<string, string> = {
-  read_only: 'border-success-border bg-success-subtle text-success',
+  read_only: 'border-success/40 bg-success/10 text-success',
   create: 'border-border bg-surface-raised text-text-secondary',
   update: 'border-border bg-surface-raised text-text-secondary',
   delete: 'border-warning/40 bg-warning/5 text-warning',
   financial: 'border-warning/40 bg-warning/5 text-warning',
-  security_sensitive: 'border-danger-border bg-danger-subtle text-danger',
+  security_sensitive: 'border-danger/40 bg-danger/10 text-danger',
 };
 
 export function ServerToolPanel({
@@ -100,7 +100,7 @@ export function ServerToolPanel({
             type="button"
             disabled={pending}
             onClick={() => run(() => approveSchemaAction(server.id))}
-            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-60"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-60"
           >
             <ShieldCheck className="h-3.5 w-3.5" strokeWidth={2} />
             Approve these definitions

@@ -117,7 +117,7 @@ export function RunPanel({
               type="button"
               disabled={pending}
               onClick={() => act(() => decideApprovalAction(approval.id, true))}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-60"
             >
               <Check className="h-3.5 w-3.5" strokeWidth={2} />
               Approve
@@ -148,7 +148,7 @@ export function RunPanel({
             type="button"
             disabled={pending}
             onClick={() => act(() => advanceRunAction(run.id))}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-60"
           >
             {pending ? (
               <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />

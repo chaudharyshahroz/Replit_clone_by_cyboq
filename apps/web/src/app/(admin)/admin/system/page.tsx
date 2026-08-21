@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { checkDatabaseHealth } from '@reklu/database';
 import { features, serverEnv } from '@reklu/shared';
 import { listFeatureFlags } from '@/lib/admin';
 import { adminAuditTrail } from '@/lib/admin-data';
@@ -8,7 +9,11 @@ export const metadata: Metadata = { title: 'Admin · System' };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminSystemPage() {
-  const [flags, trail] = await Promise.all([listFeatureFlags(), adminAuditTrail(40)]);
+  const [flags, trail, health] = await Promise.all([
+    listFeatureFlags(),
+    adminAuditTrail(40),
+    checkDatabaseHealth(),
+  ]);
   const available = features();
   const env = serverEnv();
 
@@ -26,6 +31,36 @@ export default async function AdminSystemPage() {
 
   return (
     <div className="space-y-8">
+      {/*
+        Moved here from user settings, which is the wrong audience: a customer
+        cannot act on an unreachable database or a missing pgvector, and being
+        shown it only makes the product look broken to the one person who can
+        do nothing about it.
+      */}
+      <section>
+        <h2 className="text-sm font-medium text-text">Database</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span
+            className={`rounded-md border px-2.5 py-1 text-xs ${
+              health.ok
+                ? 'border-success/40 bg-success/10 text-success'
+                : 'border-danger/40 bg-danger/10 text-danger'
+            }`}
+          >
+            {health.ok ? `Healthy (${health.latencyMs}ms)` : 'Unreachable'}
+          </span>
+          <span
+            className={`rounded-md border px-2.5 py-1 text-xs ${
+              health.vectorEnabled
+                ? 'border-success/40 bg-success/10 text-success'
+                : 'border-border-strong text-text-muted'
+            }`}
+          >
+            pgvector {health.vectorEnabled ? 'enabled' : 'unavailable'}
+          </span>
+        </div>
+      </section>
+
       <section>
         <h2 className="text-sm font-medium text-text">Capabilities</h2>
         <p className="mt-1.5 text-xs text-text-muted">
@@ -42,7 +77,7 @@ export default async function AdminSystemPage() {
               <span
                 className={`rounded px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide ${
                   on
-                    ? 'border border-success-border bg-success-subtle text-success'
+                    ? 'border border-success/40 bg-success/10 text-success'
                     : 'border border-border bg-surface-raised text-text-muted'
                 }`}
               >

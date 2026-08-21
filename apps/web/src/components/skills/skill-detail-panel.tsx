@@ -100,7 +100,7 @@ export function SkillDetailPanel({
             type="button"
             disabled={pending}
             onClick={() => run(() => upgradeInstallAction(skill.id))}
-            className="mt-3 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-60"
+            className="mt-3 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-60"
           >
             Upgrade to v{install.currentVersion}
           </button>
@@ -216,7 +216,7 @@ export function SkillDetailPanel({
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex w-fit items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-60"
+              className="inline-flex w-fit items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-60"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} /> : null}
               {saving ? 'Publishing…' : 'Publish new version'}

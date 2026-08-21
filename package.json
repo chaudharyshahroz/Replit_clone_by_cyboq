@@ -36,6 +36,7 @@
     "verify:production-config": "pnpm --filter @reklu/database exec tsx ../shared/scripts/verify-production-config.mts",
     "verify:repo": "tsx scripts/verify-repo-integrity.mts",
     "verify:links": "tsx scripts/verify-links.mts",
+    "verify:tokens": "tsx scripts/verify-tokens.mts",
     "verify:e2b": "pnpm --filter @reklu/sandbox exec tsx scripts/verify-e2b.mts",
     "verify:oauth": "pnpm --filter @reklu/auth exec tsx scripts/verify-oauth.mts",
     "verify:skills": "pnpm --filter @reklu/skills exec tsx scripts/verify.mts",
@@ -44,7 +45,7 @@
     "verify:security": "tsx scripts/verify-security.mts",
     "verify:a11y": "tsx scripts/verify-a11y.mts",
     "verify:perf": "tsx scripts/verify-perf.mts",
-    "verify:all": "pnpm verify:repo && pnpm verify:links && pnpm verify:a11y && pnpm verify:perf && pnpm verify:security",
+    "verify:all": "pnpm verify:repo && pnpm verify:links && pnpm verify:tokens && pnpm verify:a11y && pnpm verify:perf && pnpm verify:security",
     "admin:promote": "pnpm --filter @reklu/database exec tsx scripts/promote-admin.mts"
   },
   "devDependencies": {

@@ -1,14 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowLeft, CreditCard } from 'lucide-react';
+import { CreditCard } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
-import { billingConfig, createCheckoutSession } from '@reklu/billing';
+import { billingConfig } from '@reklu/billing';
 import { aiModels, db, payments as paymentsTable, plans, subscriptions } from '@reklu/database';
 import { asc, desc, eq, sql } from 'drizzle-orm';
-import { isRekluError, logger } from '@reklu/shared';
-import { absoluteAppUrl } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
-import { WhopCheckout } from '@/components/billing/whop-checkout';
 import { UpgradeButton } from '@/components/billing/upgrade-button';
 
 export const metadata: Metadata = { title: 'Billing' };
@@ -17,11 +14,10 @@ export const dynamic = 'force-dynamic';
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string; status?: string; period?: string }>;
+  searchParams: Promise<{ status?: string }>;
 }) {
   const { workspace } = await getAppContext();
-  const { plan: wanted, status, period } = await searchParams;
-  const yearly = period === 'yearly';
+  const { status } = await searchParams;
 
   const config = billingConfig();
   const quota = await checkQuota(workspace.workspaceId);
@@ -74,8 +70,6 @@ export default async function BillingPage({
     .where(eq(aiModels.enabled, true));
   const totalModels = Number(modelCount?.total ?? 0);
 
-  const chosen = wanted ? purchasable.find((plan) => plan.key === wanted) : undefined;
-
   /* What has actually been charged, from the payments the webhook recorded. */
   const payments = await db
     .select({
@@ -90,61 +84,9 @@ export default async function BillingPage({
     .orderBy(desc(paymentsTable.createdAt))
     .limit(20);
 
-  const returnUrl = absoluteAppUrl('/settings/billing');
-
-  /*
-   * The session is minted here, on the server, because that is the only way
-   * the workspace id reaches the webhook. A failure is reported rather than
-   * rendering an embed that would take a payment nobody could attribute.
-   */
-  let session: { id: string; whopPlanId?: string | undefined } | undefined;
-  let checkoutError: string | undefined;
-
-  if (chosen && config.available && config.apiKey) {
-    try {
-      session = await createCheckoutSession({
-        apiKey: config.apiKey,
-        workspaceId: workspace.workspaceId,
-        returnUrl,
-        planKey: chosen.key,
-        /*
-         * The period decides which Whop plan is bought. They are separate
-         * objects with separate prices, so picking the wrong one would charge
-         * a yearly buyer a monthly rate — or worse, monthly forever.
-         */
-        whopPlanId:
-          (yearly && chosen.yearlyEnabled
-            ? chosen.whopPlanIdYearly
-            : chosen.whopPlanId) ?? undefined,
-        companyId: config.companyId,
-        plan: {
-          key: yearly && chosen.yearlyEnabled ? `${chosen.key}-yearly` : chosen.key,
-          title: yearly && chosen.yearlyEnabled ? `${chosen.name} (yearly)` : chosen.name,
-          description: chosen.description,
-          priceUsd:
-            yearly && chosen.yearlyEnabled
-              ? Number(chosen.priceYearlyUsd)
-              : Number(chosen.priceMonthlyUsd),
-          billingPeriodDays: yearly && chosen.yearlyEnabled ? 365 : chosen.billingPeriodDays,
-          currency: chosen.currency,
-        },
-      });
-    } catch (error) {
-      checkoutError = isRekluError(error)
-        ? error.userMessage
-        : 'Could not start checkout. Please try again.';
-      logger.error('Could not create a Whop checkout session', { error });
-    }
-  }
-
   return (
-    <div className="mx-auto max-w-2xl px-6 py-14">
-      <Link href="/settings" className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text">
-        <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
-        Settings
-      </Link>
-
-      <header className="mt-4">
+    <div className="mx-auto max-w-2xl px-6 py-8 md:px-8">
+      <header>
         <h1 className="display flex items-center gap-2.5 text-2xl text-text">
           <CreditCard className="h-6 w-6 text-accent" strokeWidth={1.5} />
           Billing
@@ -153,7 +95,7 @@ export default async function BillingPage({
 
       {/* Checkout outcome, reported from the return URL. */}
       {status === 'success' ? (
-        <p role="status" className="mt-6 rounded-lg border border-success-border bg-success-subtle px-3.5 py-3 text-sm text-text">
+        <p role="status" className="mt-6 rounded-lg border border-success/40 bg-success/10 px-3.5 py-3 text-sm text-text">
           Payment received. Your plan updates as soon as Whop confirms it —
           usually within a few seconds.
         </p>
@@ -193,32 +135,8 @@ export default async function BillingPage({
           <h2 className="text-sm font-medium text-text">Payments are not set up</h2>
           <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">{config.detail}</p>
         </section>
-      ) : chosen ? (
-        <section className="mt-6">
-          <h2 className="text-sm font-medium text-text">Complete your upgrade</h2>
-          <p className="mt-1.5 text-xs leading-relaxed text-text-muted">
-            Payment is handled by Whop. Card details are entered on their form and
-            never reach Reklu.
-          </p>
-
-          {checkoutError ? (
-            <p
-              role="alert"
-              className="mt-4 rounded-lg border border-danger/40 bg-danger/10 px-3.5 py-3 text-sm text-text"
-            >
-              {checkoutError}
-            </p>
-          ) : session ? (
-            <div className="mt-4">
-              <WhopCheckout
-                planId={session.whopPlanId ?? chosen.whopPlanId ?? ''}
-                sessionId={session.id}
-                returnUrl={returnUrl}
-              />
-            </div>
-          ) : null}
-        </section>
       ) : (
+
         <section className="mt-6">
           <h2 className="text-sm font-medium text-text">Change plan</h2>
           <p className="mt-1.5 max-w-md text-xs leading-relaxed text-text-muted">

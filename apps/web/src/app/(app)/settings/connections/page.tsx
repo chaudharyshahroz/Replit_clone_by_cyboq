@@ -32,9 +32,9 @@ export default async function ConnectionsPage({
   const byProvider = new Map(connections.map((connection) => [connection.provider, connection]));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-14">
+    <div className="mx-auto max-w-3xl px-6 py-8 md:px-8">
       <header>
-        <h1 className="display flex items-center gap-2.5 text-3xl text-text">
+        <h1 className="display flex items-center gap-2.5 text-2xl text-text">
           <Plug className="h-7 w-7 text-accent" strokeWidth={1.5} />
           Connections
         </h1>
@@ -105,7 +105,7 @@ export default async function ConnectionsPage({
                 ) : (
                   <Link
                     href={`/api/integrations/${provider.key}/start?returnTo=/settings/connections`}
-                    className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground transition-opacity hover:opacity-90"
+                    className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-on-accent transition-opacity hover:opacity-90"
                   >
                     Connect
                   </Link>
