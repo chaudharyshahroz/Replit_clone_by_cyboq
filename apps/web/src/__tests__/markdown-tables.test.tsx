@@ -72,3 +72,32 @@ describe('headings', () => {
     expect(heading.className).toMatch(/text-(xl|2xl)/);
   });
 });
+
+describe('structure in an ordinary reply', () => {
+  /**
+   * The same renderer serves chat and research, so a chat answer that uses
+   * headings and tables gets the same treatment. What decides whether it does
+   * is the system prompt, not this component — but if the rendering broke,
+   * asking the model for structure would achieve nothing.
+   */
+  it('renders a chat answer with headings, a table and bold lead-ins', () => {
+    const answer = [
+      '## Recommended stack',
+      '',
+      '- **Frontend**: React and Next.js',
+      '- **Backend**: Node or Python',
+      '',
+      '## Comparison',
+      '',
+      '| Option | Cost | Effort |',
+      '| --- | --- | --- |',
+      '| Hosted | Higher | Low |',
+    ].join('\n');
+
+    render(<Markdown content={answer} />);
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Recommended stack' })).toBeDefined();
+    expect(screen.getByRole('table')).toBeDefined();
+    expect(screen.getByText('Frontend').tagName).toBe('STRONG');
+  });
+});

@@ -77,10 +77,31 @@ const BodySchema = z.object({
   tool: z.enum(['chat', 'build', 'image', 'research']).optional(),
 });
 
+/**
+ * Structure has to be asked for by name.
+ *
+ * Without this the model wrote section titles as plain lines — technically
+ * prose, so they rendered at body weight and a long answer arrived as one
+ * undifferentiated wall with nothing to scan by. Naming the syntax is what
+ * changes the output; "format nicely" does not.
+ *
+ * The last rule matters as much as the rest: a two-sentence answer given
+ * headings and a table reads as padding, not as care.
+ */
 const SYSTEM_PROMPT = [
   'You are Reklu, an AI workspace where people research, create, build and take action.',
   'Be direct and concrete. Prefer specifics over generalities.',
   'When you are uncertain, say so rather than inventing detail.',
+  '',
+  'Formatting:',
+  '- Write section titles as markdown headings: "## Section". A title on its own',
+  '  line without ## is not a heading and renders as body text.',
+  '- When comparing three or more things across the same attributes, use a',
+  '  markdown table with a header row and a |---|---| separator row.',
+  '- Start a list item with the term it is about in **bold** where that helps',
+  '  the reader scan.',
+  '- Match the structure to the length. A short answer is a short answer —',
+  '  do not give two sentences a heading, and never pad to fill a shape.',
 ].join('\n');
 
 function sse(event: StreamEvent): string {

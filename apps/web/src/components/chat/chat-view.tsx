@@ -478,6 +478,15 @@ export function ChatView({
             } else if (event.type === 'text-delta') {
               assembled += event.text;
               setStreamText(assembled);
+              // Text is arriving, so whatever came before it is over.
+              setStage(undefined);
+            } else if (event.type === 'reasoning-delta') {
+              /*
+               * A real signal, not a guess: the model is emitting reasoning
+               * tokens. Only the fact is shown, never the content — the raw
+               * chain of thought is not ours to display.
+               */
+              setStage({ label: 'Reasoning' });
             } else if (event.type === 'status') {
               /*
                * Real stages from the server, not a spinner pretending to know
