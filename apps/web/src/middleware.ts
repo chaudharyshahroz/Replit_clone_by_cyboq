@@ -17,6 +17,15 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 
+/**
+ * The session cookie's name, inlined.
+ *
+ * Middleware runs on the edge runtime, which cannot import @reklu/auth — that
+ * package reaches the database. The name is a constant either way, and this
+ * file already avoids reading `process.env` for the same class of reason.
+ */
+const SESSION_COOKIE = 'reklu.session';
+
 /** Paths that must work on both hosts for anything else to function. */
 const SHARED_PREFIXES = ['/api/auth', '/login', '/logout', '/api/health', '/_next', '/favicon'];
 
@@ -54,6 +63,23 @@ export function middleware(request: NextRequest): NextResponse {
    * needs.
    */
   if (!isAdminHost(host)) {
+    /**
+     * A signed-in visitor asking for the landing page wants the product.
+     *
+     * Inside this branch deliberately: the admin host has its own rule for
+     * `/`, and running this first would have sent an administrator to /chat
+     * instead of /admin.
+     *
+     * Decided from the presence of the session cookie rather than by
+     * validating it, because validating means a database read on the one page
+     * that is static and the most visited in the product. Being wrong is cheap
+     * and self-correcting: a stale cookie sends someone to /chat, which sends
+     * them to sign in.
+     */
+    if (pathname === '/' && request.cookies.has(SESSION_COOKIE)) {
+      return NextResponse.redirect(new URL('/chat', request.url));
+    }
+
     if (pathname.startsWith('/admin') && host.split('.').length > 2) {
       /**
        * A multi-label host that is NOT the admin host must not serve /admin.

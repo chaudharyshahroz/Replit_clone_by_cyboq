@@ -9,12 +9,17 @@ import { middleware } from '../middleware';
  * admin.reklu.app served the marketing page. Nothing failed and nothing logged
  * it. The host is now decided from the request, which cannot be misconfigured.
  */
-const request = (url: string): Parameters<typeof middleware>[0] => {
+const request = (
+  url: string,
+  options: { signedIn?: boolean } = {},
+): Parameters<typeof middleware>[0] => {
   const parsed = new URL(url);
   return {
     headers: new Headers({ host: parsed.host }),
     nextUrl: parsed,
     url,
+    // Only `has` is used, and only for the session cookie.
+    cookies: { has: (name: string) => Boolean(options.signedIn) && name === 'reklu.session' },
   } as unknown as Parameters<typeof middleware>[0];
 };
 
@@ -77,5 +82,40 @@ describe('admin host routing', () => {
   it('ignores the port when matching the host', () => {
     const response = middleware(request('http://admin.localhost:3000/'));
     expect(location(response)).toBe('http://admin.localhost:3000/admin');
+  });
+});
+
+describe('the landing page for a signed-in visitor', () => {
+  /**
+   * Someone already signed in who types the bare domain wants the product,
+   * not the pitch.
+   *
+   * Decided on cookie presence rather than a validated session: validating
+   * would mean a database read on the most-visited page in the product, which
+   * is static. A stale cookie costs one extra redirect and corrects itself.
+   */
+  it('sends them to the product', () => {
+    expect(location(middleware(request('https://reklu.app/', { signedIn: true })))).toBe(
+      'https://reklu.app/chat',
+    );
+  });
+
+  it('leaves an anonymous visitor on the landing page', () => {
+    expect(location(middleware(request('https://reklu.app/')))).toBeNull();
+  });
+
+  /**
+   * The admin host has its own rule for `/`. Running the landing redirect
+   * first would have sent an administrator to /chat instead of /admin — which
+   * is what the first version of this did.
+   */
+  it('does not intercept the admin host root', () => {
+    expect(
+      location(middleware(request('https://admin.reklu.app/', { signedIn: true }))),
+    ).toBe('https://admin.reklu.app/admin');
+  });
+
+  it('leaves other pages alone for a signed-in visitor', () => {
+    expect(location(middleware(request('https://reklu.app/login', { signedIn: true })))).toBeNull();
   });
 });
