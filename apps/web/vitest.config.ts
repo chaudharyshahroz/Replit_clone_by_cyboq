@@ -19,6 +19,10 @@ export default defineConfig({
     setupFiles: [join(root, 'src/__tests__/setup.ts')],
   },
   resolve: {
-    alias: { '@': join(root, 'src') },
+    alias: {
+      '@': join(root, 'src'),
+      // See the file for why this is aliased rather than mocked per test.
+      'server-only': join(root, 'src/__tests__/stubs/server-only.ts'),
+    },
   },
 });

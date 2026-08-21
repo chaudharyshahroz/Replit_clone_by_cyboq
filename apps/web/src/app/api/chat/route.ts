@@ -75,6 +75,12 @@ const BodySchema = z.object({
    * somewhere else, so the transcript stays in one place.
    */
   tool: z.enum(['chat', 'build', 'image', 'research']).optional(),
+  /**
+   * A retry of the previous turn: the question is already recorded, so it is
+   * not written again, and the reply it produced is withdrawn before the new
+   * one is generated.
+   */
+  regenerate: z.boolean().optional(),
 });
 
 /**
@@ -326,18 +332,54 @@ export async function POST(request: Request): Promise<Response> {
       conversation = created!;
     }
 
+    /**
+     * A retry withdraws the answer it is replacing and does not record the
+     * question again.
+     *
+     * Without this a regenerate would leave the conversation holding the same
+     * question twice and both answers — so the next turn would be built on a
+     * history that never happened, and the transcript would disagree with what
+     * the reader saw.
+     *
+     * Soft-deleted rather than removed: the first attempt is still what the
+     * model was paid to produce, and usage records point at it.
+     */
+    if (body.regenerate) {
+      const [previous] = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.conversationId, conversation.id),
+            eq(messagesTable.role, 'assistant'),
+            isNull(messagesTable.deletedAt),
+          ),
+        )
+        .orderBy(desc(messagesTable.sequence))
+        .limit(1);
+
+      if (previous) {
+        await db
+          .update(messagesTable)
+          .set({ deletedAt: new Date() })
+          .where(eq(messagesTable.id, previous.id));
+      }
+    }
+
     const nextSequence = conversation.messageCount;
-    const [userMessage] = await db
-      .insert(messagesTable)
-      .values({
-        conversationId: conversation.id,
-        workspaceId: access.workspaceId,
-        role: 'user',
-        content: [{ type: 'text', text: body.message }],
-        contentText: body.message,
-        sequence: nextSequence,
-      })
-      .returning({ id: messagesTable.id });
+    const [userMessage] = body.regenerate
+      ? [undefined]
+      : await db
+          .insert(messagesTable)
+          .values({
+            conversationId: conversation.id,
+            workspaceId: access.workspaceId,
+            role: 'user',
+            content: [{ type: 'text', text: body.message }],
+            contentText: body.message,
+            sequence: nextSequence,
+          })
+          .returning({ id: messagesTable.id });
 
     if (attachments.length > 0 && userMessage) {
       await db.insert(messageAttachments).values(

@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { conversations, db, messages, projects } from '@reklu/database';
 import { errors } from '@reklu/shared';
 import type { User } from '@reklu/database';
@@ -98,6 +98,7 @@ export async function loadConversation(
       contentText: messages.contentText,
       modelKey: messages.modelKey,
       sources: messages.sources,
+      feedback: messages.feedback,
       sequence: messages.sequence,
     })
     .from(messages)
@@ -123,6 +124,7 @@ export async function loadConversation(
         modelKey: row.modelKey,
         // Carried back so a reopened conversation still shows its citations.
         ...(row.sources.length > 0 ? { sources: row.sources } : {}),
+        ...(row.feedback ? { feedback: row.feedback as 'up' | 'down' } : {}),
       })),
   };
 }
@@ -246,4 +248,48 @@ export async function setConversationProject(
     .returning({ id: conversations.id });
 
   if (updated.length === 0) throw errors.notFound('Conversation', conversationId);
+}
+
+/**
+ * Record whether a reply was useful.
+ *
+ * Scoped to the caller's own conversation, like every other mutation here: the
+ * message id is the only thing the browser chooses, and it is checked against
+ * the conversation the caller owns before anything is written.
+ */
+export async function setMessageFeedback(
+  user: User,
+  workspaceId: string,
+  messageId: string,
+  feedback: 'up' | 'down' | null,
+): Promise<void> {
+  const updated = await db
+    .update(messages)
+    .set({ feedback })
+    .where(
+      and(
+        eq(messages.id, messageId),
+        eq(messages.workspaceId, workspaceId),
+        isNull(messages.deletedAt),
+        // Only a reply can be rated, and only inside a conversation this user
+        // owns — joined rather than trusted from the request.
+        eq(messages.role, 'assistant'),
+        inArray(
+          messages.conversationId,
+          db
+            .select({ id: conversations.id })
+            .from(conversations)
+            .where(
+              and(
+                eq(conversations.userId, user.id),
+                eq(conversations.workspaceId, workspaceId),
+                isNull(conversations.deletedAt),
+              ),
+            ),
+        ),
+      ),
+    )
+    .returning({ id: messages.id });
+
+  if (updated.length === 0) throw errors.notFound('Message', messageId);
 }

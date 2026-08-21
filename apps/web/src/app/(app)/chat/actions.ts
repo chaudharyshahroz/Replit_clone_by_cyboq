@@ -8,6 +8,7 @@ import {
   renameConversation,
   setConversationPinned,
   setConversationProject,
+  setMessageFeedback,
 } from '@/lib/conversations';
 
 /**
@@ -81,4 +82,28 @@ export async function deleteThreadAction(conversationId: string): Promise<Thread
     () => deleteConversation(user, workspace.workspaceId, conversationId),
     'Could not delete the chat',
   );
+}
+
+/**
+ * Rate a reply, or clear a rating by sending the one already set.
+ *
+ * No revalidation: the rating is already reflected in the button that was
+ * pressed, and refetching the conversation to redraw one icon would be a
+ * round trip for nothing.
+ */
+export async function rateMessageAction(
+  messageId: string,
+  feedback: 'up' | 'down' | null,
+): Promise<ThreadActionState> {
+  const { user, workspace } = await getAppContext();
+
+  try {
+    await setMessageFeedback(user, workspace.workspaceId, messageId, feedback);
+  } catch (error) {
+    if (isRekluError(error)) return { error: error.userMessage };
+    logger.error('Could not record message feedback', { error });
+    return { error: 'Could not record that. Please try again.' };
+  }
+
+  return {};
 }

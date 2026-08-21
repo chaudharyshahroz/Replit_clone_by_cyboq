@@ -23,6 +23,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Menu, MenuItem, MenuSeparator } from '@/components/ui/menu';
 import { Markdown } from './markdown';
 import { SourcesPanel } from './sources-panel';
+import { MessageActions } from './message-actions';
 import type { CitedSource } from '@/lib/citations';
 import { composerSize } from '@/lib/composer-size';
 
@@ -106,6 +107,8 @@ export interface SelectableModel {
 export interface ChatMessage {
   /** Sources this reply cites, when it is a research answer. */
   readonly sources?: readonly CitedSource[];
+  /** Whether the reader rated this reply. */
+  readonly feedback?: 'up' | 'down';
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
@@ -386,7 +389,7 @@ export function ChatView({
   }, [messages, streamText]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { regenerate?: boolean }) => {
       if (!text.trim() || streaming) return;
 
       setError(undefined);
@@ -398,10 +401,19 @@ export function ChatView({
       setStreamSources([]);
       setStage(undefined);
       const attachedNames = attachments.map((file) => file.filename);
-      setMessages((prev) => [
-        ...prev,
-        { id: `local-${Date.now()}`, role: 'user', text: text.trim(), attachments: attachedNames },
-      ]);
+      // A retry re-asks a question already on screen; echoing it again would
+      // show it twice.
+      if (!options?.regenerate) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `local-${Date.now()}`,
+            role: 'user',
+            text: text.trim(),
+            attachments: attachedNames,
+          },
+        ]);
+      }
       // Cleared immediately: a file belongs to the turn that sent it.
       setAttachments([]);
 
@@ -427,6 +439,7 @@ export function ChatView({
              * is showing — the next message will do the same thing.
              */
             ...(tool !== 'chat' ? { tool } : {}),
+            ...(options?.regenerate ? { regenerate: true } : {}),
           }),
           signal: controller.signal,
         });
@@ -587,6 +600,26 @@ export function ChatView({
   }, []);
 
   const stop = () => abortRef.current?.abort();
+
+  /**
+   * Ask the same question again, replacing the answer rather than adding a
+   * turn.
+   *
+   * The reply is dropped from view first, so the transcript never shows the
+   * old answer and the new one at once. The server is told this is a retry so
+   * it does not record the question a second time.
+   */
+  const regenerate = useCallback((): void => {
+    const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+    if (!lastUser || streaming) return;
+
+    setMessages((previous) => {
+      const last = previous[previous.length - 1];
+      return last?.role === 'assistant' ? previous.slice(0, -1) : previous;
+    });
+
+    void send(lastUser.text, { regenerate: true });
+  }, [messages, send, streaming]);
 
   const isEmpty = messages.length === 0 && !streaming;
 
@@ -961,7 +994,23 @@ export function ChatView({
               <div className={`mx-auto ${hasSources ? WIDE : COLUMN} px-6 py-10`}>
                 <div className="space-y-6">
                   {messages.map((message) => (
-                    <Bubble key={message.id} message={message} models={models} prose={PROSE} />
+                    <Bubble
+                      key={message.id}
+                      message={message}
+                      models={models}
+                      prose={PROSE}
+                      /*
+                       * Only the last reply can be redone. Regenerating an
+                       * earlier one would orphan everything said after it.
+                       */
+                      onRegenerate={
+                        message.role === 'assistant' &&
+                        message.id === messages[messages.length - 1]?.id &&
+                        !streaming
+                          ? regenerate
+                          : undefined
+                      }
+                    />
                   ))}
 
                   {streaming ? (
@@ -1093,11 +1142,14 @@ function Bubble({
   message,
   models,
   prose,
+  onRegenerate,
 }: {
   message: ChatMessage;
   models: readonly SelectableModel[];
   /** The readable measure for body text, set by the view. */
   prose: string;
+  /** Supplied only for the most recent reply. */
+  onRegenerate?: (() => void) | undefined;
 }) {
   if (message.role === 'user') {
     return (
@@ -1108,7 +1160,7 @@ function Bubble({
        * sources panel, so a question sat above a column it had nothing to do
        * with. It belongs above the answer it produced.
        */
-      <div className={`flex flex-col items-end gap-1.5 ${prose}`}>
+      <div className={`group/message flex flex-col items-end gap-1.5 ${prose}`}>
         {message.attachments && message.attachments.length > 0 ? (
           <ul className="flex flex-wrap justify-end gap-1.5">
             {message.attachments.map((name) => (
@@ -1125,6 +1177,7 @@ function Bubble({
         <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-surface-raised px-4 py-2.5 leading-relaxed text-text">
           {message.text}
         </p>
+        <MessageActions text={message.text} />
       </div>
     );
   }
@@ -1132,7 +1185,7 @@ function Bubble({
   const model = models.find((m) => m.key === message.modelKey);
 
   return (
-    <div>
+    <div className="group/message">
       {model ? (
         <p className="mb-1.5 flex items-center gap-1.5 text-xs text-text-muted">
           {model.displayName}
@@ -1163,6 +1216,15 @@ function Bubble({
           <Markdown content={message.text} />
         </div>
       )}
+
+      <div className={prose}>
+        <MessageActions
+          text={message.text}
+          messageId={message.id.startsWith('assistant-') ? undefined : message.id}
+          initialFeedback={message.feedback}
+          onRegenerate={onRegenerate}
+        />
+      </div>
     </div>
   );
 }

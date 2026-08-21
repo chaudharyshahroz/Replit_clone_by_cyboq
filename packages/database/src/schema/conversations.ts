@@ -114,6 +114,14 @@ export const messages = pgTable(
 
     /** Populated when a user edits and regenerates a prompt. */
     editedAt: tsColumn('edited_at'),
+
+    /**
+     * Whether the reader found this reply useful: 'up', 'down', or null for no
+     * opinion. Stored rather than counted in the client, because a rating that
+     * disappears on reload teaches nobody anything — and a thumb that records
+     * nothing is a button pretending to work (spec §137).
+     */
+    feedback: text('feedback'),
     /** Artifacts produced by this turn. */
     artifactIds: jsonb('artifact_ids').$type<string[]>().notNull().default([]),
 
