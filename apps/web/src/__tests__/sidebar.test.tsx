@@ -63,6 +63,8 @@ function renderSidebar(threads: ConversationSummary[] = [thread()]) {
       userEmail="shahroz@example.com"
       threads={threads}
       projects={[{ id: 'prj_1', name: 'Launch' }]}
+      plans={[]}
+      currentPlanKey="free"
     />,
   );
 }

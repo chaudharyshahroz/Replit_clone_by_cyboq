@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { ArrowLeft, CreditCard } from 'lucide-react';
 import { checkQuota } from '@reklu/ai';
 import { billingConfig, createCheckoutSession } from '@reklu/billing';
-import { aiModels, db, plans, subscriptions } from '@reklu/database';
-import { asc, eq, sql } from 'drizzle-orm';
+import { aiModels, db, payments as paymentsTable, plans, subscriptions } from '@reklu/database';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { isRekluError, logger } from '@reklu/shared';
 import { absoluteAppUrl } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
@@ -27,7 +27,13 @@ export default async function BillingPage({
   const quota = await checkQuota(workspace.workspaceId);
 
   const [current] = await db
-    .select({ key: plans.key, name: plans.name, priceMonthlyUsd: plans.priceMonthlyUsd })
+    .select({
+      key: plans.key,
+      name: plans.name,
+      priceMonthlyUsd: plans.priceMonthlyUsd,
+      status: subscriptions.status,
+      periodEnd: subscriptions.currentPeriodEnd,
+    })
     .from(subscriptions)
     .innerJoin(plans, eq(subscriptions.planId, plans.id))
     .where(eq(subscriptions.workspaceId, workspace.workspaceId))
@@ -69,6 +75,20 @@ export default async function BillingPage({
   const totalModels = Number(modelCount?.total ?? 0);
 
   const chosen = wanted ? purchasable.find((plan) => plan.key === wanted) : undefined;
+
+  /* What has actually been charged, from the payments the webhook recorded. */
+  const payments = await db
+    .select({
+      id: paymentsTable.id,
+      amountUsd: paymentsTable.amountUsd,
+      createdAt: paymentsTable.createdAt,
+      planName: plans.name,
+    })
+    .from(paymentsTable)
+    .leftJoin(plans, eq(paymentsTable.planId, plans.id))
+    .where(eq(paymentsTable.workspaceId, workspace.workspaceId))
+    .orderBy(desc(paymentsTable.createdAt))
+    .limit(20);
 
   const returnUrl = absoluteAppUrl('/settings/billing');
 
@@ -145,31 +165,23 @@ export default async function BillingPage({
       ) : null}
 
       <section className="mt-8 rounded-xl border border-border bg-surface/40 p-5">
-        <h2 className="text-sm font-medium text-text">Current plan</h2>
-        <p className="mt-1.5 text-2xl text-text">{current?.name ?? 'Free'}</p>
-
-        {quota ? (
-          <div className="mt-4">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="text-text-secondary">AI units this period</span>
-              <span className="text-text-muted">
-                {Math.round(quota.used)}
-                {quota.limit === null ? ' used (unmetered)' : ` of ${quota.limit}`}
-              </span>
-            </div>
-            {quota.limit !== null ? (
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-raised">
-                <div
-                  className={`h-full ${quota.exceeded ? 'bg-warning' : 'bg-accent'}`}
-                  style={{ width: `${Math.min(100, (quota.used / quota.limit) * 100)}%` }}
-                />
-              </div>
-            ) : null}
-            <p className="mt-2 text-[0.6875rem] text-text-muted">
-              Resets {new Date(quota.periodEnd).toLocaleDateString()}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-medium text-text">Current plan</h2>
+            <p className="mt-1.5 text-2xl text-text">{current?.name ?? 'Free'}</p>
+            <p className="mt-1 text-xs text-text-muted">
+              {current?.status === 'canceled'
+                ? `Ends ${current.periodEnd ? new Date(current.periodEnd).toLocaleDateString() : 'at the end of the period'}`
+                : current?.periodEnd
+                  ? `Renews ${new Date(current.periodEnd).toLocaleDateString()}`
+                  : 'No renewal date'}
             </p>
           </div>
-        ) : null}
+          <Link href="/settings/usage" className="text-xs text-accent hover:underline">
+            View usage
+          </Link>
+        </div>
+
       </section>
 
       {/*
@@ -233,6 +245,53 @@ export default async function BillingPage({
           </div>
         </section>
       )}
+
+      <section className="mt-8">
+        <h2 className="text-sm font-medium text-text">Payments</h2>
+        {payments.length === 0 ? (
+          <p className="mt-3 rounded-xl border border-border bg-surface/40 p-6 text-sm text-text-secondary">
+            No payments yet.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-surface/40">
+            {payments.map((payment) => (
+              <li key={payment.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                <span className="min-w-0">
+                  <span className="block text-sm text-text">{payment.planName ?? 'Payment'}</span>
+                  <span className="block text-xs text-text-muted">
+                    {new Date(payment.createdAt).toLocaleDateString()}
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm tabular-nums text-text">
+                  ${Number(payment.amountUsd).toFixed(2)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/*
+        Spec §25: Reklu never sees a card, so it cannot show one. Saying where
+        the details live is the honest version of a payment-method section —
+        rendering a masked card Reklu does not hold would be an invention.
+      */}
+      <section className="mt-6 rounded-xl border border-border bg-surface/40 p-5">
+        <h2 className="text-sm font-medium text-text">Payment method</h2>
+        <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-text-secondary">
+          Cards are held by Whop, not by Reklu — they are entered on Whop&rsquo;s form and
+          never reach us. Change or remove a card, or cancel a subscription, from your
+          Whop account.
+        </p>
+        <a
+          href="https://whop.com/orders"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-block text-sm text-accent hover:underline"
+        >
+          Manage on Whop
+        </a>
+      </section>
     </div>
   );
 }

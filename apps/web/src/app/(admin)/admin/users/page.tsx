@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { listUsers } from '@/lib/admin-data';
+import { listPlans, listUsers } from '@/lib/admin-data';
 import { UserTable } from '@/components/admin/user-table';
 
 export const metadata: Metadata = { title: 'Admin · Users' };
@@ -11,7 +11,10 @@ export default async function AdminUsersPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const rows = await listUsers({ query: q, limit: 100 });
+  const [rows, planList] = await Promise.all([
+    listUsers({ query: q, limit: 100 }),
+    listPlans(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -37,6 +40,7 @@ export default async function AdminUsersPage({
       </p>
 
       <UserTable
+        plans={planList.map((plan) => ({ key: plan.key, name: plan.name }))}
         rows={rows.map((row) => ({
           id: row.id,
           email: row.email,
@@ -45,6 +49,8 @@ export default async function AdminUsersPage({
           suspended: row.suspendedAt !== null,
           verified: row.emailVerified !== null,
           planName: row.planName,
+          planKey: row.planKey,
+          workspaceId: row.workspaceId,
           workspaceName: row.workspaceName,
           lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
           createdAt: row.createdAt.toISOString(),

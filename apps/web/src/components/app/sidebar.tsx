@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Menu, MenuItem, MenuLink, MenuSeparator } from '@/components/ui/menu';
 import { NewProjectDialog } from '@/components/projects/new-project';
+import { PlanPicker, type PickablePlan } from '@/components/billing/plan-picker';
 import { Wordmark } from '@/components/brand/logo';
 import { signOutAction } from '@/app/(auth)/actions';
 import {
@@ -308,12 +309,17 @@ export function Sidebar({
   userEmail,
   threads,
   projects,
+  plans,
+  currentPlanKey,
 }: {
   workspaceName: string;
   userName: string;
   userEmail: string;
   threads: readonly ConversationSummary[];
   projects: readonly ProjectOption[];
+  /** Purchasable plans, so Upgrade can show them without a page load. */
+  plans: readonly PickablePlan[];
+  currentPlanKey: string | null;
 }) {
   const pathname = usePathname();
   /*
@@ -322,6 +328,7 @@ export function Sidebar({
    * callback to open it.
    */
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
   const isActive = (href: string): boolean =>
     pathname === href || pathname.startsWith(`${href}/`);
 
@@ -460,10 +467,21 @@ export function Sidebar({
                     <Settings className="h-4 w-4 shrink-0" strokeWidth={1.75} />
                   Settings
                   </MenuLink>
-              <MenuLink href="/settings/billing" onSelect={close}>
-                    <Sparkles className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                  Upgrade
-                  </MenuLink>
+              {/*
+                Opens the comparison rather than navigating. Upgrading is a
+                decision made against the alternatives, and sending someone to
+                a page to find them puts a page load between the intent and the
+                options.
+              */}
+              <MenuItem
+                onSelect={() => {
+                  close();
+                  setPlansOpen(true);
+                }}
+              >
+                <Sparkles className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                Upgrade
+              </MenuItem>
               <MenuLink href="/help" onSelect={close}>
                     <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={1.75} />
                   Help
@@ -489,6 +507,13 @@ export function Sidebar({
         </Menu>
       </div>
       <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
+
+      <PlanPicker
+        plans={plans}
+        currentPlanKey={currentPlanKey}
+        open={plansOpen}
+        onClose={() => setPlansOpen(false)}
+      />
     </aside>
   );
 }

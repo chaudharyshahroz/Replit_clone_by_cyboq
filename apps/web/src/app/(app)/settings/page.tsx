@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { eq } from 'drizzle-orm';
 import Link from 'next/link';
-import { Check, ChevronRight, Minus, Plug } from 'lucide-react';
+import { Check, ChevronRight, CreditCard, Gauge, Minus, Plug } from 'lucide-react';
 import { checkDatabaseHealth, db, plans, subscriptions, type PlanLimits } from '@reklu/database';
 import { describeAllProviders, listConnections } from '@reklu/integrations';
 import { features } from '@reklu/shared';
@@ -116,6 +116,38 @@ export default async function SettingsPage() {
           </dl>
         </section>
       ) : null}
+
+      {/* ---- Plan and usage --------------------------------------------------- */}
+      <section className="mt-12">
+        <h2 className="text-sm font-medium text-text">Plan and usage</h2>
+        <p className="mt-1.5 text-sm text-text-secondary">
+          What you are on, what you have used, and what you have been charged.
+        </p>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <Link
+            href="/settings/billing"
+            className="flex items-center justify-between rounded-xl border border-border bg-surface/40 px-4 py-3.5 transition-colors hover:bg-surface-hover"
+          >
+            <span className="flex items-center gap-3">
+              <CreditCard className="h-4 w-4 text-text-secondary" strokeWidth={1.5} />
+              <span className="text-sm text-text">Billing</span>
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-text-muted" strokeWidth={2} />
+          </Link>
+
+          <Link
+            href="/settings/usage"
+            className="flex items-center justify-between rounded-xl border border-border bg-surface/40 px-4 py-3.5 transition-colors hover:bg-surface-hover"
+          >
+            <span className="flex items-center gap-3">
+              <Gauge className="h-4 w-4 text-text-secondary" strokeWidth={1.5} />
+              <span className="text-sm text-text">Usage</span>
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-text-muted" strokeWidth={2} />
+          </Link>
+        </div>
+      </section>
 
       {/* ---- Connections ---------------------------------------------------- */}
       <section className="mt-12">

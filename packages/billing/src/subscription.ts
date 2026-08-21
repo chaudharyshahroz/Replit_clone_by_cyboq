@@ -12,7 +12,7 @@
  *      user may pay to reach again.
  */
 import { and, eq, or } from 'drizzle-orm';
-import { db, plans, subscriptions, workspaces } from '@reklu/database';
+import { db, payments, plans, subscriptions, workspaces } from '@reklu/database';
 import { logger } from '@reklu/shared';
 import { planKeyForWhopPlan, type PayablePlanKey } from './config';
 
@@ -183,6 +183,61 @@ async function setPlan(params: {
 }
 
 /**
+ * Read the amount from a payment event.
+ *
+ * Whop has used several names for it over time, and a payment recorded at zero
+ * because the field moved is worse than one recorded as unknown — it would
+ * appear in a customer's history as a free transaction. Nothing is invented: if
+ * no amount can be found, zero is stored and the payment still appears, because
+ * the fact of it is what the history is for.
+ */
+function amountFrom(data: Record<string, unknown>): { amount: string; currency: string } {
+  const candidates = [data.final_amount, data.amount, data.subtotal, data.total];
+  const found = candidates.find(
+    (value) => typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''),
+  );
+
+  const currency = typeof data.currency === 'string' ? data.currency : 'usd';
+  return { amount: found === undefined ? '0' : String(found), currency };
+}
+
+/**
+ * Record a payment, once.
+ *
+ * Whop retries deliveries, so the same payment can arrive several times. The
+ * external id carries a unique index and a repeat is ignored rather than
+ * doubling someone's visible history.
+ */
+async function recordPayment(params: {
+  workspaceId: string;
+  planKey: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  const externalId =
+    typeof params.data.id === 'string' ? params.data.id : null;
+  const { amount, currency } = amountFrom(params.data);
+  const planId = await planIdFor(params.planKey);
+
+  try {
+    await db
+      .insert(payments)
+      .values({
+        workspaceId: params.workspaceId,
+        planId: planId ?? null,
+        amountUsd: amount,
+        currency,
+        externalPaymentId: externalId,
+        status: 'succeeded',
+      })
+      .onConflictDoNothing({ target: payments.externalPaymentId });
+  } catch (error) {
+    // A payment that cannot be filed must not fail the event that granted the
+    // plan. The customer having what they paid for matters more than the row.
+    logger.error('Could not record a payment', { error, workspaceId: params.workspaceId });
+  }
+}
+
+/**
  * Apply one verified event.
  *
  * Called only after `verifyWebhook` has passed. An unknown workspace, plan or
@@ -275,6 +330,15 @@ export async function applyMembershipEvent(params: {
         status: 'active',
         externalId: membershipId,
       });
+
+      /*
+       * A payment is worth recording; an activation is not a payment. Only
+       * payment.succeeded carries an amount, and only it should appear in
+       * someone's billing history.
+       */
+      if (params.type === 'payment.succeeded') {
+        await recordPayment({ workspaceId, planKey, data: params.data });
+      }
 
       logger.info('Applied a membership activation', { workspaceId, planKey, applied });
 

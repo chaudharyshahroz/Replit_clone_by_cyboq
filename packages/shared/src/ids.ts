@@ -59,6 +59,7 @@ export const ID_PREFIXES = {
   agentApproval: 'aga',
   plan: 'pln',
   subscription: 'sub',
+  payment: 'pay',
   job: 'job',
   notification: 'ntf',
   activity: 'act',

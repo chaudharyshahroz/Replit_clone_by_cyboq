@@ -155,6 +155,41 @@ export const subscriptions = pgTable(
  * bill and a workspace's quota can both be derived by summation and explained
  * line by line (spec §74–75).
  */
+/**
+ * Payments Whop has told us about.
+ *
+ * Recorded from the webhook rather than read back from Whop on every page
+ * view: a customer's own billing history should not depend on a third party
+ * being reachable, and the events arrive anyway.
+ *
+ * Amounts are stored as Whop reported them. Reklu does not compute what was
+ * charged — it was charged elsewhere, and a locally derived figure that
+ * disagreed with the card statement would be worse than no figure at all.
+ */
+export const payments = pgTable(
+  'payments',
+  {
+    id: primaryId('payment'),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    planId: text('plan_id').references(() => plans.id, { onDelete: 'set null' }),
+
+    amountUsd: numeric('amount_usd', { precision: 12, scale: 2 }).notNull().default('0'),
+    currency: text('currency').notNull().default('usd'),
+
+    /** Whop's own id, so a retried delivery does not record a second payment. */
+    externalPaymentId: text('external_payment_id'),
+    status: text('status').notNull().default('succeeded'),
+
+    ...timestamps,
+  },
+  (table) => [
+    index('payments_workspace_idx').on(table.workspaceId, table.createdAt),
+    uniqueIndex('payments_external_idx').on(table.externalPaymentId),
+  ],
+);
+
 export const usageLedger = pgTable(
   'usage_ledger',
   {

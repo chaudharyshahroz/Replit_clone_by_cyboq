@@ -7,6 +7,7 @@ import {
   readUserContent,
   setSuperAdmin,
   setUserSuspended,
+  setWorkspacePlan,
   type AdminActionState,
   type UserContentResult,
 } from '@/app/(admin)/admin/actions';
@@ -19,12 +20,21 @@ interface Row {
   readonly suspended: boolean;
   readonly verified: boolean;
   readonly planName: string | null;
+  readonly planKey: string | null;
+  readonly workspaceId: string | null;
   readonly workspaceName: string | null;
   readonly lastSeenAt: string | null;
   readonly createdAt: string;
 }
 
-export function UserTable({ rows }: { rows: readonly Row[] }) {
+export function UserTable({
+  rows,
+  plans,
+}: {
+  rows: readonly Row[];
+  /** Every plan an administrator can move a workspace onto. */
+  plans: readonly { key: string; name: string }[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
@@ -78,7 +88,32 @@ export function UserTable({ rows }: { rows: readonly Row[] }) {
                   <span className="block text-text">{row.name ?? '—'}</span>
                   <span className="block text-xs text-text-muted">{row.email}</span>
                 </td>
-                <td className="px-3 py-2.5 text-text-secondary">{row.planName ?? 'Free'}</td>
+                <td className="px-3 py-2.5">
+                  {/*
+                    Editable, because a payment that succeeds in Whop and does
+                    not apply in Reklu leaves someone charged and on the free
+                    tier. Whatever caused it, the correction should not wait for
+                    the cause to be found.
+                  */}
+                  {row.workspaceId ? (
+                    <select
+                      value={row.planKey ?? 'free'}
+                      disabled={pending}
+                      onChange={(event) =>
+                        act(() => setWorkspacePlan(row.workspaceId!, event.target.value))
+                      }
+                      className="rounded-md border border-border-strong bg-surface px-2 py-1 text-xs text-text"
+                    >
+                      {plans.map((plan) => (
+                        <option key={plan.key} value={plan.key}>
+                          {plan.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-text-muted">{row.planName ?? 'Free'}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2.5">
                   <span className="flex flex-wrap gap-1">
                     {row.suspended ? <Tag tone="warn">suspended</Tag> : <Tag tone="ok">active</Tag>}

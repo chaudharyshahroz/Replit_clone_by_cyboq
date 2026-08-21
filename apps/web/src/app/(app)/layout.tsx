@@ -2,6 +2,9 @@ import { listProjects } from '@reklu/projects';
 import { Sidebar } from '@/components/app/sidebar';
 import { getAppContext } from '@/lib/auth-context';
 import { listConversations } from '@/lib/conversations';
+import { purchasablePlans } from '@/lib/purchasable-plans';
+import { db, plans as plansTable, subscriptions } from '@reklu/database';
+import { eq } from 'drizzle-orm';
 
 /**
  * History and projects load here rather than per-page, because the sidebar
@@ -13,9 +16,16 @@ export const dynamic = 'force-dynamic';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, workspace } = await getAppContext();
 
-  const [threads, projects] = await Promise.all([
+  const [threads, projects, sellable, current] = await Promise.all([
     listConversations(user, workspace.workspaceId),
     listProjects(workspace.workspaceId, user.id),
+    purchasablePlans(),
+    db
+      .select({ key: plansTable.key })
+      .from(subscriptions)
+      .innerJoin(plansTable, eq(subscriptions.planId, plansTable.id))
+      .where(eq(subscriptions.workspaceId, workspace.workspaceId))
+      .limit(1),
   ]);
 
   return (
@@ -29,6 +39,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           userEmail={user.email}
           threads={threads}
           projects={projects.map(({ project }) => ({ id: project.id, name: project.name }))}
+          plans={sellable}
+          currentPlanKey={current[0]?.key ?? null}
         />
       </div>
 

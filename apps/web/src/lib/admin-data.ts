@@ -11,6 +11,7 @@ import {
   db,
   jobs,
   messages,
+  payments,
   plans,
   type PlanLimits,
   researchSessions,
@@ -573,4 +574,74 @@ export async function errorRates(): Promise<ErrorRate[]> {
     summarise('Tool calls', toolRows, ['failed', 'denied', 'timed_out']),
     summarise('Agent runs', runRows, ['failed']),
   ];
+}
+
+export interface RevenueSummary {
+  /** Recurring revenue implied by active subscriptions, per month. */
+  readonly monthlyRecurringUsd: number;
+  /** Actually collected, from recorded payments. */
+  readonly collected30dUsd: number;
+  readonly collectedAllTimeUsd: number;
+  readonly payingWorkspaces: number;
+  readonly byPlan: readonly {
+    readonly key: string;
+    readonly name: string;
+    readonly priceMonthlyUsd: string;
+    readonly subscribers: number;
+    readonly monthlyRecurringUsd: number;
+  }[];
+}
+
+/**
+ * Revenue, separated into what is recurring and what has been collected.
+ *
+ * They are different numbers and conflating them flatters the figure: monthly
+ * recurring is what active subscriptions imply if nobody leaves, while
+ * collected is money that actually arrived. Only the second is a fact.
+ */
+export async function revenueSummary(): Promise<RevenueSummary> {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [planRows, collected] = await Promise.all([
+    db
+      .select({
+        key: plans.key,
+        name: plans.name,
+        priceMonthlyUsd: plans.priceMonthlyUsd,
+        subscribers: sql<number>`count(${subscriptions.id})`,
+      })
+      .from(plans)
+      .leftJoin(
+        subscriptions,
+        and(eq(subscriptions.planId, plans.id), eq(subscriptions.status, 'active')),
+      )
+      .groupBy(plans.id, plans.key, plans.name, plans.priceMonthlyUsd, plans.sortOrder)
+      .orderBy(plans.sortOrder),
+    db
+      .select({
+        last30: sql<number>`coalesce(sum(case when ${payments.createdAt} >= ${since} then ${payments.amountUsd} else 0 end), 0)`,
+        allTime: sql<number>`coalesce(sum(${payments.amountUsd}), 0)`,
+        payers: sql<number>`count(distinct ${payments.workspaceId})`,
+      })
+      .from(payments),
+  ]);
+
+  const byPlan = planRows.map((row) => {
+    const subscribers = Number(row.subscribers);
+    return {
+      key: row.key,
+      name: row.name,
+      priceMonthlyUsd: row.priceMonthlyUsd,
+      subscribers,
+      monthlyRecurringUsd: subscribers * Number(row.priceMonthlyUsd),
+    };
+  });
+
+  return {
+    monthlyRecurringUsd: byPlan.reduce((sum, row) => sum + row.monthlyRecurringUsd, 0),
+    collected30dUsd: Number(collected[0]?.last30 ?? 0),
+    collectedAllTimeUsd: Number(collected[0]?.allTime ?? 0),
+    payingWorkspaces: Number(collected[0]?.payers ?? 0),
+    byPlan,
+  };
 }
