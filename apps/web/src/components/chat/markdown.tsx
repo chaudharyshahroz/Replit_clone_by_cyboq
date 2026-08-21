@@ -152,6 +152,11 @@ function InlineRun({
 type Block =
   | { readonly kind: 'paragraph'; readonly lines: string[] }
   | { readonly kind: 'heading'; readonly level: number; readonly text: string }
+  | {
+      readonly kind: 'table';
+      readonly header: string[];
+      readonly rows: string[][];
+    }
   | { readonly kind: 'code'; readonly language: string; readonly code: string }
   | {
       readonly kind: 'list';
@@ -206,6 +211,39 @@ function parseBlocks(markdown: string): Block[] {
         index++;
       }
       blocks.push({ kind: 'quote', lines: quote });
+      continue;
+    }
+
+    /**
+     * A markdown table.
+     *
+     * Recognised by its separator row rather than by the pipes alone: a
+     * sentence containing a `|` is not a table, and the `---|---` line is the
+     * only unambiguous signal. Without this the whole thing rendered as
+     * paragraphs of pipe characters, which is why comparisons came back as
+     * prose instead.
+     */
+    const tableRow = /^\s*\|.*\|\s*$/;
+    const tableRule = /^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/;
+
+    if (tableRow.test(line) && index + 1 < lines.length && tableRule.test(lines[index + 1]!)) {
+      const cells = (row: string): string[] =>
+        row
+          .trim()
+          .replace(/^\||\|$/g, '')
+          .split('|')
+          .map((cell) => cell.trim());
+
+      const header = cells(line);
+      index += 2;
+
+      const rows: string[][] = [];
+      while (index < lines.length && tableRow.test(lines[index]!)) {
+        rows.push(cells(lines[index]!));
+        index++;
+      }
+
+      blocks.push({ kind: 'table', header, rows });
       continue;
     }
 
@@ -281,13 +319,66 @@ export function Markdown({
     <div className="space-y-3 leading-relaxed text-text">
       {blocks.map((block, index) => {
         switch (block.kind) {
+          case 'table':
+            return (
+              // Wide tables scroll inside their own container so the message
+              // never pushes the conversation sideways.
+              <div key={index} className="my-4 overflow-x-auto">
+                <table className="w-full border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-border-strong">
+                      {block.header.map((cell, cellIndex) => (
+                        <th
+                          key={cellIndex}
+                          scope="col"
+                          className="px-3 py-2 font-medium text-text"
+                        >
+                          <InlineRun sources={sourcesByIndex} text={cell} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b border-border last:border-0">
+                        {row.map((cell, cellIndex) => (
+                          <td
+                            key={cellIndex}
+                            className="px-3 py-2 align-top text-text-secondary"
+                          >
+                            <InlineRun sources={sourcesByIndex} text={cell} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+
           case 'heading': {
-            const sizes = ['text-xl', 'text-lg', 'text-base', 'text-sm'];
+            /**
+             * Headings need to win against the body text around them.
+             *
+             * A research answer is mostly dense bullets, and at the previous
+             * weights a section title read as another sentence — there was
+             * nothing to scan by. More size, more weight, and space above that
+             * separates sections rather than merely indenting them.
+             */
+            const sizes = [
+              'text-2xl tracking-tight',
+              'text-xl tracking-tight',
+              'text-lg',
+              'text-base',
+            ];
+            const spacing = ['mt-8', 'mt-7', 'mt-6', 'mt-5'];
             const Tag = (['h1', 'h2', 'h3', 'h4'] as const)[block.level - 1] ?? 'h4';
             return (
               <Tag
                 key={index}
-                className={`mt-5 font-semibold text-text ${sizes[block.level - 1] ?? 'text-sm'}`}
+                className={`mb-2 font-semibold text-text ${
+                  spacing[block.level - 1] ?? 'mt-5'
+                } ${sizes[block.level - 1] ?? 'text-base'} first:mt-0`}
               >
                 <InlineRun sources={sourcesByIndex} text={block.text} />
               </Tag>
