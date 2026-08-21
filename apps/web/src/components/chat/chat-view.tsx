@@ -172,6 +172,8 @@ type ServerEvent =
     }
   | { type: 'text-delta'; text: string }
   | { type: 'reasoning-delta'; text: string }
+  | { type: 'tool-call'; toolCall: { toolName?: string; name?: string } }
+  | { type: 'tool-result'; toolResult: unknown }
   | { type: 'status'; stage: string; detail?: string }
   | { type: 'artifact'; artifact: { id: string; title: string; type: string } }
   | { type: 'finish'; finishReason: string; messageId?: string }
@@ -344,6 +346,36 @@ export function ChatView({
   const [streamSources, setStreamSources] = useState<readonly CitedSource[]>([]);
   /** The stage the server is currently in, when it reports one. */
   const [stage, setStage] = useState<{ label: string; detail?: string } | undefined>();
+  /**
+   * The model the server actually chose for this turn.
+   *
+   * Not `modelKey`: that is the *selection*, which is "auto" for most people,
+   * and naming it would show "Working" to everyone using Reklu Auto — exactly
+   * the case the label exists for.
+   */
+  const [resolvedModelKey, setResolvedModelKey] = useState<string | undefined>();
+  /** When the current turn started, for the elapsed counter. */
+  const [startedAt, setStartedAt] = useState<number | undefined>();
+  const [elapsed, setElapsed] = useState(0);
+
+  /**
+   * Elapsed seconds while waiting.
+   *
+   * For a plain chat turn there is genuinely one thing happening — the model is
+   * generating — so there are no stages to report and inventing some would be
+   * fake progress. What can honestly be shown is how long it has been, which is
+   * the thing a waiting reader actually wants to know.
+   */
+  useEffect(() => {
+    if (!startedAt) {
+      setElapsed(0);
+      return;
+    }
+    const tick = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1_000);
+    return () => clearInterval(tick);
+  }, [startedAt]);
   const [artifact, setArtifact] = useState<
     { id: string; title: string; type: string } | undefined
   >(undefined);
@@ -397,6 +429,8 @@ export function ChatView({
       setInput('');
       setStreaming(true);
       setStreamText('');
+      setStartedAt(Date.now());
+      setResolvedModelKey(undefined);
       // Belongs to the turn being sent, not the one before it.
       setStreamSources([]);
       setStage(undefined);
@@ -487,12 +521,24 @@ export function ChatView({
 
             if (event.type === 'start') {
               usedModelKey = event.modelKey;
+              setResolvedModelKey(event.modelKey);
               setRoutingReason(event.routingReason);
             } else if (event.type === 'text-delta') {
               assembled += event.text;
               setStreamText(assembled);
               // Text is arriving, so whatever came before it is over.
               setStage(undefined);
+            } else if (event.type === 'tool-call') {
+              /*
+               * Real work with a name. The server already forwarded these and
+               * the client dropped them, so a turn that spent ten seconds
+               * calling a connector looked identical to one that was simply
+               * thinking.
+               */
+              const name = event.toolCall.toolName ?? event.toolCall.name;
+              setStage({ label: name ? `Using ${name}` : 'Using a connected tool' });
+            } else if (event.type === 'tool-result') {
+              setStage({ label: 'Reading the result' });
             } else if (event.type === 'reasoning-delta') {
               /*
                * A real signal, not a guess: the model is emitting reasoning
@@ -549,6 +595,7 @@ export function ChatView({
           ]);
         }
         setStage(undefined);
+        setStartedAt(undefined);
       } finally {
         setStreaming(false);
         setStreamText('');
@@ -622,6 +669,9 @@ export function ChatView({
   }, [messages, send, streaming]);
 
   const isEmpty = messages.length === 0 && !streaming;
+
+  /** The model handling this turn, once the server has named it. */
+  const waitingFor = models.find((entry) => entry.key === resolvedModelKey)?.displayName;
 
   /*
    * Whether anything in view carries sources, which decides how wide the
@@ -1042,8 +1092,19 @@ export function ChatView({
                               ) : null}
                             </>
                           ) : (
-                            'Thinking…'
+                            /*
+                             * Named, because "Thinking" describes nothing. The
+                             * model is the one real fact available at this
+                             * point in a plain turn.
+                             */
+                            <>
+                              {waitingFor ? `${waitingFor} is working` : 'Working'}
+                            </>
                           )}
+                          {/* Elapsed time is real information; stages here would not be. */}
+                          {elapsed >= 2 ? (
+                            <span className="tabular-nums text-text-muted/60">{elapsed}s</span>
+                          ) : null}
                         </p>
                       )}
                     </div>
