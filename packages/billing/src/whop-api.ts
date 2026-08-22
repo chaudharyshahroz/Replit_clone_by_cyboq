@@ -129,6 +129,8 @@ async function get(apiKey: string, path: string, query: Record<string, string>):
  */
 export const REQUIRED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   '/memberships': ['member:basic:read', 'member:email:read'],
+  '/memberships/{id}/cancel': ['membership:cancel', 'member:basic:read', 'member:email:read'],
+  '/memberships/{id}/uncancel': ['member:manage', 'member:basic:read', 'member:email:read'],
   '/payments': [
     'payment:basic:read',
     'plan:basic:read',
@@ -300,4 +302,115 @@ export async function listPayments(params: {
  */
 export function grantsAccess(status: string): boolean {
   return status === 'active' || status === 'trialing' || status === 'completed';
+}
+
+/**
+ * One authenticated POST.
+ *
+ * Separate from `get` because the failure rule is the opposite: a read that
+ * fails can degrade to showing less, but a write that fails must never be
+ * reported as having worked. Cancelling is the case that matters — telling
+ * someone their subscription is cancelled when Whop refused the request would
+ * have them stop expecting a charge that is still coming.
+ */
+async function post(
+  apiKey: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<ReadResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${WHOP_API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      logger.error('Whop refused a write', { path, status: response.status, body: text.slice(0, 300) });
+      return {
+        failure: { status: response.status, detail: describeWriteFailure(path, response.status, text) },
+      };
+    }
+
+    return { payload: (await response.json().catch(() => ({}))) as Json };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Could not write to Whop', { path, error: message });
+    return {
+      failure: {
+        status: undefined,
+        detail: `Could not reach Whop. Nothing was changed — your subscription is unchanged. (${message})`,
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A refusal on a write, said as the thing to change. */
+function describeWriteFailure(path: string, status: number, body: string): string {
+  /* The concrete path carries an id; the scope table is keyed by the template. */
+  const template = path.replace(/\/memberships\/[^/]+\//, '/memberships/{id}/');
+  const scopes = REQUIRED_SCOPES[template];
+  const snippet = body.slice(0, 200).trim();
+
+  if (status === 403 && scopes) {
+    return `The API key is not authorized for this. It needs: ${scopes.join(', ')}. Add them in Whop under Developer → API keys → your key → Permissions.${
+      snippet ? ` Whop said: ${snippet}` : ''
+    }`;
+  }
+  if (status === 404) return 'Whop no longer has this subscription. Nothing was changed.';
+  if (status === 401) return 'Whop rejected the API key. Check WHOP_API_KEY.';
+  if (status >= 500) return `Whop is having trouble on their end (${status}). Nothing was changed.`;
+  return `Whop returned ${status}. Nothing was changed.${snippet ? ` ${snippet}` : ''}`;
+}
+
+/**
+ * Stop a membership renewing.
+ *
+ * At the end of the paid period, never immediately. The customer has paid for
+ * the period they are in and cancelling should not take it away from them —
+ * an immediate cancellation would forfeit time they already bought, and turn
+ * a routine action into a refund conversation.
+ */
+export async function cancelMembership(params: {
+  readonly apiKey: string;
+  readonly membershipId: string;
+}): Promise<{ readonly membership: WhopMembership | undefined; readonly failure: WhopFailure | undefined }> {
+  const result = await post(
+    params.apiKey,
+    `/memberships/${encodeURIComponent(params.membershipId)}/cancel`,
+    { cancellation_mode: 'at_period_end' },
+  );
+
+  return {
+    membership: result.payload ? toMembership(result.payload) : undefined,
+    failure: result.failure,
+  };
+}
+
+/** Undo a scheduled cancellation, while the period is still running. */
+export async function resumeMembership(params: {
+  readonly apiKey: string;
+  readonly membershipId: string;
+}): Promise<{ readonly membership: WhopMembership | undefined; readonly failure: WhopFailure | undefined }> {
+  const result = await post(
+    params.apiKey,
+    `/memberships/${encodeURIComponent(params.membershipId)}/uncancel`,
+    {},
+  );
+
+  return {
+    membership: result.payload ? toMembership(result.payload) : undefined,
+    failure: result.failure,
+  };
 }

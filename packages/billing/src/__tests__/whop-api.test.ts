@@ -8,7 +8,14 @@
  * one, this is where it shows up.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REQUIRED_SCOPES, grantsAccess, listMemberships, listPayments } from '../whop-api';
+import {
+  REQUIRED_SCOPES,
+  cancelMembership,
+  grantsAccess,
+  listMemberships,
+  listPayments,
+  resumeMembership,
+} from '../whop-api';
 
 const originalFetch = globalThis.fetch;
 
@@ -278,5 +285,91 @@ describe('reporting why a read failed', () => {
     respond({ error: 'missing scope: memberships:read' }, 403);
     const { failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
     expect(failure?.detail).toContain('memberships:read');
+  });
+});
+
+/**
+ * Cancelling.
+ *
+ * The failure rule here is the opposite of a read's. A read that fails can
+ * degrade to showing less; a write that fails must never be reported as having
+ * worked — telling someone their subscription is cancelled when Whop refused
+ * would have them stop expecting a charge that is still coming.
+ */
+describe('cancelling a membership', () => {
+  const cancelled = {
+    id: 'mem_abc123',
+    status: 'active',
+    cancel_at_period_end: true,
+    renewal_period_end: '2026-09-21T05:00:00.401Z',
+    plan: { id: 'plan_xyz' },
+    metadata: {},
+  };
+
+  it('asks Whop to end it at the period end, not immediately', async () => {
+    const bodies: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown, init: unknown) => {
+      calls.push(String(input));
+      bodies.push(String((init as { body?: unknown }).body ?? ''));
+      return new Response(JSON.stringify(cancelled), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+
+    expect(calls[0]).toContain('/memberships/mem_abc123/cancel');
+    expect(bodies[0]).toContain('at_period_end');
+    expect(bodies[0]).not.toContain('immediate');
+  });
+
+  it('reports what Whop confirmed', async () => {
+    respond(cancelled);
+    const { membership, failure } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+
+    expect(failure).toBeUndefined();
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
+    expect(membership?.renewalPeriodEnd?.toISOString()).toBe('2026-09-21T05:00:00.401Z');
+  });
+
+  /* The one that matters: a refusal must not read as a cancellation. */
+  it('reports a refusal rather than an empty success', async () => {
+    respond({ error: 'forbidden' }, 403);
+    const { membership, failure } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_1' });
+
+    expect(membership).toBeUndefined();
+    expect(failure?.status).toBe(403);
+    expect(failure?.detail).toContain('membership:cancel');
+  });
+
+  it('says nothing was changed when Whop cannot be reached', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+
+    const { failure } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_1' });
+    expect(failure?.detail).toContain('Nothing was changed');
+  });
+
+  /* An id in the path is user-adjacent data and is escaped, not interpolated raw. */
+  it('escapes the membership id in the path', async () => {
+    respond(cancelled);
+    await cancelMembership({ apiKey: 'k', membershipId: 'mem/../evil' });
+    expect(calls[0]).not.toContain('mem/../evil');
+    expect(calls[0]).toContain('mem%2F..%2Fevil');
+  });
+});
+
+describe('resuming a membership', () => {
+  it('asks Whop to uncancel', async () => {
+    respond({ id: 'mem_1', status: 'active', cancel_at_period_end: false, metadata: {} });
+    const { membership } = await resumeMembership({ apiKey: 'k', membershipId: 'mem_1' });
+
+    expect(calls[0]).toContain('/memberships/mem_1/uncancel');
+    expect(membership?.cancelAtPeriodEnd).toBe(false);
+  });
+
+  it('names the scope it needs on a refusal', async () => {
+    respond({ error: 'forbidden' }, 403);
+    const { failure } = await resumeMembership({ apiKey: 'k', membershipId: 'mem_1' });
+    expect(failure?.detail).toContain('member:manage');
   });
 });

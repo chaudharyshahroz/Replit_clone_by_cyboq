@@ -2,9 +2,11 @@
 
 import {
   billingConfig,
+  cancelWorkspacePlan,
   createCheckoutSession,
   reconcileWorkspaceBilling,
   rememberCheckoutSession,
+  resumeWorkspacePlan,
 } from '@reklu/billing';
 import { db, plans } from '@reklu/database';
 import { eq } from 'drizzle-orm';
@@ -167,4 +169,62 @@ export async function reconcileBillingAction(): Promise<{
         applied: false,
       };
   }
+}
+
+export interface PlanChangeResult {
+  readonly ok: boolean;
+  readonly message: string;
+}
+
+/**
+ * Only an owner or admin may change what the workspace is billed.
+ *
+ * A member can spend the workspace's credits; ending the subscription everyone
+ * relies on is a different kind of decision, and one a colleague should not be
+ * able to make on the account holder's behalf.
+ */
+function mayChangeBilling(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** Stop the plan renewing. Access continues until the period ends. */
+export async function cancelPlanAction(): Promise<PlanChangeResult> {
+  const { workspace } = await getAppContext();
+
+  if (!mayChangeBilling(workspace.role)) {
+    return {
+      ok: false,
+      message: 'Only a workspace owner or admin can cancel the plan.',
+    };
+  }
+
+  const result = await cancelWorkspacePlan(workspace.workspaceId);
+
+  if (result.ok) {
+    revalidatePath('/settings/billing');
+    revalidatePath('/settings/usage');
+  }
+
+  return { ok: result.ok, message: result.message };
+}
+
+/** Undo a scheduled cancellation, while the period is still running. */
+export async function resumePlanAction(): Promise<PlanChangeResult> {
+  const { workspace } = await getAppContext();
+
+  if (!mayChangeBilling(workspace.role)) {
+    return {
+      ok: false,
+      message: 'Only a workspace owner or admin can change the plan.',
+    };
+  }
+
+  const result = await resumeWorkspacePlan(workspace.workspaceId);
+
+  if (result.ok) {
+    revalidatePath('/settings/billing');
+    revalidatePath('/settings/usage');
+  }
+
+  return { ok: result.ok, message: result.message };
 }

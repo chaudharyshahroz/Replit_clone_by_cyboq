@@ -431,6 +431,10 @@ export async function rememberCheckoutSession(params: {
 export async function renewalState(workspaceId: string): Promise<{
   readonly autoRenews: boolean;
   readonly manageUrl: string | null;
+  /** Whether there is a Whop membership Reklu can act on. */
+  readonly hasMembership: boolean;
+  /** Whether a cancellation is already scheduled for the end of the period. */
+  readonly scheduledToEnd: boolean;
 }> {
   const [row] = await db
     .select({
@@ -450,6 +454,8 @@ export async function renewalState(workspaceId: string): Promise<{
       row.status === 'active' &&
       !row.cancelAtPeriodEnd,
     manageUrl: row?.manageUrl ?? null,
+    hasMembership: row?.membershipId != null,
+    scheduledToEnd: row?.cancelAtPeriodEnd === true,
   };
 }
 

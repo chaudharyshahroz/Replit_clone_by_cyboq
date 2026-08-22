@@ -7,6 +7,7 @@ import { asc, desc, eq, sql } from 'drizzle-orm';
 import { getAppContext } from '@/lib/auth-context';
 import { describePaymentMethod } from '@/lib/payment-method';
 import { UpgradeButton } from '@/components/billing/upgrade-button';
+import { CancelPlan } from '@/components/billing/cancel-plan';
 
 export const metadata: Metadata = { title: 'Billing' };
 
@@ -102,15 +103,17 @@ export default async function BillingPage({
 
   const price = current ? Number(current.priceMonthlyUsd) : 0;
 
+  /*
+   * Cancelling is offered only where there is something to cancel — a paid
+   * membership Reklu can act on. Showing it on the Free plan would offer to
+   * stop a charge that is not happening.
+   */
+  const paidPlan = renewal.hasMembership && price > 0;
+  const endsAt = current?.periodEnd ? new Date(current.periodEnd).toLocaleDateString() : null;
+
   /* What the subscription is doing, in one word, only where it means something. */
-  const stateLabel =
-    current?.status === 'canceled'
-      ? 'Ending'
-      : renewal.autoRenews
-        ? 'Active'
-        : current
-          ? 'Current'
-          : null;
+  const ending = current?.status === 'canceled' || renewal.scheduledToEnd;
+  const stateLabel = ending ? 'Ending' : renewal.autoRenews ? 'Active' : current ? 'Current' : null;
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 md:px-8">
@@ -164,7 +167,7 @@ export default async function BillingPage({
           {stateLabel ? (
             <span
               className={`rounded-md border px-2 py-0.5 text-xs ${
-                current?.status === 'canceled'
+                ending
                   ? 'border-warning/40 bg-warning/10 text-warning'
                   : 'border-success/40 bg-success/10 text-success'
               }`}
@@ -175,10 +178,8 @@ export default async function BillingPage({
         </div>
 
         <p className="mt-2 text-sm text-text-secondary">
-          {current?.status === 'canceled'
-            ? `Ends ${
-                current.periodEnd ? new Date(current.periodEnd).toLocaleDateString() : 'at the end of the period'
-              }`
+          {ending
+            ? `Ends ${endsAt ?? 'at the end of the period'} — you keep everything until then`
             : current?.periodEnd
               ? `${renewal.autoRenews ? 'Renews automatically on' : 'Period ends'} ${new Date(
                   current.periodEnd,
@@ -193,8 +194,18 @@ export default async function BillingPage({
         */}
         {renewal.autoRenews ? (
           <p className="mt-1 text-xs leading-relaxed text-text-muted">
-            Charged to the card on file — nothing to re-enter. Cancel any time from Whop.
+            Charged to the card on file — nothing to re-enter.
           </p>
+        ) : null}
+
+        {paidPlan ? (
+          <div className="mt-4 border-t border-border pt-4">
+            <CancelPlan
+              canManage={workspace.role === 'owner' || workspace.role === 'admin'}
+              endsAt={endsAt}
+              scheduledToEnd={renewal.scheduledToEnd}
+            />
+          </div>
         ) : null}
       </section>
 
@@ -282,8 +293,7 @@ export default async function BillingPage({
 
         <p className="mt-3 max-w-lg text-sm leading-relaxed text-text-secondary">
           Cards are held by Whop, not by Reklu — they are entered on Whop&rsquo;s form and
-          never reach us. Change or remove a card, or cancel a subscription, from your
-          Whop account.
+          never reach us. Change or remove a card from your Whop account.
         </p>
         <a
           href={renewal.manageUrl ?? 'https://whop.com/orders'}

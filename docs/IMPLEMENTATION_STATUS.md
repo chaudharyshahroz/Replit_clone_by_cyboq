@@ -653,6 +653,7 @@ one part that calls a model — is still only covered by unit tests.
 | Reconciliation against Whop's API | ✅ | runs on return from checkout and from a button; `reconcileWorkspaceBilling` |
 | Card brand and last four | ✅ | filed from `payment.succeeded` and from reconciliation; null where Whop sent none |
 | Auto-renewal | ✅ | Whop renewal plans; the line is shown only where the membership actually renews |
+| Cancel from Reklu | ✅ | `POST /memberships/{id}/cancel` at period end; owner/admin only; resume before it ends |
 | Checkout session carries the workspace | ✅ | minted via Whop's API so the webhook can attach the membership |
 | Plan prices shown from the `plans` table | ✅ | must match the Whop plans the ids point at |
 | Webhook signature verification | ✅ | raw body, constant-time, replay-bounded, rotation-aware |
@@ -824,6 +825,9 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+20. **Cancelling needs two more scopes on the Whop key**: `membership:cancel`
+   to cancel, `member:manage` to resume. Without them the button reports the
+   refusal and names the scope; nothing is silently half-done.
 19. **CAUSE FOUND: the Whop company API key had no read scopes.** Whop:
    `Company API key is not authorized for the member:basic:read scope`. A
    company API key is created with none of them, so checkout worked (it had
