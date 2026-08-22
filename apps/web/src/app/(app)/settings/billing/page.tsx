@@ -1,14 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CreditCard } from 'lucide-react';
-import { checkQuota } from '@reklu/ai';
 import { billingConfig, reconcileWorkspaceBilling, renewalState } from '@reklu/billing';
 import { aiModels, db, payments as paymentsTable, plans, subscriptions } from '@reklu/database';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { getAppContext } from '@/lib/auth-context';
 import { describePaymentMethod } from '@/lib/payment-method';
 import { UpgradeButton } from '@/components/billing/upgrade-button';
-import { SyncPlanButton } from '@/components/billing/sync-plan-button';
 
 export const metadata: Metadata = { title: 'Billing' };
 
@@ -33,7 +31,6 @@ export default async function BillingPage({
 
   const config = billingConfig();
   const renewal = await renewalState(workspace.workspaceId);
-  const quota = await checkQuota(workspace.workspaceId);
 
   const [current] = await db
     .select({
@@ -103,6 +100,18 @@ export default async function BillingPage({
   /* The most recent payment that named a method is the card now on file. */
   const method = payments.map(describePaymentMethod).find((value) => value !== null) ?? null;
 
+  const price = current ? Number(current.priceMonthlyUsd) : 0;
+
+  /* What the subscription is doing, in one word, only where it means something. */
+  const stateLabel =
+    current?.status === 'canceled'
+      ? 'Ending'
+      : renewal.autoRenews
+        ? 'Active'
+        : current
+          ? 'Current'
+          : null;
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 md:px-8">
       <header>
@@ -112,86 +121,96 @@ export default async function BillingPage({
         </h1>
       </header>
 
-      {/* Checkout outcome, reported from the return URL. */}
       {/*
-        What actually happened, not what was hoped for. This said the plan had
-        been "checked against Whop" whatever the check returned — including when
-        the check never reached Whop at all, which left a customer reading a
-        green success banner above the word Free.
+        Shown only when the purchase has not landed. The plan card below is the
+        confirmation when it has — a success banner restating what the card
+        already says is noise on the page someone checks when worried.
       */}
-      {checked ? (
-        checked.outcome === 'applied' ? (
-          <p role="status" className="mt-6 rounded-lg border border-success/40 bg-success/10 px-3.5 py-3 text-sm text-text">
-            Payment received. Your plan is up to date.
-          </p>
-        ) : (
-          <p role="status" className="mt-6 rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3 text-sm text-text">
-            Payment received, but your plan has not been applied yet.{' '}
-            {checked.detail ??
-              'Reklu is still waiting for Whop to confirm the purchase. This page checks again each time you open it.'}
-          </p>
-        )
-      ) : null}
-      {status === 'error' ? (
-        <p role="alert" className="mt-6 rounded-lg border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm text-text-secondary">
-          Checkout did not complete. Nothing was charged.
+      {checked && checked.outcome !== 'applied' ? (
+        <p
+          role="status"
+          className="mt-6 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm leading-relaxed text-text"
+        >
+          Payment received, but your plan has not been applied yet.{' '}
+          {checked.detail ??
+            'Reklu is still waiting for Whop to confirm the purchase. This page checks again each time you open it.'}
         </p>
       ) : null}
 
-      <section className="mt-8 rounded-xl border border-border bg-surface/40 p-5">
+      {/* ---- Current plan --------------------------------------------------- */}
+      <section className="mt-6 rounded-xl border border-border bg-surface/40 p-5">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-medium text-text">Current plan</h2>
-            <p className="mt-1.5 text-2xl text-text">{current?.name ?? 'Free'}</p>
-            <p className="mt-1 text-xs text-text-muted">
-              {current?.status === 'canceled'
-                ? `Ends ${current.periodEnd ? new Date(current.periodEnd).toLocaleDateString() : 'at the end of the period'}`
-                : current?.periodEnd
-                  ? `${renewal.autoRenews ? 'Renews automatically on' : 'Period ends'} ${new Date(current.periodEnd).toLocaleDateString()}`
-                  : 'No renewal date'}
-            </p>
-            {/*
-              Said only where it is true. A paid membership renews on Whop with
-              the card already on file, so nothing is re-entered; a free plan
-              renews nothing, and claiming otherwise on every plan would make
-              the line worthless on the one where it matters.
-            */}
-            {renewal.autoRenews ? (
-              <p className="mt-1 text-xs text-text-muted">
-                Renews on the card already on file — nothing to re-enter. Cancel any
-                time from Whop.
-              </p>
-            ) : null}
-          </div>
-          <Link href="/settings/usage" className="text-xs text-accent hover:underline">
+          <p className="text-sm font-medium text-text">Current plan</p>
+          {/*
+            shrink-0 and no wrapping: this link broke onto two lines against the
+            plan name, which made the card look broken on the page a customer
+            opens when they are already unsure whether their payment worked.
+          */}
+          <Link
+            href="/settings/usage"
+            className="shrink-0 whitespace-nowrap text-xs text-accent hover:underline"
+          >
             View usage
           </Link>
         </div>
 
-        {config.available ? (
-          <div className="mt-4 border-t border-border pt-4">
-            <SyncPlanButton />
-          </div>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="display text-2xl text-text">{current?.name ?? 'Free'}</span>
+          {price > 0 ? (
+            <span className="text-sm text-text-muted tabular-nums">
+              ${price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)} / month
+            </span>
+          ) : null}
+          {stateLabel ? (
+            <span
+              className={`rounded-md border px-2 py-0.5 text-xs ${
+                current?.status === 'canceled'
+                  ? 'border-warning/40 bg-warning/10 text-warning'
+                  : 'border-success/40 bg-success/10 text-success'
+              }`}
+            >
+              {stateLabel}
+            </span>
+          ) : null}
+        </div>
+
+        <p className="mt-2 text-sm text-text-secondary">
+          {current?.status === 'canceled'
+            ? `Ends ${
+                current.periodEnd ? new Date(current.periodEnd).toLocaleDateString() : 'at the end of the period'
+              }`
+            : current?.periodEnd
+              ? `${renewal.autoRenews ? 'Renews automatically on' : 'Period ends'} ${new Date(
+                  current.periodEnd,
+                ).toLocaleDateString()}`
+              : 'No renewal date'}
+        </p>
+
+        {/*
+          Said only where it is true. A paid membership renews on Whop with the
+          card already on file; a free plan renews nothing, and putting the line
+          on every plan would make it worthless on the one where it matters.
+        */}
+        {renewal.autoRenews ? (
+          <p className="mt-1 text-xs leading-relaxed text-text-muted">
+            Charged to the card on file — nothing to re-enter. Cancel any time from Whop.
+          </p>
         ) : null}
       </section>
 
-      {/*
-        Spec §25: an unconfigured deployment says which variables are missing
-        rather than rendering a checkout that cannot take money.
-      */}
+      {/* ---- Change plan ---------------------------------------------------- */}
       {!config.available ? (
-        <section className="mt-6 rounded-xl border border-border bg-surface/40 p-5">
+        <section className="mt-4 rounded-xl border border-border bg-surface/40 p-5">
           <h2 className="text-sm font-medium text-text">Payments are not set up</h2>
           <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">{config.detail}</p>
         </section>
       ) : (
-
-        <section className="mt-6">
+        <section className="mt-8">
           <h2 className="text-sm font-medium text-text">Change plan</h2>
-          <p className="mt-1.5 max-w-md text-xs leading-relaxed text-text-muted">
+          <p className="mt-1 max-w-md text-sm leading-relaxed text-text-secondary">
             Compare what each plan includes, monthly or yearly.
           </p>
-          <div className="mt-4">
+          <div className="mt-3">
             <UpgradeButton
               currentPlanKey={current?.key ?? null}
               plans={purchasable.map((plan) => ({
@@ -213,51 +232,55 @@ export default async function BillingPage({
         </section>
       )}
 
+      {/* ---- Payments ------------------------------------------------------- */}
       <section className="mt-8">
         <h2 className="text-sm font-medium text-text">Payments</h2>
         {payments.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-border bg-surface/40 p-6 text-sm text-text-secondary">
+          <p className="mt-3 rounded-xl border border-border bg-surface/40 px-5 py-6 text-sm text-text-secondary">
             No payments yet.
           </p>
         ) : (
-          <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-surface/40">
-            {payments.map((payment) => (
-              <li key={payment.id} className="flex items-center justify-between gap-4 px-5 py-3">
-                <span className="min-w-0">
-                  <span className="block text-sm text-text">{payment.planName ?? 'Payment'}</span>
-                  <span className="block text-xs text-text-muted">
-                    {new Date(payment.createdAt).toLocaleDateString()}
-                    {describePaymentMethod(payment) ? ` · ${describePaymentMethod(payment)}` : ''}
+          <ul className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface/40">
+            {payments.map((payment) => {
+              const paidWith = describePaymentMethod(payment);
+              return (
+                <li key={payment.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-text">
+                      {payment.planName ?? 'Payment'}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-text-muted">
+                      {new Date(payment.createdAt).toLocaleDateString()}
+                      {paidWith ? ` · ${paidWith}` : ''}
+                    </span>
                   </span>
-                </span>
-                <span className="shrink-0 text-sm tabular-nums text-text">
-                  ${Number(payment.amountUsd).toFixed(2)}
-                </span>
-              </li>
-            ))}
+                  <span className="shrink-0 text-sm tabular-nums text-text">
+                    ${Number(payment.amountUsd).toFixed(2)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
 
-      {/*
-        Spec §25: Reklu never sees a card, so it cannot show one. Saying where
-        the details live is the honest version of a payment-method section —
-        rendering a masked card Reklu does not hold would be an invention.
-      */}
-      <section className="mt-6 rounded-xl border border-border bg-surface/40 p-5">
+      {/* ---- Payment method -------------------------------------------------- */}
+      <section className="mt-8 rounded-xl border border-border bg-surface/40 p-5">
         <h2 className="text-sm font-medium text-text">Payment method</h2>
+
         {/*
           The brand and last four are all Whop ever tells Reklu, and all that is
           needed to recognise a card. Shown only when a payment actually carried
           them — a masked card invented for the layout would be a fabrication.
         */}
         {method ? (
-          <p className="mt-2 flex items-center gap-2 text-sm text-text">
-            <CreditCard className="h-4 w-4 text-text-secondary" strokeWidth={1.5} />
+          <p className="mt-3 flex items-center gap-2.5 text-sm text-text">
+            <CreditCard className="h-4 w-4 shrink-0 text-text-secondary" strokeWidth={1.5} />
             {method}
           </p>
         ) : null}
-        <p className="mt-2 max-w-lg text-sm leading-relaxed text-text-secondary">
+
+        <p className="mt-3 max-w-lg text-sm leading-relaxed text-text-secondary">
           Cards are held by Whop, not by Reklu — they are entered on Whop&rsquo;s form and
           never reach us. Change or remove a card, or cancel a subscription, from your
           Whop account.
