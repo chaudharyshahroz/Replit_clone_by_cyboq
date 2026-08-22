@@ -20,7 +20,7 @@ import {
   Sparkles,
   SquarePen,
   Trash2,
-  Wrench,
+  CodeXml,
 } from 'lucide-react';
 import { Menu, MenuItem, MenuLink, MenuSeparator } from '@/components/ui/menu';
 import { NewProjectDialog } from '@/components/projects/new-project';
@@ -408,7 +408,7 @@ export function Sidebar({
                   </MenuLink>
                   <MenuSeparator />
                   <MenuLink href="/research" onSelect={close}>
-                    <Wrench className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                    <CodeXml className="h-4 w-4 shrink-0" strokeWidth={1.75} />
                       Research &amp; Build
                   </MenuLink>
                 </>

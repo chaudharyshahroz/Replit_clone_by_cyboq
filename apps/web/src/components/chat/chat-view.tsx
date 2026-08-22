@@ -16,7 +16,7 @@ import {
   Sparkles,
   Square,
   Telescope,
-  Wrench,
+  CodeXml,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -54,7 +54,7 @@ interface ToolDefinition {
 const TOOLS: Record<Exclude<ToolKey, 'chat'>, ToolDefinition> = {
   build: {
     label: 'Build',
-    icon: Wrench,
+    icon: CodeXml,
     placeholder: 'Describe the app or site you want built…',
     hint: 'Reklu writes the code and runs it in an isolated sandbox.',
     suggestions: [

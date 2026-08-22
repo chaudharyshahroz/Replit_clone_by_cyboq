@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Columns2, Layers, MessageSquare, Plug, Sparkles, Wrench } from 'lucide-react';
+import { CodeXml, Columns2, Layers, MessageSquare, Plug, Sparkles } from 'lucide-react';
 
 export const metadata: Metadata = { title: 'Help' };
 
@@ -61,7 +61,7 @@ const WHERE: readonly {
     linkLabel: 'Open compare',
   },
   {
-    icon: Wrench,
+    icon: CodeXml,
     title: 'Research and Build',
     body: 'Research returns sources you can check. Build generates a project and runs it in an isolated sandbox — never on Reklu itself.',
     href: '/research',

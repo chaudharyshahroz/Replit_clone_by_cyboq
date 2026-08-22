@@ -74,6 +74,19 @@ export interface ExecResult {
   readonly truncated: boolean;
 }
 
+/**
+ * How to start the application being previewed.
+ *
+ * Passed in rather than assumed by the driver, because only the caller has read
+ * the generated package.json — and the frameworks disagree about flags in ways
+ * that make a wrong guess fail exactly like broken generated code.
+ */
+export interface PreviewCommand {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env: Readonly<Record<string, string>>;
+}
+
 export interface PreviewHandle {
   readonly url: string;
   readonly port: number;
@@ -91,7 +104,11 @@ export interface SandboxDriver {
   readFile(handle: SandboxHandle, path: string): Promise<string | undefined>;
   listFiles(handle: SandboxHandle): Promise<readonly string[]>;
   exec(handle: SandboxHandle, options: ExecOptions): Promise<ExecResult>;
-  startPreview(handle: SandboxHandle, port: number): Promise<PreviewHandle>;
+  startPreview(
+    handle: SandboxHandle,
+    port: number,
+    command?: PreviewCommand,
+  ): Promise<PreviewHandle>;
   destroy(handle: SandboxHandle): Promise<void>;
 }
 

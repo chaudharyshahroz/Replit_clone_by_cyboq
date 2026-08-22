@@ -15,6 +15,7 @@ import { and, eq, isNull, ne } from 'drizzle-orm';
 import { buildProjects, db, sandboxes } from '@reklu/database';
 import { sandbox, sandboxStatus, type PreviewHandle } from '@reklu/sandbox';
 import { errors, logger, newId } from '@reklu/shared';
+import { devCommandFor, parseManifest } from './dev-command';
 import { materialize, type BuildStageReporter } from './generate';
 import { loadTree } from './versions';
 
@@ -142,7 +143,19 @@ export async function startPreview(params: {
     }
 
     await report('starting_preview');
-    const handle = await sandbox().startPreview(materialized.handle, port);
+
+    /*
+     * The command comes from the generated package.json, not from a guess.
+     * Nothing started the application at all before this — the E2B driver
+     * returned a public URL for a port that had no server on it — and a wrong
+     * command fails in the same way, so the manifest decides.
+     */
+    const manifest = parseManifest(
+      files.find((file) => file.path === 'package.json')?.content,
+    );
+    const devCommand = devCommandFor(manifest, port);
+
+    const handle = await sandbox().startPreview(materialized.handle, port, devCommand);
     running.set(params.buildProjectId, handle);
 
     await db

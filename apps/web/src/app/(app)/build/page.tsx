@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { ShieldAlert, Wrench } from 'lucide-react';
+import { CodeXml, ShieldAlert } from 'lucide-react';
 import { buildProjects, db } from '@reklu/database';
 import { sandboxStatus } from '@reklu/sandbox';
 import { getAppContext } from '@/lib/auth-context';
@@ -39,7 +39,7 @@ export default async function BuildPage({
     <div className="mx-auto max-w-3xl px-6 py-14">
       <header>
         <h1 className="display flex items-center gap-2.5 text-3xl text-text">
-          <Wrench className="h-7 w-7 text-accent" strokeWidth={1.5} />
+          <CodeXml className="h-7 w-7 text-accent" strokeWidth={1.5} />
           Build
         </h1>
         <p className="mt-2 text-pretty text-text-secondary">

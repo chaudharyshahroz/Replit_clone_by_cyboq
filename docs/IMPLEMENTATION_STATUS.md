@@ -825,6 +825,21 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+21. **Build previews never started the application in production.** The local
+   sandbox driver spawned `npm run dev`; the E2B driver — the one production
+   uses — only asked E2B for the public hostname of a port and returned it,
+   with nothing ever listening on that port. Every preview was a URL that
+   resolved and then refused the connection, indistinguishable from generated
+   code that does not work. `devCommandFor` now derives the command from the
+   generated `package.json` (Next `--hostname`, Vite `--host`, Expo's web
+   subcommand) and both drivers start it, bound to 0.0.0.0 so E2B's proxy can
+   reach it. **Unverified against a live microVM** — the local `.env` has no
+   E2B key, so this is checked by unit tests and reasoning, not by a running
+   sandbox. `pnpm verify:e2b` with a real key is the missing step.
+22. **Generation gave every target the same advice.** A marketing site and an
+   iOS app received an identical prompt. `build-skills.ts` adds per-target
+   standards, appended to the system prompt so a request cannot argue them
+   away.
 20. **Cancelling needs two more scopes on the Whop key**: `membership:cancel`
    to cancel, `member:manage` to resume. Without them the button reports the
    refusal and names the scope; nothing is silently half-done.

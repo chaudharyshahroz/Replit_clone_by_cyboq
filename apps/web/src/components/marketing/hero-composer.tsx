@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ArrowUp, Telescope, Wand2, Wrench } from 'lucide-react';
+import { ArrowUp, CodeXml, Telescope, Wand2 } from 'lucide-react';
 
 /**
  * The landing page composer.
@@ -28,7 +28,7 @@ const SUGGESTIONS = [
     query: 'Compare the three biggest AI note-taking apps on pricing and privacy.',
   },
   {
-    icon: Wrench,
+    icon: CodeXml,
     label: 'Build',
     query: 'Build a booking page for a barber shop with opening hours and a contact form.',
   },

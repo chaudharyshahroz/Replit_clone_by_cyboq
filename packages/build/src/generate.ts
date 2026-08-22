@@ -14,6 +14,7 @@ import { getProvider, type ModelMessage, type RegisteredModel } from '@reklu/ai'
 import { sandbox, type SandboxHandle } from '@reklu/sandbox';
 import { logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
+import { skillGuidanceFor } from './build-skills';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
 
 export type BuildStage =
@@ -97,10 +98,18 @@ export async function generateFiles(
     { role: 'user', content: [{ type: 'text', text: context.join('\n') }] },
   ];
 
+  /*
+   * The standards for this kind of application, appended to the system prompt
+   * rather than the request. They are what the generator works to, not
+   * something the person asked for — putting them in the user turn would let a
+   * request talk them out of handling errors.
+   */
+  const system = `${GENERATION_PROMPT}\n${skillGuidanceFor(options.brief.target)}`;
+
   const result = await provider.generate({
     modelIdentifier: options.model.modelIdentifier,
     messages,
-    system: GENERATION_PROMPT,
+    system,
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
     ...(options.signal ? { signal: options.signal } : {}),
   });

@@ -20,6 +20,7 @@ import {
   SandboxError,
   type ExecOptions,
   type ExecResult,
+  type PreviewCommand,
   type PreviewHandle,
   type SandboxDriver,
   type SandboxHandle,
@@ -191,10 +192,26 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
       });
     },
 
-    async startPreview(handle: SandboxHandle, port: number): Promise<PreviewHandle> {
-      const child = spawn('npm', ['run', 'dev', '--', '--port', String(port)], {
+    async startPreview(
+      handle: SandboxHandle,
+      port: number,
+      command?: PreviewCommand,
+    ): Promise<PreviewHandle> {
+      /*
+       * The caller's command when it has read the manifest, and the old
+       * hard-coded guess when it has not. `npm run dev -- --port` is wrong for
+       * Expo and for anything whose dev script does not forward flags, which is
+       * why the decision moved out of here.
+       */
+      const spec = command ?? {
+        command: 'npm',
+        args: ['run', 'dev', '--', '--port', String(port)],
+        env: { PORT: String(port) },
+      };
+
+      const child = spawn(spec.command, [...spec.args], {
         cwd: handle.externalId,
-        env: childEnv({ PORT: String(port) }),
+        env: childEnv({ ...spec.env, PORT: String(port) }),
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'] as const,
         detached: true,

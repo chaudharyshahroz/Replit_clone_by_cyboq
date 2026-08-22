@@ -19,6 +19,7 @@ import {
   SandboxError,
   type ExecOptions,
   type ExecResult,
+  type PreviewCommand,
   type PreviewHandle,
   type SandboxDriver,
   type SandboxHandle,
@@ -240,8 +241,36 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
      * from an origin that is not Reklu's. A generated app therefore cannot read
      * Reklu's cookies or reach its same-origin APIs.
      */
-    async startPreview(handle: SandboxHandle, port: number): Promise<PreviewHandle> {
+    async startPreview(
+      handle: SandboxHandle,
+      port: number,
+      command?: PreviewCommand,
+    ): Promise<PreviewHandle> {
       const sandbox = await connect(handle);
+
+      /*
+       * Start the application. This was missing entirely: the driver asked E2B
+       * for the public hostname of a port and returned it, without anything
+       * ever listening on that port. Every preview in production was a URL that
+       * resolved and then refused the connection — Build looked like it worked
+       * until someone clicked through.
+       */
+      let running: Awaited<ReturnType<typeof sandbox.commands.run>> | undefined;
+      if (command) {
+        const line = [command.command, ...command.args].join(' ');
+        try {
+          running = await sandbox.commands.run(line, {
+            cwd: WORKDIR,
+            // The generated app's own configuration, never Reklu's environment.
+            envs: { ...isolatedEnv(command.env) } as Record<string, string>,
+            background: true,
+          });
+          logger.info('Started a preview server', { sandboxId: handle.id, port, line });
+        } catch (error) {
+          wrap('preview', error);
+        }
+      }
+
       let host: string;
       try {
         host = sandbox.getHost(port);
@@ -252,12 +281,17 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
       return {
         url: `https://${host}`,
         port,
-        // The port is only reachable while the microVM lives, and destroying the
-        // sandbox is what stops it. There is no separate port to close.
         stop: async () => {
-          logger.info('Preview released; sandbox remains until destroyed', {
-            sandboxId: handle.id,
-          });
+          /*
+           * Killed explicitly. The sandbox outliving a stopped preview is
+           * normal — it is reused for the next edit — so leaving the old dev
+           * server running would hold the port against its replacement.
+           */
+          try {
+            if (running && 'kill' in running) await running.kill();
+          } catch (error) {
+            logger.debug('Preview process already gone', { sandboxId: handle.id, error });
+          }
         },
       };
     },

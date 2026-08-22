@@ -5,3 +5,5 @@ export * from './generate';
 export * from './preview';
 export * from './source-map';
 export * from './export';
+export * from './dev-command';
+export * from './build-skills';
