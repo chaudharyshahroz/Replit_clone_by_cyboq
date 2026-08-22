@@ -310,8 +310,23 @@ export async function startPreviewAction(
     return { url: result.url, output: result.output };
   } catch (error) {
     if (isRekluError(error)) return { url: null, output: '', error: error.userMessage };
+
     logger.error('Preview failed to start', { error, buildId });
-    return { url: null, output: '', error: 'Preview could not start.' };
+
+    /*
+     * The actual reason, not a category.
+     *
+     * This returned "Preview could not start." and discarded the message, so a
+     * missing image, a refused daemon, an unreachable network and a permission
+     * problem were one indistinguishable sentence — leaving the only route to
+     * the cause a server log the person looking at the screen cannot read.
+     */
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      url: null,
+      output: '',
+      error: `Preview could not start. ${detail}`.slice(0, 500),
+    };
   }
 }
 

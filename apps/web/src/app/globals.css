@@ -430,3 +430,21 @@ body {
     opacity: 0;
   }
 }
+
+/*
+ * The collapsed sidebar.
+ *
+ * One rule rather than a conditional class on every label: the labels are text
+ * beside icons in a dozen places, and threading a boolean through each of them
+ * is a dozen chances to miss one and leave a word hanging in a 56px rail.
+ */
+@layer components {
+  aside[data-collapsed='true'] .sidebar-label {
+    display: none;
+  }
+
+  aside[data-collapsed='true'] a,
+  aside[data-collapsed='true'] button[class*='w-full'] {
+    justify-content: center;
+  }
+}

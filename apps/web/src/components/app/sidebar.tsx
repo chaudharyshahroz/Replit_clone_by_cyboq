@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import {
   Bot,
   Boxes,
@@ -15,6 +15,7 @@ import {
   Pin,
   PinOff,
   Plug,
+  PanelLeft,
   Plus,
   Settings,
   Sparkles,
@@ -329,36 +330,76 @@ export function Sidebar({
    */
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
+
+  /*
+   * Collapsed to icons, and remembered.
+   *
+   * Read after mount rather than during render: the server has no localStorage,
+   * and reading it while rendering would make the first client paint disagree
+   * with the server's HTML. Starting expanded and correcting on mount is the
+   * one order that never flashes the wrong width for a navigation.
+   */
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(window.localStorage.getItem('reklu.sidebar') === 'collapsed');
+  }, []);
+
+  const toggle = () => {
+    setCollapsed((previous) => {
+      const next = !previous;
+      window.localStorage.setItem('reklu.sidebar', next ? 'collapsed' : 'expanded');
+      return next;
+    });
+  };
   const isActive = (href: string): boolean =>
     pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-surface/40">
-      <div className="px-4 py-4">
-        <Link href="/chat" className="inline-block rounded-md" aria-label="Reklu">
-          <Wordmark />
-        </Link>
+    <aside
+      data-collapsed={collapsed ? 'true' : undefined}
+      className={`group/sidebar flex h-full shrink-0 flex-col border-r border-border bg-surface/40 transition-[width] duration-200 ${
+        collapsed ? 'w-[3.5rem]' : 'w-64'
+      }`}
+    >
+      <div className={`flex items-center py-4 ${collapsed ? 'justify-center px-2' : 'gap-2 px-4'}`}>
+        {collapsed ? null : (
+          <Link href="/chat" className="inline-block flex-1 rounded-md" aria-label="Reklu">
+            <Wordmark />
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+          title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+        >
+          <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+        </button>
       </div>
 
-      <nav aria-label="Workspace" className="px-3">
+      <nav aria-label="Workspace" className={collapsed ? 'px-2' : 'px-3'}>
         <ul className="space-y-0.5">
           <li>
             <Link href="/chat" className={navClass(pathname === '/chat')}>
               <MessageSquarePlus className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-              New chat
+              <span className="sidebar-label">New chat</span>
             </Link>
           </li>
 
           <li className="flex items-center gap-1">
             <Link href="/projects" className={`${navClass(isActive('/projects'))} flex-1`}>
               <Layers className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-              Projects
+              <span className="sidebar-label">Projects</span>
             </Link>
             <button
               type="button"
               onClick={() => setNewProjectOpen(true)}
               aria-label="New project"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+              className={`h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text ${
+                collapsed ? 'hidden' : 'flex'
+              }`}
             >
               <Plus className="h-4 w-4" strokeWidth={2} />
             </button>
@@ -367,7 +408,7 @@ export function Sidebar({
           <li>
             <Link href="/agents" className={navClass(isActive('/agents'))}>
               <Bot className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-              Agents
+              <span className="sidebar-label">Agents</span>
             </Link>
           </li>
 
@@ -384,7 +425,7 @@ export function Sidebar({
               trigger={
                 <>
                   <MoreHorizontal className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                  More
+                  <span className="sidebar-label">More</span>
                 </>
               }
             >
@@ -419,7 +460,17 @@ export function Sidebar({
       </nav>
 
       {/* ---- History ---- */}
-      <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      {/*
+        Removed rather than squeezed. Chat titles are the one thing in here with
+        nothing meaningful to show at 56px — an icon per conversation would be
+        indistinguishable rows, so the collapsed rail keeps navigation and drops
+        the list.
+      */}
+      <div
+        className={`mt-5 min-h-0 flex-1 overflow-y-auto pb-4 ${
+          collapsed ? 'hidden' : 'block px-3'
+        }`}
+      >
         <h2 className="px-2.5 pb-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
           Chats
         </h2>
@@ -444,17 +495,33 @@ export function Sidebar({
       </div>
 
       {/* ---- Account ---- */}
-      <div className="border-t border-border p-3">
+      <div className={`border-t border-border ${collapsed ? 'p-2' : 'p-3'}`}>
         <Menu
           label="Account"
           side="top"
           panelClassName="w-[13.5rem]"
-          triggerClassName={`${ROW} w-full text-left text-text-secondary hover:bg-surface-hover`}
+          triggerClassName={`${ROW} w-full text-left text-text-secondary hover:bg-surface-hover ${
+            collapsed ? 'justify-center' : ''
+          }`}
           trigger={
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-text">{userName}</span>
-              <span className="block truncate text-xs text-text-muted">{userEmail}</span>
-            </span>
+            collapsed ? (
+              /*
+                An initial, not a truncated name. At 56px a name is one or two
+                letters and an ellipsis, which reads as broken text rather than
+                as a person — so it becomes a deliberate mark instead.
+              */
+              <span
+                aria-hidden
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-medium text-accent"
+              >
+                {(userName || userEmail).trim().charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-text">{userName}</span>
+                <span className="block truncate text-xs text-text-muted">{userEmail}</span>
+              </span>
+            )
           }
         >
           {(close) => (
