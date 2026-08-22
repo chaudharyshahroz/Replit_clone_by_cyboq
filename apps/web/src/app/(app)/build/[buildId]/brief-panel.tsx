@@ -25,11 +25,14 @@ export function BriefPanel({
   const [open, setOpen] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [pending, startTransition] = useTransition();
+  const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
 
   const generate = (instruction: string) =>
     startTransition(async () => {
-      await generateBuildAction(buildId, instruction);
-      setPrompt('');
+      setOutcome(null);
+      const result = await generateBuildAction(buildId, instruction);
+      setOutcome({ ok: result.ok, message: result.message });
+      if (result.ok) setPrompt('');
     });
 
   const sections: readonly { label: string; values: readonly string[] }[] = [
@@ -121,6 +124,24 @@ export function BriefPanel({
                 Or change the brief first by describing what is wrong with it below.
               </p>
             </div>
+          ) : null}
+
+          {/*
+            Said out loud. Generation used to report nothing at all — a failed
+            provider call, a model that returned no files and a success all
+            looked the same from here, which is why the button read as dead.
+          */}
+          {outcome ? (
+            <p
+              role={outcome.ok ? 'status' : 'alert'}
+              className={`mt-3 rounded-lg border px-3 py-2 text-sm leading-relaxed ${
+                outcome.ok
+                  ? 'border-success/40 bg-success/10 text-text'
+                  : 'border-danger/40 bg-danger/10 text-text'
+              }`}
+            >
+              {outcome.message}
+            </p>
           ) : null}
 
           <form

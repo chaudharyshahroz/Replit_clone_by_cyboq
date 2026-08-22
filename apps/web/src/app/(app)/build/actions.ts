@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { and, eq } from 'drizzle-orm';
 import { loadRegistry, selectableModels, type RegisteredModel } from '@reklu/ai';
 import {
@@ -102,7 +103,49 @@ export async function createBuildAction(
 }
 
 /** Generate or revise the file tree, then checkpoint it. */
-export async function generateBuildAction(buildId: string, prompt: string): Promise<void> {
+export interface GenerateResult {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly fileCount: number;
+}
+
+/**
+ * Generate or revise the application.
+ *
+ * Returns what happened rather than nothing. This used to return `void` and
+ * never revalidate, so a click produced no files, no error and no change on
+ * screen whether it succeeded or failed — the button appeared to do nothing
+ * because, from the page's point of view, nothing did happen. A provider
+ * refusing the request and a model returning an empty response were equally
+ * silent.
+ */
+export async function generateBuildAction(
+  buildId: string,
+  prompt: string,
+): Promise<GenerateResult> {
+  try {
+    return await runGeneration(buildId, prompt);
+  } catch (error) {
+    const message = isRekluError(error)
+      ? error.userMessage
+      : 'Generation failed. Nothing was changed.';
+
+    logger.error('Build generation failed', {
+      buildId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    await db
+      .update(buildProjects)
+      .set({ status: 'failed', statusDetail: message.slice(0, 500) })
+      .where(eq(buildProjects.id, buildId));
+
+    revalidatePath(`/build/${buildId}`);
+    return { ok: false, message, fileCount: 0 };
+  }
+}
+
+async function runGeneration(buildId: string, prompt: string): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
 
   const [project] = await db
@@ -133,11 +176,22 @@ export async function generateBuildAction(buildId: string, prompt: string): Prom
   });
 
   if (generated.files.length === 0) {
+    /*
+     * Reported, not just recorded. This wrote a status nobody was looking at
+     * and returned, so the one case where the model plainly failed looked
+     * identical to success.
+     */
+    const detail = generated.rejected.length > 0
+      ? `The model produced no usable files. ${generated.rejected.length} were rejected as unsafe paths.`
+      : 'The model produced no files. Try describing the app in more detail.';
+
     await db
       .update(buildProjects)
-      .set({ status: 'failed', statusDetail: 'The model produced no files.' })
+      .set({ status: 'failed', statusDetail: detail })
       .where(eq(buildProjects.id, buildId));
-    return;
+
+    revalidatePath(`/build/${buildId}`);
+    return { ok: false, message: detail, fileCount: 0 };
   }
 
   // An edit must not delete files it did not mention.
@@ -165,6 +219,20 @@ export async function generateBuildAction(buildId: string, prompt: string): Prom
       codebaseAnalysis: { sourceMap: instrumented.sourceMap },
     })
     .where(eq(buildProjects.id, buildId));
+
+  /*
+   * Without this the files exist in the database and not on the screen. The
+   * generation worked, the page did not know, and the button read as broken.
+   */
+  revalidatePath(`/build/${buildId}`);
+
+  return {
+    ok: true,
+    message: `Generated ${instrumented.files.length} file${
+      instrumented.files.length === 1 ? '' : 's'
+    }.`,
+    fileCount: instrumented.files.length,
+  };
 }
 
 /** Start (or restart) the preview for a build. */
