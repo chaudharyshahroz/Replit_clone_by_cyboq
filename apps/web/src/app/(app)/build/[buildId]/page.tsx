@@ -62,38 +62,52 @@ export default async function BuildDetailPage({
   const latest = checkpoints[0];
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-border px-6 py-4">
-        <Link href="/build" className="rounded text-sm text-text-muted hover:text-text">
-          ← Build
-        </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-lg font-medium text-text">{project.name}</h1>
-          <span className="rounded-md border border-border-strong px-2 py-0.5 text-[0.6875rem] text-text-secondary">
-            {project.target.replace(/_/g, ' ')}
-          </span>
-          <span className="text-[0.6875rem] text-text-muted">{project.status}</span>
+    /*
+       One screen, two panes: what you are asking for on the left, what you are
+       getting on the right.
+
+       This was a vertical stack — header, brief, export, then the workspace —
+       so the preview began below the fold and the thing being built was never
+       visible at the same time as the conversation about it. Getting to the
+       application meant leaving the page that describes it.
+    */
+    <div className="flex h-full flex-col lg:flex-row">
+      <aside className="flex shrink-0 flex-col border-b border-border lg:h-full lg:w-[26rem] lg:border-b-0 lg:border-r xl:w-[30rem]">
+        <header className="shrink-0 border-b border-border px-5 py-4">
+          <Link href="/build" className="rounded text-sm text-text-muted hover:text-text">
+            ← Build
+          </Link>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-medium text-text">{project.name}</h1>
+            <span className="rounded-md border border-border-strong px-2 py-0.5 text-[0.6875rem] text-text-secondary">
+              {project.target.replace(/_/g, ' ')}
+            </span>
+            <span className="text-[0.6875rem] text-text-muted">{project.status}</span>
+          </div>
           {project.statusDetail ? (
-            <span className="text-[0.6875rem] text-warning">{project.statusDetail}</span>
+            <p className="mt-1 text-[0.6875rem] leading-relaxed text-warning">
+              {project.statusDetail}
+            </p>
           ) : null}
+        </header>
+
+        {/* The pane scrolls; the panes do not scroll each other. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {project.brief ? (
+            <BriefPanel
+              brief={project.brief as unknown as BuildBrief}
+              buildId={buildId}
+              hasFiles={files.length > 0}
+            />
+          ) : null}
+
+          <div className="mt-6 border-t border-border pt-5">
+            <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
+          </div>
         </div>
-      </header>
+      </aside>
 
-      {project.brief ? (
-        <div className="border-b border-border px-6 py-4">
-          <BriefPanel
-            brief={project.brief as unknown as BuildBrief}
-            buildId={buildId}
-            hasFiles={files.length > 0}
-          />
-        </div>
-      ) : null}
-
-      <div className="border-b border-border px-6 py-4">
-        <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
-      </div>
-
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1">
         <BuildWorkspace
           buildId={buildId}
           files={files}

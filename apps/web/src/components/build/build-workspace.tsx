@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
   AlertTriangle,
   ChevronRight,
@@ -182,7 +182,12 @@ export function BuildWorkspace({
     instruction: string,
   ) => Promise<{ error?: string }>;
 }) {
-  const [panel, setPanel] = useState<Panel>('code');
+  /*
+   * The preview is the point once there is something to preview. Landing on the
+   * code listing made the first thing anyone saw after a build a file tree,
+   * which is the developer's view of an app, not the app.
+   */
+  const [panel, setPanel] = useState<Panel>(files.length > 0 ? 'preview' : 'code');
   const [selectedPath, setSelectedPath] = useState<string | undefined>(files[0]?.path);
   const [livePreview, setLivePreview] = useState<string | null>(previewUrl);
   const [previewError, setPreviewError] = useState<string | undefined>();
@@ -208,6 +213,14 @@ export function BuildWorkspace({
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  /*
+   * Started without being asked. Generation ends with an application that is not
+   * running, and a person who has just watched it be written should not then
+   * have to find a button to see it. Guarded by a ref rather than by state so a
+   * re-render cannot start a second container.
+   */
+  const autoStarted = useRef(false);
+
   const start = useCallback(async () => {
     setStarting(true);
     setPreviewError(undefined);
@@ -222,6 +235,18 @@ export function BuildWorkspace({
   }, [buildId, onStartPreview]);
 
   const tree = useMemo(() => buildTree(files), [files]);
+  /*
+   * Start it once, when there is something to show and nothing running. The ref
+   * is what makes "once" true: state would let a re-render race and create a
+   * second container for the same build.
+   */
+  useEffect(() => {
+    if (autoStarted.current) return;
+    if (files.length === 0 || livePreview || starting) return;
+    autoStarted.current = true;
+    void start();
+  }, [files.length, livePreview, starting, start]);
+
   const changed = useMemo(
     () => new Set(checkpoints[0]?.changedPaths ?? []),
     [checkpoints],

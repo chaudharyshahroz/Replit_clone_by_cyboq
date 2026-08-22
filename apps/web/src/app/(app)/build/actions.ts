@@ -19,6 +19,9 @@ import {
   startPreview,
   stopPreview,
   type SourceMap,
+  needsDesignPass,
+  type BuildBrief,
+  runDesignPass,
 } from '@reklu/build';
 import { buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -159,7 +162,12 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
   }
 
   const model = await pickModel();
-  const brief = (project.brief as never) ?? fallbackBrief(prompt);
+  /*
+   * Typed, not `never`. The cast used to erase the brief entirely, so the
+   * target — which decides the stack, the standards and whether a design pass
+   * runs — could not be read from it at all.
+   */
+  const brief = (project.brief as BuildBrief | null) ?? fallbackBrief(prompt);
   const existing = await loadTree(buildId, workspace.workspaceId);
 
   const generated = await generateFiles({
@@ -195,7 +203,49 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
   }
 
   // An edit must not delete files it did not mention.
-  const merged = mergeTree(existing, generated.files);
+  let merged = mergeTree(existing, generated.files);
+
+  /*
+   * A second pass, for the things a single prompt does badly.
+   *
+   * Asked to implement features and art direct at once, a model spends its
+   * attention on the features and reaches for the layout it has seen most.
+   * Splitting the two is the difference between an application that renders and
+   * one with a point of view.
+   *
+   * First generation only. On an edit the design already exists and the person
+   * asked for a change, not a redesign — re-running this would quietly undo
+   * whatever they had settled on.
+   */
+  const firstGeneration = existing.length === 0;
+
+  if (firstGeneration && needsDesignPass(brief.target)) {
+    await db
+      .update(buildProjects)
+      .set({ status: 'generating', statusDetail: 'Designing' })
+      .where(eq(buildProjects.id, buildId));
+
+    try {
+      const designed = await runDesignPass({ brief, files: merged, model });
+      if (designed.files.length > 0) {
+        merged = mergeTree(merged, designed.files);
+        logger.info('Design pass revised files', {
+          buildId,
+          changed: designed.changed,
+        });
+      }
+    } catch (error) {
+      /*
+       * Never fatal. A working application that looks plain is worth more than
+       * no application, and the person asked for the app — the design pass is
+       * Reklu's idea, so its failure is Reklu's to absorb.
+       */
+      logger.warn('Design pass failed; keeping the generated design', {
+        buildId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   // Spec §35: bake the mapping in at generation time. Retrofitting it later
   // would mean regenerating every existing project.

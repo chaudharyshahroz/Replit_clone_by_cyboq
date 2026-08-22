@@ -21,6 +21,7 @@ export type BuildStage =
   | 'interpreting_product'
   | 'planning_architecture'
   | 'generating_files'
+  | 'designing'
   | 'installing_dependencies'
   | 'running_checks'
   | 'starting_preview';

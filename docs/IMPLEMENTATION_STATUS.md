@@ -844,6 +844,16 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    reach it. **Unverified against a live microVM** — the local `.env` has no
    E2B key, so this is checked by unit tests and reasoning, not by a running
    sandbox. `pnpm verify:e2b` with a real key is the missing step.
+24. **Generation had no visual pass.** One prompt asked a model to implement
+   features *and* art direct, so it spent its attention on the features and
+   reached for the layout it had seen most. `design-pass.ts` is a second call
+   with one job — keep the behaviour, raise the design — run on first
+   generation only, for targets where presentation is the product. Failure is
+   absorbed: a plain working app beats no app.
+25. **The build page was a vertical stack**, so the preview began below the
+   fold and the application was never visible beside the conversation about it.
+   Now two panes: brief and composer left, preview right. The preview also
+   starts on its own and is the default tab once files exist.
 22. **Generation gave every target the same advice.** A marketing site and an
    iOS app received an identical prompt. `build-skills.ts` adds per-target
    standards, appended to the system prompt so a request cannot argue them
