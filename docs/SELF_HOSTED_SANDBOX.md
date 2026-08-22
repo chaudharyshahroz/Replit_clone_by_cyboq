@@ -80,6 +80,21 @@ Persist the rules (`iptables-persistent`, or your provider's firewall).
 docker pull node:22-bookworm-slim
 ```
 
+### 4b. If Reklu runs on this same machine
+
+The `web` service already mounts `/var/run/docker.sock`; nothing else does,
+because the socket is root-equivalent and only `web` starts builds.
+
+The app runs as `node`, not root, so it also needs the host's docker group:
+
+```bash
+getent group docker | cut -d: -f3
+```
+
+Put that number in `DOCKER_GID`. Without it the mount is there and unreadable,
+which surfaces as "could not reach the sandbox host" rather than a permission
+error.
+
 ### 5. Let Reklu reach the daemon
 
 The Docker daemon is root-equivalent. **Never expose it to the internet.**

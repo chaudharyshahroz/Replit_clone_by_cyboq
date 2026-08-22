@@ -62,6 +62,22 @@ services:
       # Only meaningful when STORAGE_DRIVER=local. Named, so uploads survive a
       # redeploy — which is the condition STORAGE_LOCAL_SINGLE_NODE_ACK asserts.
       - reklu-storage:/app/.storage
+      # The Docker daemon, for SANDBOX_DRIVER=docker.
+      #
+      # Only `web` gets this: it is the only service that starts builds, and the
+      # socket is root-equivalent — anything holding it can start a container
+      # with the host's filesystem mounted. The worker has no reason to touch it
+      # and so does not.
+      #
+      # Harmless when SANDBOX_DRIVER is not `docker`: nothing opens it.
+      # Comment the line out to remove even the possibility.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The app runs as `node`, not root, so it cannot read a socket owned by
+    # root:docker without being in that group. The id differs per host — find
+    # it with `getent group docker | cut -d: -f3` — so it is configuration
+    # rather than a constant. 999 is the common default on Debian and Ubuntu.
+    group_add:
+      - "${DOCKER_GID:-999}"
     depends_on:
       migrate:
         condition: service_completed_successfully
