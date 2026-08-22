@@ -81,7 +81,11 @@ export default async function BuildDetailPage({
 
       {project.brief ? (
         <div className="border-b border-border px-6 py-4">
-          <BriefPanel brief={project.brief as unknown as BuildBrief} buildId={buildId} />
+          <BriefPanel
+            brief={project.brief as unknown as BuildBrief}
+            buildId={buildId}
+            hasFiles={files.length > 0}
+          />
         </div>
       ) : null}
 

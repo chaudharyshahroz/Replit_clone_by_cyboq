@@ -12,10 +12,25 @@ import { generateBuildAction } from '../actions';
  * user corrects them. It is visible before generation so the interpretation can
  * be checked, which is the point: a wrong brief produces a wrong application.
  */
-export function BriefPanel({ brief, buildId }: { brief: BuildBrief; buildId: string }) {
+export function BriefPanel({
+  brief,
+  buildId,
+  hasFiles,
+}: {
+  brief: BuildBrief;
+  buildId: string;
+  /** False before the first generation, when there is nothing to change yet. */
+  hasFiles: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [pending, startTransition] = useTransition();
+
+  const generate = (instruction: string) =>
+    startTransition(async () => {
+      await generateBuildAction(buildId, instruction);
+      setPrompt('');
+    });
 
   const sections: readonly { label: string; values: readonly string[] }[] = [
     { label: 'Users', values: brief.userRoles ?? [] },
@@ -80,15 +95,40 @@ export function BriefPanel({ brief, buildId }: { brief: BuildBrief; buildId: str
             </p>
           ) : null}
 
+          {/*
+            The first generation needs no further instruction.
+            
+            This screen used to offer only a text box whose placeholder said
+            "Build it" above a button disabled until something was typed — so
+            the one obvious next step was the one thing that could not be done.
+            The brief already says what to build; asking the person to describe
+            it a second time is asking them to repeat themselves to a form.
+          */}
+          {!hasFiles ? (
+            <div className="mt-4">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => generate('Build it, exactly as described in the brief.')}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-60"
+              >
+                {pending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
+                ) : null}
+                {pending ? 'Generating the app' : 'Generate this app'}
+              </button>
+              <p className="mt-2 text-xs text-text-muted">
+                Or change the brief first by describing what is wrong with it below.
+              </p>
+            </div>
+          ) : null}
+
           <form
             onSubmit={(event) => {
               event.preventDefault();
               const text = prompt.trim();
               if (!text) return;
-              startTransition(async () => {
-                await generateBuildAction(buildId, text);
-                setPrompt('');
-              });
+              generate(text);
             }}
             className="mt-4 flex items-end gap-2 rounded-lg border border-border-strong bg-surface p-2"
           >
@@ -100,7 +140,11 @@ export function BriefPanel({ brief, buildId }: { brief: BuildBrief; buildId: str
               rows={2}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Build it — or describe a change, e.g. 'add a settings screen'"
+              placeholder={
+                hasFiles
+                  ? "Describe a change, e.g. 'add a settings screen'"
+                  : "Or correct the brief, e.g. 'it should also take online orders'"
+              }
               className="flex-1 resize-none bg-transparent px-2 py-1 text-sm text-text placeholder:text-text-muted focus:outline-none"
             />
             <button
