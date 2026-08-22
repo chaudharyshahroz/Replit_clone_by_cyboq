@@ -114,8 +114,9 @@ holding `ca.pem`, `cert.pem` and `key.pem`.
 
 ### 6. Open the preview ports
 
-Previews are served from the sandbox host on ports 4300–4399. Open that range to
-the public, and nothing else.
+Previews are served from the sandbox host on ports **43000–43200** — the range
+`packages/build/src/preview.ts` actually uses. Open that range to the public,
+and nothing else.
 
 ### 7. Optional, and worth it: gVisor
 

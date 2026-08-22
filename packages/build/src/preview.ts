@@ -23,11 +23,69 @@ import { loadTree } from './versions';
 const PORT_RANGE_START = 43_000;
 const PORT_RANGE_END = 43_200;
 
+/** What a preview sandbox is allowed, and what destroying one needs to know. */
+const DEFAULT_PREVIEW_LIMITS = {
+  timeoutMs: 300_000,
+  memoryMb: 2_048,
+  diskMb: 1_024,
+  maxOutputBytes: 512_000,
+} as const;
+
 /** Previews are reaped after this long idle. */
 const PREVIEW_TTL_MS = 30 * 60 * 1000;
 
 /** In-process handles, so a preview can be stopped without re-spawning. */
 const running = new Map<string, PreviewHandle>();
+
+/**
+ * Destroy any sandbox this build left behind.
+ *
+ * Container drivers keep the sandbox alive after a preview stops — it is reused
+ * for the next edit — so nothing was ever reclaiming them. Every preview left a
+ * container running, holding its published port and its memory, and the next
+ * one collided with it. Called before creating a new sandbox rather than only
+ * on an explicit stop, because the case that leaks is the one where nobody
+ * pressed stop.
+ */
+async function destroyPreviousSandboxes(
+  buildProjectId: string,
+  workspaceId: string,
+): Promise<void> {
+  const stale = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId, port: sandboxes.port })
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.buildProjectId, buildProjectId),
+        eq(sandboxes.workspaceId, workspaceId),
+        ne(sandboxes.status, 'stopped'),
+      ),
+    );
+
+  const driver = sandbox();
+
+  for (const row of stale) {
+    if (row.externalId) {
+      await driver
+        .destroy({
+          id: row.id,
+          driver: driver.name,
+          externalId: row.externalId,
+          limits: DEFAULT_PREVIEW_LIMITS,
+          isIsolated: driver.isIsolated,
+        })
+        .catch((error: unknown) => {
+          // Already gone is the common case and is success.
+          logger.debug('Could not destroy a previous sandbox', { id: row.id, error });
+        });
+    }
+
+    await db
+      .update(sandboxes)
+      .set({ status: 'stopped', stoppedAt: new Date(), previewUrl: null })
+      .where(eq(sandboxes.id, row.id));
+  }
+}
 
 /** Find a free port by asking the OS, rather than guessing and colliding. */
 async function findFreePort(): Promise<number> {
@@ -98,6 +156,14 @@ export async function startPreview(params: {
   await stopPreview(params.buildProjectId, params.workspaceId);
 
   const report: BuildStageReporter = params.report ?? (() => undefined);
+  /*
+   * Reclaim first. Otherwise each preview leaves its predecessor running, and
+   * the second one fails to bind a port the first still holds — which surfaces
+   * as "preview could not start" on a build that was fine.
+   */
+  await destroyPreviousSandboxes(params.buildProjectId, params.workspaceId);
+  running.delete(params.buildProjectId);
+
   const sandboxId = newId('sandbox');
   const port = await findFreePort();
 
@@ -209,16 +275,12 @@ export async function stopPreview(
     running.delete(buildProjectId);
   }
 
-  await db
-    .update(sandboxes)
-    .set({ status: 'stopped', stoppedAt: new Date(), previewUrl: null })
-    .where(
-      and(
-        eq(sandboxes.buildProjectId, buildProjectId),
-        eq(sandboxes.workspaceId, workspaceId),
-        ne(sandboxes.status, 'stopped'),
-      ),
-    );
+  /*
+   * The sandbox goes too. On a container driver `stop()` releases nothing —
+   * the container outlives the preview by design — so stopping without this
+   * left a container running for every build ever previewed.
+   */
+  await destroyPreviousSandboxes(buildProjectId, workspaceId);
 }
 
 /** The live preview for a project, if one is running. */
