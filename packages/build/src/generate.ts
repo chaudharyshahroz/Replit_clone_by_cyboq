@@ -197,7 +197,14 @@ export async function materialize(params: {
   const install = await driver.exec(handle, {
     command: 'npm',
     args: ['install', '--no-audit', '--no-fund'],
-    timeoutMs: Math.min(limits.timeoutMs, 240_000),
+    /*
+     * Installing is the one step that is legitimately slow, and the cost of
+     * cutting it short is the whole build. A Next.js tree on a small
+     * self-hosted machine routinely passes four minutes on a cold npm cache —
+     * and a timeout there reads as "dependencies failed to install", which
+     * sends someone looking for a broken dependency that is fine.
+     */
+    timeoutMs: Math.max(limits.timeoutMs, 600_000),
   });
 
   if (install.exitCode !== 0) {
