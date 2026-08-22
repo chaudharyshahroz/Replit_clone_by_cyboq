@@ -120,6 +120,35 @@ async function get(apiKey: string, path: string, query: Record<string, string>):
 }
 
 /**
+ * The permissions Whop requires for each endpoint Reklu reads.
+ *
+ * Taken from the "Required permissions" line on each endpoint's page in Whop's
+ * API reference, not guessed. A company API key is created with none of these
+ * by default, which is why a perfectly valid key on a company with real paying
+ * customers reads back as though the company has none.
+ */
+export const REQUIRED_SCOPES: Readonly<Record<string, readonly string[]>> = {
+  '/memberships': ['member:basic:read', 'member:email:read'],
+  '/payments': [
+    'payment:basic:read',
+    'plan:basic:read',
+    'access_pass:basic:read',
+    'member:basic:read',
+    'member:email:read',
+    'member:phone:read',
+    'promo_code:basic:read',
+    'shipment:basic:read',
+  ],
+  '/checkout_configurations': [
+    'checkout_configuration:create',
+    'checkout_configuration:basic:read',
+    'plan:create',
+    'access_pass:create',
+    'access_pass:update',
+  ],
+};
+
+/**
  * What a refusal means, said as the thing to change.
  *
  * "403" on its own sends someone to read logs. "Your API key cannot read
@@ -135,7 +164,16 @@ function describeReadFailure(path: string, status: number, body: string): string
     return `Whop rejected the API key when reading ${path}. Check WHOP_API_KEY.${suffix}`;
   }
   if (status === 403) {
-    return `The API key is not allowed to read ${path}. In Whop, give the key permission to read memberships and payments, then try again.${suffix}`;
+    /*
+     * The scopes are named because Whop's own message names only the first one
+     * missing — granting that alone produces the same error again on the next
+     * scope, one round trip at a time.
+     */
+    const scopes = REQUIRED_SCOPES[path];
+    const needed = scopes
+      ? ` This endpoint needs: ${scopes.join(', ')}. Add them all in Whop under Developer → API keys → your key → Permissions.`
+      : '';
+    return `The API key is not authorized to read ${path}.${needed}${suffix}`;
   }
   if (status === 404) {
     return `Whop has no ${path} for this company. Check WHOP_COMPANY_ID is the company the plans were bought from.${suffix}`;

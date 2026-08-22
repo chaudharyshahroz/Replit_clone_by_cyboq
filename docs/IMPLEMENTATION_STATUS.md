@@ -824,6 +824,15 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+19. **CAUSE FOUND: the Whop company API key had no read scopes.** Whop:
+   `Company API key is not authorized for the member:basic:read scope`. A
+   company API key is created with none of them, so checkout worked (it had
+   create scopes) while every read came back 403 — and the code turned that
+   403 into "this company has no memberships". Four rounds of code changes
+   chased a configuration problem. `REQUIRED_SCOPES` in `whop-api.ts` lists
+   what each endpoint needs, the 403 message names them all rather than the one
+   Whop reports, and `/admin/billing/diagnostics` shows them without needing to
+   hit the error first.
 17. **"Whop has no completed purchase for this workspace" was a lie the code
    told.** `get()` returned `undefined` for both "Whop refused" and "Whop
    returned nothing", so a failed API read was rendered to a paying customer as

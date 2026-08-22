@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, CircleAlert, CircleDashed } from 'lucide-react';
-import { billingDiagnostics } from '@reklu/billing';
+import { REQUIRED_SCOPES, billingDiagnostics } from '@reklu/billing';
 
 export const metadata: Metadata = { title: 'Admin · Billing diagnostics' };
 export const dynamic = 'force-dynamic';
@@ -205,6 +205,35 @@ export default async function BillingDiagnosticsPage() {
               ))}
           </ul>
         ) : null}
+      </section>
+
+      {/* ---- 5. What the key must be allowed to do ----------------------- */}
+      <section>
+        <h3 className="text-sm font-medium text-text">5. API key permissions</h3>
+        <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-text-secondary">
+          A Whop company API key is created with none of these. Without them Whop
+          answers every read with 403, and a company with real paying customers reads
+          back as having no memberships at all — which is what caused this page to
+          exist. Grant them in Whop under Developer → API keys → your key →
+          Permissions.
+        </p>
+        <div className="mt-3 space-y-3">
+          {Object.entries(REQUIRED_SCOPES).map(([path, scopes]) => (
+            <div key={path}>
+              <p className="font-mono text-xs text-text-secondary">{path}</p>
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {scopes.map((scope) => (
+                  <li
+                    key={scope}
+                    className="rounded-md border border-border-strong px-2 py-0.5 font-mono text-xs text-text-muted"
+                  >
+                    {scope}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </section>
 
       <p className="text-xs text-text-muted">

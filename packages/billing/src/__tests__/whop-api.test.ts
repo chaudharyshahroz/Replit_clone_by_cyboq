@@ -8,7 +8,7 @@
  * one, this is where it shows up.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { grantsAccess, listMemberships, listPayments } from '../whop-api';
+import { REQUIRED_SCOPES, grantsAccess, listMemberships, listPayments } from '../whop-api';
 
 const originalFetch = globalThis.fetch;
 
@@ -209,13 +209,36 @@ describe('reporting why a read failed', () => {
     expect(failure).toBeUndefined();
   });
 
-  /* The most likely cause of a company with paying customers reading as empty. */
-  it('names the missing permission on 403', async () => {
-    respond({ error: 'forbidden' }, 403);
+  /*
+   * The cause of this bug, found after four rounds: a company API key is
+   * created with none of these scopes, so a company with real paying customers
+   * reads back as having none at all.
+   */
+  it('names every scope the endpoint needs on 403', async () => {
+    respond(
+      { error: { type: 'forbidden', message: 'Company API key is not authorized for the member:basic:read scope.' } },
+      403,
+    );
+
     const { failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+
     expect(failure?.status).toBe(403);
-    expect(failure?.detail).toContain('not allowed to read');
-    expect(failure?.detail).toContain('permission');
+    for (const scope of REQUIRED_SCOPES['/memberships']!) {
+      expect(failure?.detail).toContain(scope);
+    }
+    expect(failure?.detail).toContain('API keys');
+  });
+
+  /*
+   * All of them, not just the one Whop named. Whop reports only the first scope
+   * it hit, so granting that alone produces the same error on the next one —
+   * a round trip per scope, through a live payment each time.
+   */
+  it('names more than the single scope Whop reported', async () => {
+    respond({ error: 'not authorized for the member:basic:read scope' }, 403);
+    const { failure } = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    expect(failure?.detail).toContain('payment:basic:read');
+    expect(failure?.detail).toContain('plan:basic:read');
   });
 
   it('names the API key on 401', async () => {
