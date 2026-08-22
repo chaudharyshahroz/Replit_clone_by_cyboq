@@ -251,6 +251,51 @@ export const checkoutSessions = pgTable(
   (table) => [index('checkout_sessions_workspace_idx').on(table.workspaceId, table.createdAt)],
 );
 
+/**
+ * Every webhook delivery Whop has made, and what Reklu did with it.
+ *
+ * This exists because the same bug was diagnosed twice from guesses. A customer
+ * paid and stayed on Free, and there was no way to tell the two possible causes
+ * apart: the delivery never arrived, or it arrived and named nobody. Those need
+ * opposite fixes — one is a URL in Whop's dashboard, the other is a bug in this
+ * code — and picking wrong costs another round trip through a real payment.
+ *
+ * Written for *every* delivery, including ones rejected for a bad signature and
+ * ones deliberately ignored, because "nothing arrived" and "something arrived
+ * and was refused" look identical from the outside and are the whole question.
+ */
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: primaryId('webhookDelivery'),
+    /** Whop's `webhook-id` header. Unique, so a retry updates rather than piles up. */
+    externalId: text('external_id'),
+    provider: text('provider').notNull().default('whop'),
+    eventType: text('event_type'),
+
+    /** verified | rejected | unhandled | applied | ignored | failed */
+    outcome: text('outcome').notNull(),
+    detail: text('detail'),
+
+    workspaceId: text('workspace_id'),
+    /**
+     * The payload's top-level and metadata key names — not its values.
+     *
+     * The question every time has been "what did Whop actually send?", and the
+     * answer was never in the logs. Key names answer it without storing a
+     * customer's email or payment details in a table built for debugging.
+     */
+    payloadKeys: jsonb('payload_keys').$type<readonly string[]>().notNull().default([]),
+    metadataKeys: jsonb('metadata_keys').$type<readonly string[]>().notNull().default([]),
+
+    ...timestamps,
+  },
+  (table) => [
+    index('webhook_deliveries_created_idx').on(table.createdAt),
+    uniqueIndex('webhook_deliveries_external_idx').on(table.externalId),
+  ],
+);
+
 export const usageLedger = pgTable(
   'usage_ledger',
   {

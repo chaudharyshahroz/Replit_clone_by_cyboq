@@ -824,6 +824,19 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+15. **The paid-customer bug survived two fixes because it was never diagnosed.**
+   Both attempts reasoned from the symptom to a plausible cause and fixed that.
+   There are four causes — Whop not calling the endpoint, a signature that does
+   not verify, a payload naming no workspace, and a plan with no Whop id — and
+   nothing in the product could tell them apart. Every webhook delivery is now
+   recorded in `webhook_deliveries` (including rejected ones, since "nothing
+   arrived" and "arrived and was refused" are the whole question), and
+   `/admin/billing/diagnostics` reads that log beside Whop's own records and
+   names which of the four it is. Diagnose there before changing anything.
+16. **The payment form lives in an iframe inside the plan dialog**, so Whop's
+   redirect reaching the top window is not something Reklu controls. When it
+   does not, no `?status=success` ever loads and reconciliation never runs. The
+   dialog now polls while the form is open, bounded to two minutes.
 13. **A paid customer stayed on Free, and the cause is still not confirmed.**
    The plan and the payment are two writes from one webhook and both were
    missing, which means the delivery either never arrived or named no

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { billingConfig } from '@reklu/billing';
+import Link from 'next/link';
 import { listModels, listPlans, revenueSummary, spendBreakdown } from '@/lib/admin-data';
 import { PlanEditor } from '@/components/admin/plan-editor';
 import { NewPlan } from '@/components/admin/new-plan';
@@ -22,7 +23,12 @@ export default async function AdminBillingPage() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-sm font-medium text-text">Payment provider</h2>
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-sm font-medium text-text">Payment provider</h2>
+          <Link href="/admin/billing/diagnostics" className="text-xs text-accent hover:underline">
+            Why a payment did not become a plan
+          </Link>
+        </div>
         <p
           className={`mt-2 rounded-lg border px-3 py-2 text-xs leading-relaxed ${
             config.available

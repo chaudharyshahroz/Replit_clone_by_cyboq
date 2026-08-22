@@ -50,6 +50,13 @@
       "when": 1787339492612,
       "tag": "0006_gigantic_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787378534048,
+      "tag": "0007_mighty_stellaris",
+      "breakpoints": true
     }
   ]
 }

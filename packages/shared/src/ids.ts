@@ -65,6 +65,7 @@ export const ID_PREFIXES = {
   activity: 'act',
   auditLog: 'aud',
   featureFlag: 'flg',
+  webhookDelivery: 'whd',
 } as const;
 
 export type IdPrefixKey = keyof typeof ID_PREFIXES;

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
-import { startCheckoutAction } from '@/app/(app)/settings/billing/actions';
+import { reconcileBillingAction, startCheckoutAction } from '@/app/(app)/settings/billing/actions';
 import { WhopCheckout } from './whop-checkout';
 
 export interface PickablePlan {
@@ -104,12 +105,61 @@ export function PlanPicker({
   const [checkout, setCheckout] = useState<OpenCheckout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, startCheckout] = useTransition();
+  const [applied, setApplied] = useState(false);
+  const router = useRouter();
+
+  /*
+   * Watch for the purchase completing, rather than waiting to be redirected.
+   *
+   * The payment form runs in an iframe inside this dialog. Whop redirects when
+   * it finishes, but that redirect landing in the top window is not something
+   * Reklu controls — and if it does not, nothing on this side ever learns the
+   * payment happened. Polling while the form is open closes that gap without
+   * depending on either the redirect or the webhook.
+   *
+   * Bounded, and it stops the moment the plan lands: this is a fixed short
+   * window while someone is actively paying, not a background poller.
+   */
+  useEffect(() => {
+    if (!checkout || applied) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const timer = setInterval(async () => {
+      attempts += 1;
+      if (attempts > 30) {
+        clearInterval(timer);
+        return;
+      }
+
+      const result = await reconcileBillingAction();
+      if (cancelled) return;
+
+      if (result.applied) {
+        clearInterval(timer);
+        setApplied(true);
+        router.refresh();
+      }
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [checkout, applied, router]);
 
   if (!open) return null;
 
   const close = () => {
     setCheckout(null);
     setError(null);
+    /*
+     * Refresh on the way out when a plan was applied, so the page behind this
+     * dialog is not still showing the old one.
+     */
+    if (applied) router.refresh();
+    setApplied(false);
     onClose();
   };
 
@@ -190,7 +240,20 @@ export function PlanPicker({
           </button>
         </div>
 
-        {checkout ? (
+        {checkout && applied ? (
+          <div className="mt-6 rounded-xl border border-success/40 bg-success/10 p-6 text-center">
+            <p className="text-sm text-text">
+              Payment received — you are on {checkout.planName}.
+            </p>
+            <button
+              type="button"
+              onClick={close}
+              className="mt-4 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
+            >
+              Done
+            </button>
+          </div>
+        ) : checkout ? (
           <div className="mt-6">
             <WhopCheckout
               planId={checkout.whopPlanId}

@@ -6,8 +6,8 @@
  * prices rather than written out, because a hand-written feature list is the
  * half nobody updates when a limit changes.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanPicker, type PickablePlan } from '@/components/billing/plan-picker';
 
@@ -17,12 +17,23 @@ import { PlanPicker, type PickablePlan } from '@/components/billing/plan-picker'
  * the button sends, and the embed rendered from what comes back.
  */
 const startCheckoutAction = vi.hoisted(() => vi.fn());
-vi.mock('@/app/(app)/settings/billing/actions', () => ({ startCheckoutAction }));
+const reconcileBillingAction = vi.hoisted(() => vi.fn());
+vi.mock('@/app/(app)/settings/billing/actions', () => ({
+  startCheckoutAction,
+  reconcileBillingAction,
+}));
+
+/* The picker refreshes the page behind it once a plan lands. */
+const refresh = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 
 /* next/script does nothing useful in jsdom and warns if left alone. */
 vi.mock('next/script', () => ({ default: () => null }));
 
 beforeEach(() => {
+  refresh.mockReset();
+  reconcileBillingAction.mockReset();
+  reconcileBillingAction.mockResolvedValue({ message: 'nothing yet', applied: false });
   startCheckoutAction.mockReset();
   startCheckoutAction.mockResolvedValue({
     sessionId: 'ch_test',
@@ -202,5 +213,98 @@ describe('checkout', () => {
 
     expect(screen.getByRole('alert')).toBeDefined();
     expect(container.querySelector('[data-whop-checkout-session]')).toBeNull();
+  });
+});
+
+/**
+ * Noticing that the payment went through.
+ *
+ * The form runs in an iframe inside this dialog, and Whop's redirect landing in
+ * the top window is not something Reklu controls. When it does not, nothing on
+ * this side ever learns the payment happened — which is the shape of the bug a
+ * customer hit three times: paid, charged, still on Free.
+ */
+describe('noticing the purchase complete', () => {
+  /*
+   * Fake timers have to be installed before the dialog creates its interval,
+   * so these use fireEvent rather than userEvent — userEvent drives its own
+   * clock and deadlocks against a faked one.
+   */
+  const withFakeClock = () => {
+    vi.useFakeTimers();
+  };
+
+  const tick = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  /** Open the payment form, the way a customer does. */
+  const choosePro = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Choose Pro/ }));
+    });
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not ask before the payment form is open', async () => {
+    withFakeClock();
+    show([pro]);
+
+    await tick(20_000);
+
+    expect(reconcileBillingAction).not.toHaveBeenCalled();
+  });
+
+  it('asks repeatedly while the customer is paying', async () => {
+    withFakeClock();
+    show([pro]);
+    await choosePro();
+
+    await tick(13_000);
+
+    expect(reconcileBillingAction.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('confirms and refreshes once the plan lands', async () => {
+    withFakeClock();
+    show([pro]);
+    await choosePro();
+
+    reconcileBillingAction.mockResolvedValue({ message: 'done', applied: true });
+    await tick(5_000);
+
+    expect(screen.getByText(/Payment received/)).toBeDefined();
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  /* Once it has landed there is nothing left to ask about. */
+  it('stops asking once the plan has landed', async () => {
+    withFakeClock();
+    show([pro]);
+    await choosePro();
+
+    reconcileBillingAction.mockResolvedValue({ message: 'done', applied: true });
+    await tick(5_000);
+    const afterApplied = reconcileBillingAction.mock.calls.length;
+
+    await tick(30_000);
+
+    expect(reconcileBillingAction.mock.calls.length).toBe(afterApplied);
+  });
+
+  /* An unbounded poller left running in a dialog is a leak, not a feature. */
+  it('gives up rather than polling forever', async () => {
+    withFakeClock();
+    show([pro]);
+    await choosePro();
+
+    await tick(10 * 60 * 1000);
+
+    expect(reconcileBillingAction.mock.calls.length).toBeLessThanOrEqual(30);
   });
 });

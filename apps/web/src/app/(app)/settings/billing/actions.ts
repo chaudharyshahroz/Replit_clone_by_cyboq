@@ -124,7 +124,10 @@ export async function startCheckoutAction(
  * app look again — rather than being told to wait, which is what Reklu used to
  * say and could not back up.
  */
-export async function reconcileBillingAction(): Promise<{ readonly message: string }> {
+export async function reconcileBillingAction(): Promise<{
+  readonly message: string;
+  readonly applied: boolean;
+}> {
   const { workspace } = await getAppContext();
   const result = await reconcileWorkspaceBilling(workspace.workspaceId);
 
@@ -132,21 +135,23 @@ export async function reconcileBillingAction(): Promise<{ readonly message: stri
     case 'applied':
       revalidatePath('/settings/billing');
       revalidatePath('/settings/usage');
-      return { message: 'Your plan is up to date.' };
+      return { message: 'Your plan is up to date.', applied: true };
     case 'nothing_pending':
-      return { message: 'No recent purchase is waiting to be applied.' };
+      return { message: 'No recent purchase is waiting to be applied.', applied: false };
     case 'no_membership_yet':
       return {
         message:
           result.detail ??
           'Whop has no completed purchase for this workspace yet. If you have just paid, try again in a moment.',
+        applied: false,
       };
     case 'unknown_plan':
       return {
         message:
           'Your purchase was found, but it does not match a plan Reklu currently sells. Please contact support.',
+        applied: false,
       };
     case 'not_configured':
-      return { message: result.detail ?? 'Payments are not configured.' };
+      return { message: result.detail ?? 'Payments are not configured.', applied: false };
   }
 }
