@@ -164,6 +164,13 @@ export async function materialize(params: {
   readonly report: BuildStageReporter;
   readonly limits?: { timeoutMs: number; memoryMb: number; diskMb: number; maxOutputBytes: number };
   readonly runChecks?: boolean;
+  /**
+   * The port this sandbox will serve a preview on, when it is going to.
+   *
+   * Passed at creation because container runtimes fix published ports then and
+   * cannot add one to a running container.
+   */
+  readonly publishPort?: number;
 }): Promise<MaterializeResult> {
   const driver = sandbox();
   const limits = params.limits ?? {
@@ -173,7 +180,11 @@ export async function materialize(params: {
     maxOutputBytes: 512_000,
   };
 
-  const handle = await driver.create(params.sandboxId, limits);
+  const handle = await driver.create(
+    params.sandboxId,
+    limits,
+    params.publishPort === undefined ? undefined : { publishPort: params.publishPort },
+  );
   await driver.writeFiles(handle, params.files);
 
   const hasPackageJson = params.files.some((file) => file.path === 'package.json');

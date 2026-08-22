@@ -81,6 +81,18 @@ export interface ExecResult {
  * the generated package.json — and the frameworks disagree about flags in ways
  * that make a wrong guess fail exactly like broken generated code.
  */
+/** Anything the driver needs to know at creation time. */
+export interface CreateOptions {
+  /**
+   * The port a preview will later listen on.
+   *
+   * Needed up front by container runtimes: a published port is fixed when the
+   * container is created and cannot be added to a running one. Without it the
+   * preview server starts, listens, and is reachable by nothing.
+   */
+  readonly publishPort?: number;
+}
+
 export interface PreviewCommand {
   readonly command: string;
   readonly args: readonly string[];
@@ -99,7 +111,11 @@ export interface SandboxDriver {
   /** False when this deployment lacks what the driver needs. */
   isConfigured(): boolean;
 
-  create(sandboxId: string, limits: SandboxLimits): Promise<SandboxHandle>;
+  create(
+    sandboxId: string,
+    limits: SandboxLimits,
+    options?: CreateOptions,
+  ): Promise<SandboxHandle>;
   writeFiles(handle: SandboxHandle, files: readonly WriteFile[]): Promise<void>;
   readFile(handle: SandboxHandle, path: string): Promise<string | undefined>;
   listFiles(handle: SandboxHandle): Promise<readonly string[]>;

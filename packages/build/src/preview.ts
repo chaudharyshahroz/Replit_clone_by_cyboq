@@ -123,6 +123,9 @@ export async function startPreview(params: {
       files,
       report,
       runChecks: false,
+      // Fixed at creation for container runtimes; ignored by drivers that do
+      // not need it.
+      publishPort: port,
     });
 
     if (!materialized.installed) {

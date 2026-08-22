@@ -825,6 +825,14 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+23. **Self-hosted sandbox (`SANDBOX_DRIVER=docker`) is implemented but has never
+   talked to a real Docker daemon.** The container hardening, tar packing and
+   stream demultiplexing are unit-tested, and the tar output was checked against
+   the system `tar`. Creating a container, installing packages and serving a
+   preview is unverified — there is no daemon on this machine. Setup and the
+   security trade are in `docs/SELF_HOSTED_SANDBOX.md`; a container shares the
+   host kernel, which is why the daemon belongs on a separate machine and why
+   Reklu refuses a local one without `SANDBOX_DOCKER_SAME_HOST_ACK`.
 21. **Build previews never started the application in production.** The local
    sandbox driver spawned `npm run dev`; the E2B driver — the one production
    uses — only asked E2B for the public hostname of a port and returned it,

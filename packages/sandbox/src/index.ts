@@ -2,12 +2,14 @@ import { resolve } from 'node:path';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { createLocalSandboxDriver } from './drivers/local';
 import { e2bDriverFromEnv } from './drivers/e2b';
+import { dockerDriverFromEnv } from './drivers/docker';
 import { SandboxError, type SandboxDriver } from './types';
 
 export * from './types';
 export * from './paths';
 export { createLocalSandboxDriver } from './drivers/local';
 export { createE2bSandboxDriver, e2bDriverFromEnv } from './drivers/e2b';
+export { createDockerSandboxDriver, dockerDriverFromEnv } from './drivers/docker';
 
 let cached: SandboxDriver | undefined;
 
@@ -52,15 +54,31 @@ export function sandbox(): SandboxDriver {
       return cached;
     }
 
-    case 'docker':
-      throw new SandboxError(
-        'NOT_CONFIGURED',
-        'SANDBOX_DRIVER=docker is reserved but not implemented yet. ' +
-          'Reklu will not fall back to the non-isolated local driver, because that ' +
-          'would run untrusted generated code on the application server. ' +
-          'Use SANDBOX_DRIVER=e2b, which is implemented. ' +
-          'See docs/BUILD_ARCHITECTURE.md.',
-      );
+    case 'docker': {
+      cached = dockerDriverFromEnv();
+      const sameHost =
+        env.SANDBOX_DOCKER_HOST.startsWith('unix://') ||
+        env.SANDBOX_DOCKER_HOST.includes('localhost') ||
+        env.SANDBOX_DOCKER_HOST.includes('127.0.0.1');
+
+      /*
+       * Warned every start, not once at setup. Running generated code beside
+       * the application is a standing risk, and a decision made months ago in
+       * an environment file should keep announcing itself.
+       */
+      if (sameHost) {
+        logger.warn(
+          'The sandbox daemon is on this machine, so generated code runs beside Reklu. ' +
+            'A container escape would reach DATABASE_URL and ENCRYPTION_KEY. ' +
+            'Point SANDBOX_DOCKER_HOST at a separate machine when you can.',
+        );
+      } else {
+        logger.info('Using the Docker sandbox driver on a separate host.', {
+          runtime: env.SANDBOX_DOCKER_RUNTIME ?? 'default',
+        });
+      }
+      return cached;
+    }
 
     default:
       throw new SandboxError('NOT_CONFIGURED', `Unknown sandbox driver: ${env.SANDBOX_DRIVER}`);
@@ -110,6 +128,34 @@ export function sandboxStatus(): {
       detail: configured
         ? 'Generated code runs in an isolated E2B microVM, separate from Reklu.'
         : 'SANDBOX_DRIVER=e2b requires E2B_API_KEY. Set it to enable builds.',
+    };
+  }
+
+  if (env.SANDBOX_DRIVER === 'docker') {
+    const configured = Boolean(env.SANDBOX_PREVIEW_HOST);
+    const sameHost =
+      env.SANDBOX_DOCKER_HOST.startsWith('unix://') ||
+      env.SANDBOX_DOCKER_HOST.includes('localhost') ||
+      env.SANDBOX_DOCKER_HOST.includes('127.0.0.1');
+
+    /*
+     * A container is a weaker boundary than a microVM, and saying so is the
+     * point. `isolated` stays true because it is a real boundary — but the
+     * detail says what kind, so nobody reads "isolated" as "equivalent".
+     */
+    return {
+      driver: 'docker',
+      available: configured,
+      isolated: true,
+      detail: configured
+        ? sameHost
+          ? 'Generated code runs in a hardened container on this machine. A container is a ' +
+            'weaker boundary than a virtual machine; move the daemon to a separate host when you can.'
+          : `Generated code runs in a hardened container on a separate host${
+              env.SANDBOX_DOCKER_RUNTIME ? ` under ${env.SANDBOX_DOCKER_RUNTIME}` : ''
+            }.`
+        : 'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_HOST — the public hostname or IP ' +
+          'of the sandbox machine, which is where preview URLs point.',
     };
   }
 

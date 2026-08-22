@@ -227,6 +227,51 @@ const serverSchema = z.object({
   SANDBOX_DRIVER: enumWithDefault(['local', 'e2b', 'docker'], 'local'),
   SANDBOX_ROOT: z.string().trim().default('./.sandbox'),
   E2B_API_KEY: optionalString,
+
+  /*
+   * Self-hosted sandbox, for running builds on your own machine instead of a
+   * managed service.
+   *
+   * `SANDBOX_DOCKER_HOST` is where the Docker daemon lives. Pointing it at
+   * another machine is the whole point: generated code is arbitrary code, and a
+   * container escape on the box running Reklu reaches the database URL, the
+   * encryption key and every provider credential. A remote daemon costs one
+   * small VM and turns a total compromise into a contained one.
+   */
+  SANDBOX_DOCKER_HOST: z.string().trim().default('unix:///var/run/docker.sock'),
+  /** The image builds run in. Must already exist on the sandbox host. */
+  SANDBOX_DOCKER_IMAGE: z.string().trim().default('node:22-bookworm-slim'),
+  /**
+   * An alternative container runtime, when one is installed.
+   *
+   * `runsc` (gVisor) intercepts syscalls in userspace and is dramatically
+   * stronger than the default runtime for untrusted code. Left empty because it
+   * has to be installed on the host first; setting it without installing it
+   * makes every build fail.
+   */
+  SANDBOX_DOCKER_RUNTIME: optionalString,
+  /**
+   * The Docker network builds attach to.
+   *
+   * Named rather than defaulted to `bridge`, so it can be one whose firewall
+   * rules forbid reaching private address ranges. Generated code needs the
+   * public internet to install packages; it never needs Reklu's database.
+   */
+  SANDBOX_DOCKER_NETWORK: z.string().trim().default('reklu-sandbox'),
+  /**
+   * Where previews are reachable from a browser — the sandbox host's public
+   * name. Without it a preview URL would point at a hostname only the server
+   * can resolve.
+   */
+  SANDBOX_PREVIEW_HOST: optionalString,
+  /**
+   * Acknowledgement that the sandbox daemon shares a machine with Reklu.
+   *
+   * Required, rather than assumed, because the same-host case is the one that
+   * turns a container escape into a full compromise. Nobody should arrive there
+   * by leaving a variable unset.
+   */
+  SANDBOX_DOCKER_SAME_HOST_ACK: booleanish(false),
   SANDBOX_TIMEOUT_MS: intWithDefault(600_000),
   SANDBOX_MAX_MEMORY_MB: intWithDefault(2048),
   SANDBOX_MAX_DISK_MB: intWithDefault(1024),
@@ -296,6 +341,40 @@ function crossFieldProblems(env: ServerEnv): string[] {
 
   if (env.SANDBOX_DRIVER === 'e2b' && !env.E2B_API_KEY) {
     problems.push('SANDBOX_DRIVER=e2b requires E2B_API_KEY.');
+  }
+
+  if (env.SANDBOX_DRIVER === 'docker') {
+    /*
+     * A preview served from a hostname only the server can resolve is a link
+     * nobody can open. Caught here rather than at preview time, where it would
+     * surface as a broken build.
+     */
+    if (!env.SANDBOX_PREVIEW_HOST) {
+      problems.push(
+        'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_HOST — the public hostname ' +
+          'or IP of the sandbox machine, which is where preview URLs point.',
+      );
+    }
+
+    /*
+     * The local socket means generated code runs on this machine. That is
+     * allowed, because a single small deployment may have nowhere else to run
+     * it, but never by accident.
+     */
+    const localDaemon =
+      env.SANDBOX_DOCKER_HOST.startsWith('unix://') ||
+      env.SANDBOX_DOCKER_HOST.includes('localhost') ||
+      env.SANDBOX_DOCKER_HOST.includes('127.0.0.1');
+
+    if (localDaemon && !env.SANDBOX_DOCKER_SAME_HOST_ACK) {
+      problems.push(
+        'SANDBOX_DOCKER_HOST points at a daemon on this machine, so generated code ' +
+          'would run beside Reklu — a container escape would reach DATABASE_URL, ' +
+          'ENCRYPTION_KEY and every provider key. Point it at a separate machine ' +
+          '(tcp:// or ssh://), or set SANDBOX_DOCKER_SAME_HOST_ACK=true to accept ' +
+          'that risk deliberately.',
+      );
+    }
   }
 
   /**
