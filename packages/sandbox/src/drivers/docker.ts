@@ -74,6 +74,28 @@ export interface DockerDriverOptions {
   readonly runtime?: string | undefined;
 }
 
+/**
+ * Where a preview is reachable from a browser.
+ *
+ * The scheme is configurable because Reklu is served over https and the preview
+ * is shown in an iframe: a plain-http preview inside an https page is blocked
+ * by the browser as mixed content, and blocked renders as a blank panel rather
+ * than an error. A host given with a scheme keeps it; one given bare defaults
+ * to http, which is correct for an IP address on a private network and wrong
+ * for anything embedded.
+ */
+export function previewUrl(host: string, port: number): string {
+  if (host.startsWith('http://') || host.startsWith('https://')) {
+    const base = host.replace(/\/+$/, '');
+    /*
+     * A host that already names a port is fronted by a proxy that routes to the
+     * container itself — adding the container's port would break that routing.
+     */
+    return /:\d+$/.test(base) ? base : `${base}:${port}`;
+  }
+  return `http://${host}:${port}`;
+}
+
 function wrap(stage: string, error: unknown): never {
   if (error instanceof DockerError) {
     throw new SandboxError(
@@ -402,7 +424,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
          * Reklu's origin would put it inside the same cookie scope as the
          * session it was generated from.
          */
-        url: `http://${options.previewHost}:${port}`,
+        url: previewUrl(options.previewHost, port),
         port,
         stop: async () => {
           // The container is the lifetime. Killing the process inside it while

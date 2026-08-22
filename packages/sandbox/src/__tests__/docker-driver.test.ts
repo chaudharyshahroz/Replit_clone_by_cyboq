@@ -20,6 +20,7 @@ vi.mock('../docker-api', async (importOriginal) => {
 
 import { createDockerSandboxDriver } from '../drivers/docker';
 import { demultiplex, parseDockerHost } from '../docker-api';
+import { previewUrl } from '../drivers/docker';
 import { DEFAULT_LIMITS } from '../types';
 
 const driver = createDockerSandboxDriver({
@@ -269,6 +270,37 @@ describe('previews', () => {
   it('refuses to start a preview with no command', async () => {
     const handle = await driver.create('sbx_1', DEFAULT_LIMITS);
     await expect(driver.startPreview(handle, 4310)).rejects.toThrow(/command/i);
+  });
+});
+
+/**
+ * Reklu is served over https and shows the preview in an iframe. A plain-http
+ * preview inside an https page is blocked by the browser as mixed content, and
+ * blocked renders as a blank panel — no error, nothing in the console the user
+ * will see, just an empty preview that looks like a failed build.
+ */
+describe('the preview URL', () => {
+  it('defaults to http for a bare host', () => {
+    expect(previewUrl('203.0.113.10', 4310)).toBe('http://203.0.113.10:4310');
+  });
+
+  it('keeps https when the host asks for it', () => {
+    expect(previewUrl('https://builds.example.com', 4310)).toBe(
+      'https://builds.example.com:4310',
+    );
+  });
+
+  /* A host that already names a port is proxied; the container port would break it. */
+  it('does not append a port to a host that already has one', () => {
+    expect(previewUrl('https://builds.example.com:8443', 4310)).toBe(
+      'https://builds.example.com:8443',
+    );
+  });
+
+  it('tolerates a trailing slash', () => {
+    expect(previewUrl('https://builds.example.com/', 4310)).toBe(
+      'https://builds.example.com:4310',
+    );
   });
 });
 

@@ -145,6 +145,18 @@ function FileTree({
   );
 }
 
+/**
+ * Whether the browser will refuse to embed this preview.
+ *
+ * An http page inside an https one is blocked as mixed content, and the block
+ * is silent: the iframe stays empty and nothing surfaces anywhere the person
+ * looking at it would see.
+ */
+function blockedAsMixedContent(url: string): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.protocol === 'https:' && url.startsWith('http://');
+}
+
 export function BuildWorkspace({
   buildId,
   files,
@@ -383,7 +395,36 @@ export function BuildWorkspace({
                   </form>
                 ) : null}
 
-                {livePreview ? (
+                {livePreview && blockedAsMixedContent(livePreview) ? (
+                  /*
+                   * Said, rather than shown as an empty panel. A plain-http
+                   * preview inside this https page is blocked by the browser
+                   * before the iframe loads anything — no error, no console
+                   * message the user will look at, just a blank rectangle that
+                   * reads as a build that failed.
+                   */
+                  <div className="p-6">
+                    <p className="text-sm text-text">
+                      This preview cannot be shown inside Reklu
+                    </p>
+                    <p className="mt-2 max-w-md text-sm leading-relaxed text-text-secondary">
+                      Your browser refuses to embed an insecure page inside a secure
+                      one. The application is running — it just cannot be framed here.
+                    </p>
+                    <a
+                      href={livePreview}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
+                    >
+                      Open the preview in a new tab
+                    </a>
+                    <p className="mt-4 max-w-md text-xs leading-relaxed text-text-muted">
+                      To embed it here, serve the sandbox host over https and set
+                      SANDBOX_PREVIEW_HOST to that https address.
+                    </p>
+                  </div>
+                ) : livePreview ? (
                   <iframe
                     src={livePreview}
                     title="Application preview"
