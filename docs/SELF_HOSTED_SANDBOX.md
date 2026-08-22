@@ -61,6 +61,14 @@ docker network create --subnet 172.31.0.0/16 reklu-sandbox
 Then stop that network reaching private address space. On a host using
 `iptables`:
 
+Accept replies first, then block new outbound connections. Without the first
+rule the container cannot answer anything that contacted it — including the
+reverse proxy — because its reply is traffic *to* a private address:
+
+```bash
+sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+```
+
 ```bash
 sudo iptables -I DOCKER-USER -s 172.31.0.0/16 -d 10.0.0.0/8 -j DROP
 sudo iptables -I DOCKER-USER -s 172.31.0.0/16 -d 172.16.0.0/12 -j DROP
@@ -112,11 +120,38 @@ crosses the network inside SSH, and the daemon itself listens on nothing.
 If you use TLS on port 2376 instead, set `DOCKER_CERT_PATH` to a directory
 holding `ca.pem`, `cert.pem` and `key.pem`.
 
-### 6. Open the preview ports
+### 6. Decide how previews are reached
 
-Previews are served from the sandbox host on ports **43000–43200** — the range
-`packages/build/src/preview.ts` actually uses. Open that range to the public,
-and nothing else.
+Two ways. The first is better for anything public.
+
+**Through the reverse proxy (recommended).** Set `SANDBOX_PREVIEW_DOMAIN` and
+each preview is served at `https://<id>.preview.example.com` by the proxy
+already in front of Reklu. No port is published to the host, so nothing has to
+be opened in a firewall, the server's own IP address never appears in a URL
+handed to a visitor, and the preview is https — which means it can be shown
+inside Reklu instead of only as a link to a separate tab, because a browser
+refuses to embed a plain-http page in a secure one.
+
+Add a wildcard DNS record first:
+
+```
+*.preview.example.com    A    <your server IP>
+```
+
+The certificate is issued per preview hostname by the proxy's existing
+resolver, so no wildcard certificate is needed.
+
+**The trade, stated plainly:** the sandbox container joins the proxy's Docker
+network so the proxy can reach it, and on that network it can also reach other
+containers. The firewall rules below key on the sandbox network's own subnet and
+do not cover this second address. If that matters more than hiding the server's
+address, use the port form below, or run the daemon on a separate machine where
+there is nothing else on the network to reach.
+
+**By address and port.** Set `SANDBOX_PREVIEW_HOST` to the machine's public
+address and open ports **43000–43200** — the range
+`packages/build/src/preview.ts` uses. Previews are then plain http on that
+address, which exposes the IP and cannot be embedded.
 
 ### 7. Optional, and worth it: gVisor
 
@@ -138,6 +173,12 @@ bug stops being an escape.
 ```bash
 BUILD_ENABLED=true
 SANDBOX_DRIVER=docker
+
+# Previews over https, on a subdomain, through the existing proxy.
+# Needs *.preview.example.com pointing at this server.
+SANDBOX_PREVIEW_DOMAIN=preview.example.com
+SANDBOX_PROXY_NETWORK=dokploy-network
+SANDBOX_PROXY_CERT_RESOLVER=letsencrypt
 
 # Where the daemon is. 127.0.0.1 here means the SSH tunnel above.
 SANDBOX_DOCKER_HOST=tcp://127.0.0.1:2375

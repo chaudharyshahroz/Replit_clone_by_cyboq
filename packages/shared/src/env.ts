@@ -272,6 +272,26 @@ const serverSchema = z.object({
    * by leaving a variable unset.
    */
   SANDBOX_DOCKER_SAME_HOST_ACK: booleanish(false),
+
+  /**
+   * A domain to serve previews from, instead of an address and a port.
+   *
+   * With this set, each preview is routed by the reverse proxy already in front
+   * of Reklu and reached at `https://<id>.<domain>`. Three problems go at once:
+   * the server's own IP address stops being handed to every visitor, no port
+   * range has to be opened, and the preview is https — so it can be shown
+   * inside Reklu rather than only in a separate tab, which a plain-http page
+   * cannot be.
+   *
+   * Needs a wildcard DNS record: *.preview.example.com → the server.
+   */
+  SANDBOX_PREVIEW_DOMAIN: optionalString,
+  /** The proxy's Docker network, so it can reach the sandbox container. */
+  SANDBOX_PROXY_NETWORK: z.string().trim().default('dokploy-network'),
+  /** Traefik certificate resolver, for the per-preview certificate. */
+  SANDBOX_PROXY_CERT_RESOLVER: z.string().trim().default('letsencrypt'),
+  /** Traefik entrypoint to attach preview routers to. */
+  SANDBOX_PROXY_ENTRYPOINT: z.string().trim().default('websecure'),
   SANDBOX_TIMEOUT_MS: intWithDefault(600_000),
   SANDBOX_MAX_MEMORY_MB: intWithDefault(2048),
   SANDBOX_MAX_DISK_MB: intWithDefault(1024),
@@ -349,10 +369,11 @@ function crossFieldProblems(env: ServerEnv): string[] {
      * nobody can open. Caught here rather than at preview time, where it would
      * surface as a broken build.
      */
-    if (!env.SANDBOX_PREVIEW_HOST) {
+    if (!env.SANDBOX_PREVIEW_HOST && !env.SANDBOX_PREVIEW_DOMAIN) {
       problems.push(
-        'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_HOST — the public hostname ' +
-          'or IP of the sandbox machine, which is where preview URLs point.',
+        'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_DOMAIN (previews served over ' +
+          'https by the reverse proxy, recommended) or SANDBOX_PREVIEW_HOST (the public ' +
+          'address of the sandbox machine, with a port range opened).',
       );
     }
 
@@ -365,6 +386,30 @@ function crossFieldProblems(env: ServerEnv): string[] {
       env.SANDBOX_DOCKER_HOST.startsWith('unix://') ||
       env.SANDBOX_DOCKER_HOST.includes('localhost') ||
       env.SANDBOX_DOCKER_HOST.includes('127.0.0.1');
+
+    /*
+     * A preview subdomain must not be inside the session cookie's scope.
+     *
+     * The cookie is host-only by default, so `x.preview.example.com` never
+     * receives it. Setting SESSION_COOKIE_DOMAIN to a parent domain changes
+     * that, and would hand every generated application the session of the
+     * person who generated it — the one thing running previews on a separate
+     * origin exists to prevent.
+     */
+    if (env.SANDBOX_PREVIEW_DOMAIN && env.SESSION_COOKIE_DOMAIN) {
+      const cookieDomain = env.SESSION_COOKIE_DOMAIN.replace(/^\./, '');
+      if (
+        env.SANDBOX_PREVIEW_DOMAIN === cookieDomain ||
+        env.SANDBOX_PREVIEW_DOMAIN.endsWith(`.${cookieDomain}`)
+      ) {
+        problems.push(
+          `SANDBOX_PREVIEW_DOMAIN (${env.SANDBOX_PREVIEW_DOMAIN}) is inside ` +
+            `SESSION_COOKIE_DOMAIN (${env.SESSION_COOKIE_DOMAIN}), so generated code would ` +
+            'receive the session cookie of whoever generated it. Serve previews from a ' +
+            'domain outside the cookie scope, or unset SESSION_COOKIE_DOMAIN.',
+        );
+      }
+    }
 
     if (localDaemon && !env.SANDBOX_DOCKER_SAME_HOST_ACK) {
       problems.push(

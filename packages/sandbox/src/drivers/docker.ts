@@ -70,8 +70,51 @@ export interface DockerDriverOptions {
   readonly host: string;
   readonly image: string;
   readonly network: string;
+  /** Public address of the sandbox machine, for port-based previews. */
   readonly previewHost: string;
   readonly runtime?: string | undefined;
+  /**
+   * Serve previews from a subdomain through the reverse proxy instead of an
+   * address and a port. When set, no port is published to the host at all.
+   */
+  readonly previewDomain?: string | undefined;
+  readonly proxyNetwork?: string | undefined;
+  readonly certResolver?: string | undefined;
+  readonly entrypoint?: string | undefined;
+}
+
+/**
+ * The subdomain a sandbox is reached at.
+ *
+ * Derived from the sandbox id so it is unguessable — a predictable name would
+ * let anyone who knows the scheme open somebody else's running preview. Lower
+ * case and hyphens only, because a DNS label admits nothing else.
+ */
+export function previewSubdomain(sandboxId: string): string {
+  return sandboxId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Traefik labels that route a hostname to this container's port. */
+export function proxyLabels(params: {
+  readonly sandboxId: string;
+  readonly host: string;
+  readonly port: number;
+  readonly network: string;
+  readonly certResolver: string;
+  readonly entrypoint: string;
+}): Record<string, string> {
+  const router = `reklu-preview-${previewSubdomain(params.sandboxId)}`;
+
+  return {
+    'traefik.enable': 'true',
+    // Named explicitly: a container on two networks leaves the proxy to guess
+    // which address to dial, and it guesses wrong about half the time.
+    'traefik.docker.network': params.network,
+    [`traefik.http.routers.${router}.rule`]: `Host(\`${params.host}\`)`,
+    [`traefik.http.routers.${router}.entrypoints`]: params.entrypoint,
+    [`traefik.http.routers.${router}.tls.certresolver`]: params.certResolver,
+    [`traefik.http.services.${router}.loadbalancer.server.port`]: String(params.port),
+  };
 }
 
 /**
@@ -131,7 +174,31 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
        * listens, and answers to no one.
        */
       const publishPort = createOptions?.publishPort;
-      const portBindings = publishPort
+
+      /*
+       * Routed, not published. With a preview domain the proxy already in front
+       * of Reklu reaches the container over the Docker network, so nothing is
+       * bound on the host — no port range to open in a firewall, and the
+       * server's own address never appears in a URL handed to a visitor.
+       */
+      const proxied = Boolean(options.previewDomain && publishPort);
+      const labels: Record<string, string> = { 'app.reklu.sandbox': id };
+
+      if (proxied && publishPort) {
+        Object.assign(
+          labels,
+          proxyLabels({
+            sandboxId: id,
+            host: `${previewSubdomain(id)}.${options.previewDomain}`,
+            port: publishPort,
+            network: options.proxyNetwork ?? 'dokploy-network',
+            certResolver: options.certResolver ?? 'letsencrypt',
+            entrypoint: options.entrypoint ?? 'websecure',
+          }),
+        );
+      }
+
+      const portBindings = publishPort && !proxied
         ? {
             ExposedPorts: { [`${publishPort}/tcp`]: {} },
             PortBindings: {
@@ -156,8 +223,8 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
         User: `${UID}:${GID}`,
         Cmd: ['sleep', String(Math.ceil(limits.timeoutMs / 1000) + 3600)],
         Env: Object.entries(isolatedEnv()).map(([key, value]) => `${key}=${value}`),
-        Labels: { 'app.reklu.sandbox': id },
-        ...(publishPort ? { ExposedPorts: portBindings.ExposedPorts } : {}),
+        Labels: labels,
+        ...(publishPort ? { ExposedPorts: { [`${publishPort}/tcp`]: {} } } : {}),
         // Nothing inside should be waiting on input; an open stdin only gives a
         // stuck process something to block on.
         OpenStdin: false,
@@ -180,7 +247,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
           AutoRemove: false,
           ...(options.runtime ? { Runtime: options.runtime } : {}),
           PublishAllPorts: false,
-          ...(publishPort ? { PortBindings: portBindings.PortBindings } : {}),
+          ...(portBindings.PortBindings ? { PortBindings: portBindings.PortBindings } : {}),
         },
       };
 
@@ -193,6 +260,24 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
         await dockerRequest(target, 'POST', `/containers/${created.Id}/start`);
       } catch (error) {
         wrap('container creation', error);
+      }
+
+      /*
+       * A second network, so the proxy can reach it. Connected after creation
+       * because a container is created on exactly one network and the rest are
+       * attached afterwards.
+       */
+      if (proxied) {
+        try {
+          await dockerRequest(
+            target,
+            'POST',
+            `/networks/${encodeURIComponent(options.proxyNetwork ?? 'dokploy-network')}/connect`,
+            { json: { Container: created.Id } },
+          );
+        } catch (error) {
+          wrap('attaching the preview network', error);
+        }
       }
 
       /*
@@ -424,7 +509,14 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
          * Reklu's origin would put it inside the same cookie scope as the
          * session it was generated from.
          */
-        url: previewUrl(options.previewHost, port),
+        /*
+         * The proxy's hostname when there is one, and the machine's address
+         * only when there is not. The second form exposes the server's own IP
+         * to everyone who opens a preview, which is why it is the fallback.
+         */
+        url: options.previewDomain
+          ? `https://${previewSubdomain(handle.id)}.${options.previewDomain}`
+          : previewUrl(options.previewHost, port),
         port,
         stop: async () => {
           // The container is the lifetime. Killing the process inside it while
@@ -461,11 +553,12 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
 export function dockerDriverFromEnv(): SandboxDriver {
   const env = loadServerEnv();
 
-  if (!env.SANDBOX_PREVIEW_HOST) {
+  if (!env.SANDBOX_PREVIEW_HOST && !env.SANDBOX_PREVIEW_DOMAIN) {
     throw new SandboxError(
       'NOT_CONFIGURED',
-      'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_HOST — the public hostname or ' +
-        'IP of the sandbox machine, which is where preview URLs point.',
+      'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_DOMAIN (previews served over https ' +
+        'by the reverse proxy) or SANDBOX_PREVIEW_HOST (the public address of the sandbox ' +
+        'machine, with a port range opened).',
     );
   }
 
@@ -473,7 +566,11 @@ export function dockerDriverFromEnv(): SandboxDriver {
     host: env.SANDBOX_DOCKER_HOST,
     image: env.SANDBOX_DOCKER_IMAGE,
     network: env.SANDBOX_DOCKER_NETWORK,
-    previewHost: env.SANDBOX_PREVIEW_HOST,
+    previewHost: env.SANDBOX_PREVIEW_HOST ?? '',
     runtime: env.SANDBOX_DOCKER_RUNTIME,
+    previewDomain: env.SANDBOX_PREVIEW_DOMAIN,
+    proxyNetwork: env.SANDBOX_PROXY_NETWORK,
+    certResolver: env.SANDBOX_PROXY_CERT_RESOLVER,
+    entrypoint: env.SANDBOX_PROXY_ENTRYPOINT,
   });
 }

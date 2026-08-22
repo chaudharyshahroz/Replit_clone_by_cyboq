@@ -20,7 +20,7 @@ vi.mock('../docker-api', async (importOriginal) => {
 
 import { createDockerSandboxDriver } from '../drivers/docker';
 import { demultiplex, parseDockerHost } from '../docker-api';
-import { previewUrl } from '../drivers/docker';
+import { createDockerSandboxDriver as makeDriver, previewSubdomain, previewUrl, proxyLabels } from '../drivers/docker';
 import { DEFAULT_LIMITS } from '../types';
 
 const driver = createDockerSandboxDriver({
@@ -365,5 +365,105 @@ describe('reading command output', () => {
 
   it('returns nothing for an empty stream', () => {
     expect(demultiplex(Buffer.alloc(0))).toEqual({ stdout: '', stderr: '' });
+  });
+});
+
+/**
+ * Previews behind the proxy.
+ *
+ * A preview served as address-and-port hands the server's own IP to everyone
+ * who opens one, needs a port range open in the firewall, and is plain http —
+ * so a browser refuses to embed it in Reklu and it can only ever be a link to
+ * somewhere else. Routing it through the proxy already in front of Reklu fixes
+ * all three.
+ */
+describe('previews served from a domain', () => {
+  const proxied = makeDriver({
+    host: 'unix:///var/run/docker.sock',
+    image: 'node:22-bookworm-slim',
+    network: 'reklu-sandbox',
+    previewHost: '',
+    previewDomain: 'preview.example.com',
+    proxyNetwork: 'dokploy-network',
+    certResolver: 'letsencrypt',
+    entrypoint: 'websecure',
+  });
+
+  it('routes the hostname to the container port', () => {
+    const labels = proxyLabels({
+      sandboxId: 'sbx_abc123',
+      host: 'sbx-abc123.preview.example.com',
+      port: 43000,
+      network: 'dokploy-network',
+      certResolver: 'letsencrypt',
+      entrypoint: 'websecure',
+    });
+
+    expect(labels['traefik.enable']).toBe('true');
+    expect(Object.values(labels)).toContain('Host(`sbx-abc123.preview.example.com`)');
+    expect(Object.values(labels)).toContain('43000');
+  });
+
+  /*
+   * A container on two networks leaves the proxy to guess which address to
+   * dial, and it guesses wrong about half the time.
+   */
+  it('names the network the proxy should reach it on', () => {
+    const labels = proxyLabels({
+      sandboxId: 'sbx_abc123',
+      host: 'x.example.com',
+      port: 43000,
+      network: 'dokploy-network',
+      certResolver: 'letsencrypt',
+      entrypoint: 'websecure',
+    });
+    expect(labels['traefik.docker.network']).toBe('dokploy-network');
+  });
+
+  /* A predictable name would open somebody else's running application. */
+  it('derives an unguessable, DNS-safe subdomain from the sandbox id', () => {
+    const subdomain = previewSubdomain('sbx_02hdkik200z64xm5bj187621n');
+
+    expect(subdomain).toMatch(/^[a-z0-9-]+$/);
+    expect(subdomain).toContain('02hdkik200z64xm5bj187621n');
+    expect(subdomain).not.toContain('_');
+  });
+
+  it('publishes no host port when the proxy is routing', async () => {
+    await proxied.create('sbx_1', DEFAULT_LIMITS, { publishPort: 43000 });
+    const config = createdConfig();
+
+    expect(config.HostConfig.PortBindings).toBeUndefined();
+    // Still exposed, so the proxy knows which port to dial.
+    expect(config.ExposedPorts).toHaveProperty('43000/tcp');
+  });
+
+  it('attaches the container to the proxy network', async () => {
+    await proxied.create('sbx_1', DEFAULT_LIMITS, { publishPort: 43000 });
+
+    const connect = dockerRequest.mock.calls.find((args) =>
+      String(args[2]).includes('/networks/dokploy-network/connect'),
+    );
+    expect(connect).toBeDefined();
+  });
+
+  it('gives back an https URL with no address and no port in it', async () => {
+    const handle = await proxied.create('sbx_abc', DEFAULT_LIMITS, { publishPort: 43000 });
+    const preview = await proxied.startPreview(handle, 43000, {
+      command: 'npx',
+      args: ['next', 'dev'],
+      env: {},
+    });
+
+    expect(preview.url).toBe('https://sbx-abc.preview.example.com');
+    expect(preview.url).not.toContain(':43000');
+    expect(preview.url.startsWith('https://')).toBe(true);
+  });
+
+  /* Without a domain configured, nothing changes for existing deployments. */
+  it('still publishes a port when no domain is configured', async () => {
+    await driver.create('sbx_1', DEFAULT_LIMITS, { publishPort: 43000 });
+    expect(createdConfig().HostConfig.PortBindings['43000/tcp']).toBeDefined();
+    expect(createdConfig()['Labels']['traefik.enable']).toBeUndefined();
   });
 });
