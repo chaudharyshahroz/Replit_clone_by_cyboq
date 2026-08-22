@@ -23,6 +23,20 @@ export interface TarEntry {
   readonly mode?: number;
 }
 
+export interface TarOptions {
+  /**
+   * Who owns the extracted files.
+   *
+   * Docker's archive endpoint honours the uid and gid in the tar header, so
+   * this is not cosmetic: a container running as an unprivileged user cannot
+   * write into a tree it does not own, and `npm install` fails with EACCES on
+   * a directory it can see perfectly well. Defaults to root, which is correct
+   * for an archive nobody unpacks as another user.
+   */
+  readonly uid?: number;
+  readonly gid?: number;
+}
+
 function octal(value: number, width: number): string {
   return value.toString(8).padStart(width - 1, '0') + '\0';
 }
@@ -62,14 +76,16 @@ function header(entry: {
   size: number;
   mode: number;
   type: '0' | '5';
+  uid: number;
+  gid: number;
 }): Buffer {
   const block = Buffer.alloc(BLOCK);
   const { name, prefix } = splitPath(entry.path);
 
   block.write(name, 0, NAME_MAX, 'utf8');
   block.write(octal(entry.mode, 8), 100, 8, 'utf8');
-  block.write(octal(0, 8), 108, 8, 'utf8'); // uid
-  block.write(octal(0, 8), 116, 8, 'utf8'); // gid
+  block.write(octal(entry.uid, 8), 108, 8, 'utf8');
+  block.write(octal(entry.gid, 8), 116, 8, 'utf8');
   block.write(octal(entry.size, 12), 124, 12, 'utf8');
   block.write(octal(Math.floor(Date.now() / 1000), 12), 136, 12, 'utf8');
   block.write('        ', 148, 8, 'utf8'); // checksum placeholder: eight spaces
@@ -110,16 +126,27 @@ function directoriesFor(paths: readonly string[]): string[] {
 }
 
 /** Pack files into a tar archive. */
-export function createTar(entries: readonly TarEntry[]): Buffer {
+export function createTar(entries: readonly TarEntry[], options: TarOptions = {}): Buffer {
   const blocks: Buffer[] = [];
+  const uid = options.uid ?? 0;
+  const gid = options.gid ?? 0;
 
   for (const dir of directoriesFor(entries.map((entry) => entry.path))) {
-    blocks.push(header({ path: `${dir}/`, size: 0, mode: 0o755, type: '5' }));
+    blocks.push(header({ path: `${dir}/`, size: 0, mode: 0o755, type: '5', uid, gid }));
   }
 
   for (const entry of entries) {
     const content = Buffer.from(entry.content, 'utf8');
-    blocks.push(header({ path: entry.path, size: content.length, mode: entry.mode ?? 0o644, type: '0' }));
+    blocks.push(
+      header({
+        path: entry.path,
+        size: content.length,
+        mode: entry.mode ?? 0o644,
+        type: '0',
+        uid,
+        gid,
+      }),
+    );
     blocks.push(content, pad(content.length));
   }
 

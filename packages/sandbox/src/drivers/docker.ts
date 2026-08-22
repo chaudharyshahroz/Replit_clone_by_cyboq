@@ -46,8 +46,25 @@ import {
   type WriteFile,
 } from '../types';
 
-/** Where a build's files live inside the container. */
-const WORKDIR = '/home/build/app';
+/**
+ * The unprivileged user builds run as, and where its files live.
+ *
+ * Both of these were wrong in a way that only shows up against a real daemon.
+ *
+ * Docker creates a missing `WorkingDir` **owned by root**, so a container
+ * running as uid 1000 could see its own working directory and not write to it —
+ * `npm install` fails with EACCES on a path that plainly exists. So the
+ * container's working directory is the home directory the image already
+ * creates for this user, and the build directory is made inside it by the user
+ * itself.
+ *
+ * The official Node images ship a `node` user at 1000:1000 owning /home/node,
+ * which is why that uid is not arbitrary.
+ */
+const UID = 1000;
+const GID = 1000;
+const HOME = '/home/node';
+const WORKDIR = `${HOME}/app`;
 
 export interface DockerDriverOptions {
   readonly host: string;
@@ -109,10 +126,12 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
        */
       const config = {
         Image: options.image,
-        WorkingDir: WORKDIR,
+        // The home directory the image already owns, not the build directory:
+        // Docker would create a missing one as root and lock the user out of it.
+        WorkingDir: HOME,
         // Never root. Capabilities are dropped, but root still writes wherever
         // it has a mount, and plenty of images ship setuid binaries.
-        User: '1000:1000',
+        User: `${UID}:${GID}`,
         Cmd: ['sleep', String(Math.ceil(limits.timeoutMs / 1000) + 3600)],
         Env: Object.entries(isolatedEnv()).map(([key, value]) => `${key}=${value}`),
         Labels: { 'app.reklu.sandbox': id },
@@ -154,6 +173,29 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
         wrap('container creation', error);
       }
 
+      /*
+       * Made by the user that will write into it. Docker's archive endpoint
+       * needs the destination to exist, and anything root created here would be
+       * unwritable by the build.
+       */
+      try {
+        const mkdir = await dockerRequest(target, 'POST', `/containers/${created.Id}/exec`, {
+          json: {
+            Cmd: ['mkdir', '-p', WORKDIR],
+            User: `${UID}:${GID}`,
+            AttachStdout: false,
+            AttachStderr: false,
+            Tty: false,
+          },
+        });
+        const { Id: mkdirId } = JSON.parse(mkdir.body.toString('utf8')) as { Id: string };
+        await dockerRequest(target, 'POST', `/exec/${mkdirId}/start`, {
+          json: { Detach: false, Tty: false },
+        });
+      } catch (error) {
+        wrap('preparing the working directory', error);
+      }
+
       logger.info('Created a Docker sandbox', {
         sandboxId: id,
         image: options.image,
@@ -172,8 +214,14 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
     async writeFiles(handle: SandboxHandle, files: readonly WriteFile[]): Promise<void> {
       for (const file of files) assertSafeRelativePath(file.path);
 
+      /*
+       * Owned by the build user. Docker honours the uid and gid in the tar
+       * header, so files packed as root land as root — visible to the build and
+       * unwritable by it, which surfaces as npm failing on its own node_modules.
+       */
       const archive = createTar(
         files.map((file) => ({ path: file.path, content: file.content })),
+        { uid: UID, gid: GID },
       );
 
       try {
@@ -246,7 +294,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
               AttachStdout: true,
               AttachStderr: true,
               Tty: false,
-              User: '1000:1000',
+              User: `${UID}:${GID}`,
             },
           },
         );
@@ -329,7 +377,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
               AttachStderr: false,
               Detach: true,
               Tty: false,
-              User: '1000:1000',
+              User: `${UID}:${GID}`,
             },
           },
         );

@@ -155,6 +155,9 @@ builds and serves previews exactly like one that has it.
 - The configured network, not the default bridge
 - No mounts of any kind — in particular, never the Docker socket
 - None of Reklu's environment
+- Files owned by the build user, and a working directory it created itself — Docker
+  makes a missing working directory owned by root, which locks an unprivileged
+  container out of its own files
 
 ## Costs you should expect
 

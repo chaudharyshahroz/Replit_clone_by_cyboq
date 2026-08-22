@@ -64,6 +64,28 @@ describe('how a sandbox container is created', () => {
     expect(createdConfig().User).not.toMatch(/^0[:$]/);
   });
 
+  /*
+   * Docker creates a missing WorkingDir owned by root. Pointing it at the build
+   * directory gave a container that could see its own working directory and not
+   * write to it — npm install failing with EACCES on a path that exists.
+   */
+  it('works from a directory the build user already owns', async () => {
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+    expect(createdConfig().WorkingDir).toBe('/home/node');
+  });
+
+  it('creates the build directory as the build user, not as root', async () => {
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    const mkdirCall = dockerRequest.mock.calls.find((args) =>
+      String(JSON.stringify(args[3] ?? null)).includes('mkdir'),
+    );
+    const json = (mkdirCall?.[3] as { json: Record<string, any> }).json;
+
+    expect(json.Cmd).toEqual(['mkdir', '-p', '/home/node/app']);
+    expect(json.User).toBe('1000:1000');
+  });
+
   it('caps memory, CPU and process count', async () => {
     await driver.create('sbx_1', { ...DEFAULT_LIMITS, memoryMb: 512 });
     const host = createdConfig().HostConfig;
@@ -174,6 +196,34 @@ describe('running commands', () => {
     } finally {
       delete process.env.REKLU_CANARY_SECRET;
     }
+  });
+
+  /*
+   * Docker honours the uid in a tar header. Files packed as root land as root,
+   * visible to the build and unwritable by it — npm then fails on its own
+   * node_modules, which reads as a broken generation.
+   */
+  it('writes files owned by the build user, not by root', async () => {
+    const handle = await driver.create('sbx_1', DEFAULT_LIMITS);
+    dockerRequest.mockClear();
+
+    await driver.writeFiles(handle, [{ path: 'package.json', content: '{}' }]);
+
+    const putCall = dockerRequest.mock.calls.find((args) => args[1] === 'PUT');
+    const archive = (putCall?.[3] as { body: Buffer }).body;
+
+    // uid and gid sit at offsets 108 and 116 of the first header block.
+    const uid = Number.parseInt(
+      archive.subarray(108, 116).toString('utf8').replace(/\0.*$/, '').trim(),
+      8,
+    );
+    const gid = Number.parseInt(
+      archive.subarray(116, 124).toString('utf8').replace(/\0.*$/, '').trim(),
+      8,
+    );
+
+    expect(uid).toBe(1000);
+    expect(gid).toBe(1000);
   });
 
   it('rejects a path that escapes the working directory', async () => {
