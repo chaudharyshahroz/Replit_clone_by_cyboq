@@ -55,15 +55,28 @@ const date = (value: unknown): Date | undefined => {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 };
 
+/** Why a read failed, in words that name the thing to fix. */
+export interface WhopFailure {
+  readonly status: number | undefined;
+  readonly detail: string;
+}
+
+interface ReadResult {
+  readonly payload?: Json | undefined;
+  readonly failure?: WhopFailure | undefined;
+}
+
 /**
  * One authenticated GET.
  *
- * Failures are reported as `undefined`, never thrown. Every caller is on a path
- * where Whop being unreachable must not break the page — a customer looking at
- * their billing page should see their plan, not an error, when the thing that
- * is down is the service that already took their money.
+ * Never throws — every caller is on a path where Whop being unreachable must
+ * not break the page. But a failure is *reported*, not swallowed: the first
+ * version returned `undefined` for both "Whop said no" and "Whop said nothing
+ * matched", and the billing page turned that into "Whop has no completed
+ * purchase for this workspace" — telling a customer who had just paid that
+ * their payment did not exist, when the truth was that Reklu could not ask.
  */
-async function get(apiKey: string, path: string, query: Record<string, string>): Promise<Json | undefined> {
+async function get(apiKey: string, path: string, query: Record<string, string>): Promise<ReadResult> {
   const url = new URL(`${WHOP_API_BASE}${path}`);
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
 
@@ -80,19 +93,56 @@ async function get(apiKey: string, path: string, query: Record<string, string>):
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       logger.warn('Whop refused a read', { path, status: response.status, body: body.slice(0, 300) });
-      return undefined;
+      return {
+        failure: {
+          status: response.status,
+          detail: describeReadFailure(path, response.status, body),
+        },
+      };
     }
 
-    return (await response.json().catch(() => undefined)) as Json | undefined;
+    return { payload: (await response.json().catch(() => undefined)) as Json | undefined };
   } catch (error) {
-    logger.warn('Could not read from Whop', {
-      path,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Could not read from Whop', { path, error: message });
+    return {
+      failure: {
+        status: undefined,
+        detail:
+          error instanceof Error && error.name === 'AbortError'
+            ? `Whop did not answer ${path} within ${TIMEOUT_MS / 1000} seconds.`
+            : `Could not reach Whop to read ${path}: ${message}`,
+      },
+    };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * What a refusal means, said as the thing to change.
+ *
+ * "403" on its own sends someone to read logs. "Your API key cannot read
+ * memberships" sends them to the one screen in Whop where that is fixed — and
+ * a missing permission on the key is the most likely reason a company with real
+ * paying customers reads back as having none.
+ */
+function describeReadFailure(path: string, status: number, body: string): string {
+  const snippet = body.slice(0, 200).trim();
+  const suffix = snippet ? ` Whop said: ${snippet}` : '';
+
+  if (status === 401) {
+    return `Whop rejected the API key when reading ${path}. Check WHOP_API_KEY.${suffix}`;
+  }
+  if (status === 403) {
+    return `The API key is not allowed to read ${path}. In Whop, give the key permission to read memberships and payments, then try again.${suffix}`;
+  }
+  if (status === 404) {
+    return `Whop has no ${path} for this company. Check WHOP_COMPANY_ID is the company the plans were bought from.${suffix}`;
+  }
+  if (status === 429) return `Whop is rate limiting reads of ${path}. Try again shortly.`;
+  if (status >= 500) return `Whop is having trouble on their end (${status}).`;
+  return `Whop returned ${status} reading ${path}.${suffix}`;
 }
 
 /** The `data` array of a Whop list response. */
@@ -160,17 +210,23 @@ export async function listMemberships(params: {
   readonly apiKey: string;
   readonly companyId: string;
   readonly limit?: number;
-}): Promise<readonly WhopMembership[]> {
-  const payload = await get(params.apiKey, '/memberships', {
+}): Promise<{
+  readonly memberships: readonly WhopMembership[];
+  readonly failure: WhopFailure | undefined;
+}> {
+  const result = await get(params.apiKey, '/memberships', {
     company_id: params.companyId,
     first: String(params.limit ?? 50),
     order: 'created_at',
     direction: 'desc',
   });
 
-  return rows(payload)
-    .map(toMembership)
-    .filter((row): row is WhopMembership => row !== undefined);
+  return {
+    memberships: rows(result.payload)
+      .map(toMembership)
+      .filter((row): row is WhopMembership => row !== undefined),
+    failure: result.failure,
+  };
 }
 
 /** Recent payments for a company, newest first. */
@@ -178,17 +234,23 @@ export async function listPayments(params: {
   readonly apiKey: string;
   readonly companyId: string;
   readonly limit?: number;
-}): Promise<readonly WhopPayment[]> {
-  const payload = await get(params.apiKey, '/payments', {
+}): Promise<{
+  readonly payments: readonly WhopPayment[];
+  readonly failure: WhopFailure | undefined;
+}> {
+  const result = await get(params.apiKey, '/payments', {
     company_id: params.companyId,
     first: String(params.limit ?? 50),
     order: 'created_at',
     direction: 'desc',
   });
 
-  return rows(payload)
-    .map(toPayment)
-    .filter((row): row is WhopPayment => row !== undefined);
+  return {
+    payments: rows(result.payload)
+      .map(toPayment)
+      .filter((row): row is WhopPayment => row !== undefined),
+    failure: result.failure,
+  };
 }
 
 /**

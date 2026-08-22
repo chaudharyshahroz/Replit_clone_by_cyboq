@@ -824,6 +824,18 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    success banners had no background and danger borders no border, across
    sixteen files, silently. All fixed; `pnpm verify:tokens` now fails the build
    on a colour class that resolves to nothing.
+17. **"Whop has no completed purchase for this workspace" was a lie the code
+   told.** `get()` returned `undefined` for both "Whop refused" and "Whop
+   returned nothing", so a failed API read was rendered to a paying customer as
+   proof their purchase did not exist. Reads now return a failure with a status
+   and a sentence naming what to change — a 403 says the API key needs
+   permission to read memberships, a 404 says `WHOP_COMPANY_ID` is probably the
+   wrong company. `lookup_failed` is a distinct outcome from
+   `no_membership_yet`.
+18. **Applying a purchase required pressing a button, which nobody does.**
+   `autoReconcile` now runs in the app layout: one indexed query on the common
+   path, a Whop call only when a checkout from the last hour is unresolved,
+   rate limited to one check per fifteen seconds per session.
 15. **The paid-customer bug survived two fixes because it was never diagnosed.**
    Both attempts reasoned from the symptom to a plausible cause and fixed that.
    There are four causes — Whop not calling the endpoint, a signature that does

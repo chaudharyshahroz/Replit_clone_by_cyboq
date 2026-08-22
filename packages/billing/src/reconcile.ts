@@ -15,7 +15,7 @@
  * It is safe to run repeatedly: applying a membership is idempotent, and a
  * payment already filed is ignored by its unique index.
  */
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import { checkoutSessions, db, plans, subscriptions } from '@reklu/database';
 import { logger } from '@reklu/shared';
 import { billingConfig } from './config';
@@ -32,7 +32,16 @@ export type ReconcileOutcome =
   /** A membership was found and the plan now matches it. */
   | 'applied'
   /** A membership was found but names a plan Reklu cannot sell. */
-  | 'unknown_plan';
+  | 'unknown_plan'
+  /**
+   * Whop could not be read.
+   *
+   * Distinct from `no_membership_yet`, and the distinction matters more than
+   * any other here: the first version collapsed them, so a customer who had
+   * just paid was told Whop had no record of their purchase when the truth was
+   * that Reklu never managed to ask.
+   */
+  | 'lookup_failed';
 
 export interface ReconcileResult {
   readonly outcome: ReconcileOutcome;
@@ -185,10 +194,27 @@ export async function reconcileWorkspaceBilling(workspaceId: string): Promise<Re
   const recent = pending.filter((row) => row.createdAt.getTime() >= cutoff);
   const planKeyBySession = new Map(recent.map((row) => [row.id, row.planKey]));
 
-  const memberships = await listMemberships({
+  const { memberships, failure } = await listMemberships({
     apiKey: config.apiKey,
     companyId: config.companyId,
   });
+
+  /*
+   * A refusal is not an absence.
+   *
+   * These were collapsed into one answer, and the billing page rendered it as
+   * "Whop has no completed purchase for this workspace" — shown to a customer
+   * who had paid minutes earlier and could see the charge in Whop. Reklu had
+   * not asked and failed to find it; Reklu had failed to ask.
+   */
+  if (failure) {
+    logger.error('Could not read memberships while reconciling', {
+      workspaceId,
+      status: failure.status ?? null,
+      detail: failure.detail,
+    });
+    return { outcome: 'lookup_failed', detail: failure.detail };
+  }
 
   /*
    * Two ways to recognise a membership as this workspace's, tried in order of
@@ -206,7 +232,28 @@ export async function reconcileWorkspaceBilling(workspaceId: string): Promise<Re
   );
 
   if (mine.length === 0) {
-    return recent.length === 0 ? { outcome: 'nothing_pending' } : { outcome: 'no_membership_yet' };
+    if (recent.length === 0) return { outcome: 'nothing_pending' };
+
+    /*
+     * Say what was actually looked at. "No completed purchase" on its own is
+     * indistinguishable from a broken lookup, and that ambiguity is what let
+     * this bug survive three attempts — the numbers make it obvious whether
+     * Whop returned nothing at all or returned other people's memberships.
+     */
+    logger.warn('No membership matched a pending checkout', {
+      workspaceId,
+      pendingSessions: recent.map((row) => row.id),
+      membershipsSeen: memberships.length,
+      membershipSessions: memberships.map((row) => row.checkoutConfigurationId ?? null),
+    });
+
+    return {
+      outcome: 'no_membership_yet',
+      detail:
+        memberships.length === 0
+          ? 'Whop reported no memberships at all for this company. If the payment is visible in Whop, WHOP_COMPANY_ID here is probably a different company than the one that was paid.'
+          : `Whop reported ${memberships.length} membership${memberships.length === 1 ? '' : 's'}, none matching this workspace’s checkout. Admin → Billing → diagnostics shows what each one carried.`,
+    };
   }
 
   /*
@@ -312,7 +359,7 @@ export async function reconcileWorkspaceBilling(workspaceId: string): Promise<Re
    * The payments belonging to this membership, so the history and the card on
    * the billing page are right even if no `payment.succeeded` ever arrived.
    */
-  const whopPayments = await listPayments({
+  const { payments: whopPayments } = await listPayments({
     apiKey: config.apiKey,
     companyId: config.companyId,
   });
@@ -404,4 +451,70 @@ export async function renewalState(workspaceId: string): Promise<{
       !row.cancelAtPeriodEnd,
     manageUrl: row?.manageUrl ?? null,
   };
+}
+
+/** How long after a checkout it is still worth checking automatically. */
+const AUTO_WINDOW_MS = 60 * 60 * 1000;
+
+/** The shortest gap between two automatic checks for the same session. */
+const AUTO_INTERVAL_MS = 15 * 1000;
+
+/**
+ * Apply a purchase without anyone asking.
+ *
+ * A customer who has paid should not have to find a button and press it —
+ * they will not, and being told to is the same as not being upgraded. This runs
+ * on app page loads so the plan lands wherever they happen to go next.
+ *
+ * The cost is one indexed query on the overwhelmingly common path where nobody
+ * has bought anything: without a recent unreconciled checkout it returns
+ * before touching the network. When there is one, it is rate limited per
+ * session so navigating quickly does not mean a Whop call per page.
+ */
+export async function autoReconcile(workspaceId: string): Promise<void> {
+  try {
+    const now = Date.now();
+    const staleBefore = new Date(now - AUTO_INTERVAL_MS);
+
+    const [due] = await db
+      .select({ id: checkoutSessions.id })
+      .from(checkoutSessions)
+      .where(
+        and(
+          eq(checkoutSessions.workspaceId, workspaceId),
+          isNull(checkoutSessions.reconciledAt),
+          /* Only a checkout recent enough that someone may still be waiting on it. */
+          gt(checkoutSessions.createdAt, new Date(now - AUTO_WINDOW_MS)),
+          or(
+            isNull(checkoutSessions.lastCheckedAt),
+            lt(checkoutSessions.lastCheckedAt, staleBefore),
+          ),
+        ),
+      )
+      .orderBy(desc(checkoutSessions.createdAt))
+      .limit(1);
+
+    if (!due) return;
+
+    /*
+     * Stamped before the call, not after. Two page loads racing would otherwise
+     * both see the session as due and both call Whop.
+     */
+    await db
+      .update(checkoutSessions)
+      .set({ lastCheckedAt: new Date() })
+      .where(eq(checkoutSessions.id, due.id));
+
+    await reconcileWorkspaceBilling(workspaceId);
+  } catch (error) {
+    /*
+     * Never fails the page. This is an automatic convenience running on every
+     * navigation; a customer whose app will not load because a billing check
+     * threw is worse off than one whose plan lands a moment later.
+     */
+    logger.warn('Automatic reconciliation failed', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }

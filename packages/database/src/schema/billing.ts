@@ -246,6 +246,14 @@ export const checkoutSessions = pgTable(
     whopPlanId: text('whop_plan_id'),
     /** Set once a membership has been matched to this session. */
     reconciledAt: tsColumn('reconciled_at'),
+    /**
+     * When Whop was last asked about this session.
+     *
+     * Reconciliation runs automatically on app page loads so a customer never
+     * has to press anything, and this is what stops that becoming a Whop API
+     * call on every navigation.
+     */
+    lastCheckedAt: tsColumn('last_checked_at'),
     ...timestamps,
   },
   (table) => [index('checkout_sessions_workspace_idx').on(table.workspaceId, table.createdAt)],

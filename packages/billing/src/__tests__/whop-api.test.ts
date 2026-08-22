@@ -61,7 +61,8 @@ describe('listMemberships', () => {
   it('reads the fields reconciliation depends on', async () => {
     respond({ data: [MEMBERSHIP] });
 
-    const [membership] = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    const { memberships } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    const membership = memberships[0];
 
     expect(membership?.id).toBe('mem_abc123');
     expect(membership?.checkoutConfigurationId).toBe('ch_session1');
@@ -92,25 +93,28 @@ describe('listMemberships', () => {
    */
   it('returns nothing rather than throwing when Whop refuses', async () => {
     respond({ error: 'nope' }, 401);
-    await expect(listMemberships({ apiKey: 'k', companyId: 'biz_1' })).resolves.toEqual([]);
+    const { memberships } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(memberships).toEqual([]);
   });
 
   it('returns nothing rather than throwing when the request fails outright', async () => {
     globalThis.fetch = vi.fn(async () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
-    await expect(listMemberships({ apiKey: 'k', companyId: 'biz_1' })).resolves.toEqual([]);
+    const { memberships } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(memberships).toEqual([]);
   });
 
   it('skips a row with no id rather than inventing one', async () => {
     respond({ data: [{ status: 'active' }, MEMBERSHIP] });
-    const found = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
-    expect(found).toHaveLength(1);
+    const { memberships } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(memberships).toHaveLength(1);
   });
 
   it('survives a response with no data array', async () => {
     respond({});
-    await expect(listMemberships({ apiKey: 'k', companyId: 'biz_1' })).resolves.toEqual([]);
+    const { memberships } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(memberships).toEqual([]);
   });
 });
 
@@ -118,7 +122,8 @@ describe('listPayments', () => {
   it('reads the card the customer would recognise', async () => {
     respond({ data: [PAYMENT] });
 
-    const [payment] = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const { payments } = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const payment = payments[0];
 
     expect(payment?.cardBrand).toBe('mastercard');
     expect(payment?.cardLast4).toBe('4242');
@@ -138,7 +143,8 @@ describe('listPayments', () => {
       ],
     });
 
-    const [payment] = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const { payments } = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const payment = payments[0];
     expect(payment?.cardBrand).toBe('visa');
     expect(payment?.cardLast4).toBe('1111');
   });
@@ -150,13 +156,15 @@ describe('listPayments', () => {
    */
   it('finds the amount under any of the names Whop has used', async () => {
     respond({ data: [{ id: 'pay_1', amount: '40.00' }] });
-    const [payment] = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const { payments } = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const payment = payments[0];
     expect(payment?.amount).toBe('40.00');
   });
 
   it('leaves the card undefined when Whop sent none', async () => {
     respond({ data: [{ id: 'pay_1', payment_instrument: { display_name: 'Cash App Pay' } }] });
-    const [payment] = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const { payments } = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    const payment = payments[0];
     expect(payment?.cardBrand).toBeUndefined();
     expect(payment?.cardLast4).toBeUndefined();
     expect(payment?.methodLabel).toBe('Cash App Pay');
@@ -181,5 +189,71 @@ describe('grantsAccess', () => {
    */
   it('treats a completed one-off purchase as paid, not lapsed', () => {
     expect(grantsAccess('completed')).toBe(true);
+  });
+});
+
+/**
+ * A refusal is not an absence.
+ *
+ * These two were collapsed into one answer — both returned an empty list — and
+ * the billing page rendered the result as "Whop has no completed purchase for
+ * this workspace", shown to a customer who had paid minutes earlier and could
+ * see the charge in Whop. Reklu had not asked and failed to find the payment.
+ * Reklu had failed to ask.
+ */
+describe('reporting why a read failed', () => {
+  it('reports nothing wrong when Whop genuinely has no memberships', async () => {
+    respond({ data: [] });
+    const { memberships, failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(memberships).toEqual([]);
+    expect(failure).toBeUndefined();
+  });
+
+  /* The most likely cause of a company with paying customers reading as empty. */
+  it('names the missing permission on 403', async () => {
+    respond({ error: 'forbidden' }, 403);
+    const { failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(failure?.status).toBe(403);
+    expect(failure?.detail).toContain('not allowed to read');
+    expect(failure?.detail).toContain('permission');
+  });
+
+  it('names the API key on 401', async () => {
+    respond({ error: 'unauthorized' }, 401);
+    const { failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(failure?.detail).toContain('WHOP_API_KEY');
+  });
+
+  it('names the company on 404', async () => {
+    respond({ error: 'not found' }, 404);
+    const { failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(failure?.detail).toContain('WHOP_COMPANY_ID');
+  });
+
+  it('reports a network failure rather than an empty result', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+
+    const { memberships, failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(memberships).toEqual([]);
+    expect(failure).toBeDefined();
+    expect(failure?.detail).toContain('Could not reach Whop');
+  });
+
+  it('reports a refusal when reading payments too', async () => {
+    respond({ error: 'forbidden' }, 403);
+    const { failure } = await listPayments({ apiKey: 'k', companyId: 'biz_1' });
+    expect(failure?.status).toBe(403);
+  });
+
+  /*
+   * Whop's own words are carried through. A message naming the exact field or
+   * scope they objected to is worth more than any wording invented here.
+   */
+  it('carries Whop’s own explanation through', async () => {
+    respond({ error: 'missing scope: memberships:read' }, 403);
+    const { failure } = await listMemberships({ apiKey: 'k', companyId: 'biz_1' });
+    expect(failure?.detail).toContain('memberships:read');
   });
 });

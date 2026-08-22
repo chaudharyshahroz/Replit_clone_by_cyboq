@@ -28,7 +28,8 @@ export default async function BillingPage({
    * never updated, and the page went on saying Free under a success banner.
    * Asking Whop directly here makes the common case need no webhook at all.
    */
-  if (status === 'success') await reconcileWorkspaceBilling(workspace.workspaceId);
+  const checked =
+    status === 'success' ? await reconcileWorkspaceBilling(workspace.workspaceId) : undefined;
 
   const config = billingConfig();
   const renewal = await renewalState(workspace.workspaceId);
@@ -112,11 +113,24 @@ export default async function BillingPage({
       </header>
 
       {/* Checkout outcome, reported from the return URL. */}
-      {status === 'success' ? (
-        <p role="status" className="mt-6 rounded-lg border border-success/40 bg-success/10 px-3.5 py-3 text-sm text-text">
-          Payment received, and your plan has been checked against Whop. If it
-          still looks wrong below, use &ldquo;Check for a recent purchase&rdquo;.
-        </p>
+      {/*
+        What actually happened, not what was hoped for. This said the plan had
+        been "checked against Whop" whatever the check returned — including when
+        the check never reached Whop at all, which left a customer reading a
+        green success banner above the word Free.
+      */}
+      {checked ? (
+        checked.outcome === 'applied' ? (
+          <p role="status" className="mt-6 rounded-lg border border-success/40 bg-success/10 px-3.5 py-3 text-sm text-text">
+            Payment received. Your plan is up to date.
+          </p>
+        ) : (
+          <p role="status" className="mt-6 rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3 text-sm text-text">
+            Payment received, but your plan has not been applied yet.{' '}
+            {checked.detail ??
+              'Reklu is still waiting for Whop to confirm the purchase. This page checks again each time you open it.'}
+          </p>
+        )
       ) : null}
       {status === 'error' ? (
         <p role="alert" className="mt-6 rounded-lg border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm text-text-secondary">

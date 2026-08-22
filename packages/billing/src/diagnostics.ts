@@ -128,11 +128,25 @@ export async function billingDiagnostics(): Promise<BillingDiagnostics> {
     };
   }
 
-  const memberships = await listMemberships({
+  const { memberships, failure } = await listMemberships({
     apiKey: config.apiKey,
     companyId: config.companyId,
     limit: 25,
   });
+
+  /*
+   * A refusal is the answer, not an absence of one. Reporting it as "no
+   * memberships" would point at the customer's purchase when the problem is
+   * this deployment's API key.
+   */
+  if (failure) {
+    return {
+      ...base,
+      memberships: [],
+      membershipVerdict: failure.detail,
+      reachedWhop: false,
+    };
+  }
 
   const sessionOwner = new Map(sessions.map((row) => [row.id, row]));
   const planByWhopId = new Map<string, string>();

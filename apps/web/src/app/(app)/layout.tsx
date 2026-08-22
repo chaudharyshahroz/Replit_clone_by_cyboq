@@ -1,5 +1,6 @@
 import { listProjects } from '@reklu/projects';
 import { Sidebar } from '@/components/app/sidebar';
+import { autoReconcile } from '@reklu/billing';
 import { getAppContext } from '@/lib/auth-context';
 import { listConversations } from '@/lib/conversations';
 import { purchasablePlans } from '@/lib/purchasable-plans';
@@ -15,6 +16,21 @@ export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, workspace } = await getAppContext();
+
+  /*
+   * A purchase applies itself.
+   *
+   * Before this, a customer who paid had to press a button on the billing page
+   * to be given what they had bought — which is the same as not being upgraded,
+   * because nobody does that. Running here means the plan lands on whatever
+   * page they happen to open next.
+   *
+   * Awaited before the plan is read below, so the sidebar shows the plan they
+   * just bought rather than the one they had a second ago. It returns on a
+   * single indexed query unless a checkout from the last hour is still
+   * unresolved, so the ordinary page load pays almost nothing for it.
+   */
+  await autoReconcile(workspace.workspaceId);
 
   const [threads, projects, sellable, current] = await Promise.all([
     listConversations(user, workspace.workspaceId),

@@ -57,6 +57,13 @@
       "when": 1787378534048,
       "tag": "0007_mighty_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787379855455,
+      "tag": "0008_hot_salo",
+      "breakpoints": true
     }
   ]
 }

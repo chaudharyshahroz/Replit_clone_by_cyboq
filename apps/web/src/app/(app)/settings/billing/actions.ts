@@ -153,5 +153,18 @@ export async function reconcileBillingAction(): Promise<{
       };
     case 'not_configured':
       return { message: result.detail ?? 'Payments are not configured.', applied: false };
+    case 'lookup_failed':
+      /*
+       * Said as a failure to ask, not as an absence of a purchase. Telling
+       * someone who has just paid that Whop has no record of it — when the
+       * truth is that Reklu could not reach Whop — sends them to argue with
+       * their bank about a charge that is perfectly valid.
+       */
+      return {
+        message:
+          result.detail ??
+          'Could not reach Whop to check. Your payment is safe; this is a problem on Reklu’s side.',
+        applied: false,
+      };
   }
 }
