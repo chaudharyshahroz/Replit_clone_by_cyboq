@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { ArrowUp, ChevronDown, Loader2 } from 'lucide-react';
 import type { BuildBrief } from '@reklu/build';
-import { generateBuildAction } from '../actions';
+import { buildProgressAction, generateBuildAction } from '../actions';
 
 /**
  * The Build Brief (spec §29).
@@ -16,24 +16,72 @@ export function BriefPanel({
   brief,
   buildId,
   hasFiles,
+  status,
 }: {
   brief: BuildBrief;
   buildId: string;
   /** False before the first generation, when there is nothing to change yet. */
   hasFiles: boolean;
+  /** The project's stored status, which says whether a build has been tried. */
+  status: string;
 }) {
   const [open, setOpen] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [pending, startTransition] = useTransition();
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
+  const [stage, setStage] = useState<string | null>(null);
 
   const generate = (instruction: string) =>
     startTransition(async () => {
       setOutcome(null);
       const result = await generateBuildAction(buildId, instruction);
+      setStage(null);
       setOutcome({ ok: result.ok, message: result.message });
       if (result.ok) setPrompt('');
     });
+
+  /*
+   * Start on arrival. Asking for an application and then being shown a button
+   * that says "generate this app" is asking the same question twice — the brief
+   * on this screen is the answer to the first one.
+   *
+   * Only from `briefing`, and only once per mount. A build that already failed
+   * must not retry itself every time the page is opened: that is a loop nobody
+   * asked for, spending model credits on the same failure.
+   */
+  const autoStarted = useRef(false);
+
+  useEffect(() => {
+    if (autoStarted.current || hasFiles || pending) return;
+    if (status !== 'briefing') return;
+    autoStarted.current = true;
+    generate('Build it, exactly as described in the brief.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasFiles, status]);
+
+  /*
+   * Real stages, read back from the build itself as it enters them. Nothing
+   * here is invented: each phrase is written by the generator at the moment it
+   * starts that step.
+   */
+  useEffect(() => {
+    if (!pending) return;
+
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const progress = await buildProgressAction(buildId);
+        if (!cancelled) setStage(progress.detail);
+      } catch {
+        // A failed poll is not worth reporting; the generation itself reports.
+      }
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pending, buildId]);
 
   const sections: readonly { label: string; values: readonly string[] }[] = [
     { label: 'Users', values: brief.userRoles ?? [] },
@@ -118,7 +166,7 @@ export function BriefPanel({
                 {pending ? (
                   <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
                 ) : null}
-                {pending ? 'Generating the app' : 'Generate this app'}
+                {pending ? (stage ?? 'Generating the app') : 'Generate this app'}
               </button>
               <p className="mt-2 text-xs text-text-muted">
                 Or change the brief first by describing what is wrong with it below.

@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { buildProgressAction } from '@/app/(app)/build/actions';
 import {
   AlertTriangle,
   ChevronRight,
@@ -220,6 +222,48 @@ export function BuildWorkspace({
    * re-render cannot start a second container.
    */
   const autoStarted = useRef(false);
+  const router = useRouter();
+
+  /**
+   * What the build is doing, while it has nothing to show yet.
+   *
+   * Read from the build itself rather than animated: each phrase is written by
+   * the generator at the moment it enters that step, so an empty panel during a
+   * two-minute generation becomes an account of what is happening. When files
+   * appear the page is refreshed, which is what makes the preview come up on
+   * its own rather than waiting to be asked for.
+   */
+  const [buildStage, setBuildStage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (files.length > 0) return;
+
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const progress = await buildProgressAction(buildId);
+        if (cancelled) return;
+
+        setBuildStage(
+          progress.status === 'planning' || progress.status === 'generating'
+            ? (progress.detail ?? 'Building')
+            : null,
+        );
+
+        if (progress.fileCount > 0) {
+          clearInterval(timer);
+          router.refresh();
+        }
+      } catch {
+        // Not worth reporting from a poll; generation reports its own failure.
+      }
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [files.length, buildId, router]);
 
   const start = useCallback(async () => {
     setStarting(true);
@@ -458,6 +502,25 @@ export function BuildWorkspace({
                     sandbox="allow-scripts allow-forms"
                     className="min-h-[480px] flex-1 border-0 bg-white"
                   />
+                ) : buildStage ? (
+                  /*
+                    The build, while it is happening. This panel was empty for
+                    the whole of a generation — the one stretch where a person
+                    most wants to know something is going on. The phrase is the
+                    stage the generator is actually in, not a script.
+                  */
+                  <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+                    <span
+                      aria-hidden
+                      className="h-8 w-8 animate-spin rounded-full border-2 border-border-strong border-t-accent motion-reduce:animate-none"
+                    />
+                    <p role="status" className="text-sm text-text">
+                      {buildStage}
+                    </p>
+                    <p className="max-w-xs text-center text-xs leading-relaxed text-text-muted">
+                      The preview opens here on its own once the application is written.
+                    </p>
+                  </div>
                 ) : (
                   <div className="p-6">
                     <p className="text-sm text-text">Preview is not running</p>

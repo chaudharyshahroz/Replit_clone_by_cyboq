@@ -106,6 +106,46 @@ export async function createBuildAction(
 }
 
 /** Generate or revise the file tree, then checkpoint it. */
+/** Build stages, in the words a reader would use. */
+const STAGE_LABELS: Record<string, string> = {
+  interpreting_product: 'Working out what to build',
+  planning_architecture: 'Planning the architecture',
+  generating_files: 'Writing the code',
+  designing: 'Designing the interface',
+  installing_dependencies: 'Installing dependencies',
+  running_checks: 'Checking it builds',
+  starting_preview: 'Starting the preview',
+};
+
+export interface BuildProgress {
+  readonly status: string;
+  readonly detail: string | null;
+  readonly fileCount: number;
+}
+
+/** What the build is doing right now, for a screen that is watching it. */
+export async function buildProgressAction(buildId: string): Promise<BuildProgress> {
+  const { workspace } = await getAppContext();
+
+  const [project] = await db
+    .select({ status: buildProjects.status, statusDetail: buildProjects.statusDetail })
+    .from(buildProjects)
+    .where(
+      and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
+    )
+    .limit(1);
+
+  if (!project) throw errors.notFound('Build project', buildId);
+
+  const files = await loadTree(buildId, workspace.workspaceId);
+
+  return {
+    status: project.status,
+    detail: project.statusDetail,
+    fileCount: files.length,
+  };
+}
+
 export interface GenerateResult {
   readonly ok: boolean;
   readonly message: string;
@@ -175,10 +215,19 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
     prompt,
     model,
     existingFiles: existing,
+    /*
+     * Each stage is written down as it is entered, in the words a reader would
+     * use. The status alone said "generating" for the whole of a two-minute
+     * call, so the screen had nothing to show between pressing the button and
+     * the files appearing — which is indistinguishable from nothing happening.
+     */
     report: async (stage) => {
       await db
         .update(buildProjects)
-        .set({ status: stage === 'generating_files' ? 'generating' : 'planning' })
+        .set({
+          status: stage === 'generating_files' ? 'generating' : 'planning',
+          statusDetail: STAGE_LABELS[stage] ?? null,
+        })
         .where(eq(buildProjects.id, buildId));
     },
   });
@@ -222,7 +271,7 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
   if (firstGeneration && needsDesignPass(brief.target)) {
     await db
       .update(buildProjects)
-      .set({ status: 'generating', statusDetail: 'Designing' })
+      .set({ status: 'generating', statusDetail: STAGE_LABELS.designing ?? 'Designing' })
       .where(eq(buildProjects.id, buildId));
 
     try {

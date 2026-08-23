@@ -153,6 +153,15 @@ export interface GenerateResult {
  * must be distinguishable from a clean finish.
  */
 export type StreamEvent =
+  /**
+   * Take the reader somewhere the conversation cannot show.
+   *
+   * A build is a workspace, not a message: a file tree, a running preview and a
+   * version history do not fit in a chat bubble. This used to be a link the
+   * reader had to notice and click, which put a manual step between asking for
+   * an application and watching it be built.
+   */
+  | { type: 'navigate'; url: string }
   | { readonly type: 'start'; readonly modelKey: string; readonly routingReason?: string }
   | { readonly type: 'text-delta'; readonly text: string }
   | { readonly type: 'reasoning-delta'; readonly text: string }

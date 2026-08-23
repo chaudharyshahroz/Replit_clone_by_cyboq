@@ -466,11 +466,20 @@ export function Sidebar({
         indistinguishable rows, so the collapsed rail keeps navigation and drops
         the list.
       */}
+      {/*
+        Emptied, not removed. Hiding this took the only flexible element out of
+        the column, so the account row rose to sit under the icons instead of
+        staying at the bottom where it belongs — the footer stopped being a
+        footer.
+      */}
       <div
-        className={`mt-5 min-h-0 flex-1 overflow-y-auto pb-4 ${
-          collapsed ? 'hidden' : 'block px-3'
+        className={`mt-5 min-h-0 flex-1 pb-4 ${
+          collapsed ? 'overflow-hidden' : 'overflow-y-auto px-3'
         }`}
+        aria-hidden={collapsed || undefined}
       >
+        {collapsed ? null : (
+        <>
         <h2 className="px-2.5 pb-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
           Chats
         </h2>
@@ -491,6 +500,8 @@ export function Sidebar({
               />
             ))}
           </ul>
+        )}
+        </>
         )}
       </div>
 

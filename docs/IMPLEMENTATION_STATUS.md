@@ -850,6 +850,16 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    with one job — keep the behaviour, raise the design — run on first
    generation only, for targets where presentation is the product. Failure is
    absorbed: a plain working app beats no app.
+26. **The sandbox image was treated as installed once and kept.** It is not:
+   `docker system prune` removes any image no container is using, and a sandbox
+   image is unused by definition between builds — so the first build after a
+   routine cleanup failed with "No such image". Pulled on demand now, once, and
+   only when the daemon says it is missing.
+27. **Building took four deliberate steps**: read a message, notice a link,
+   click it, press a button. Now one: the chat navigates to the workspace when
+   the brief is ready, generation starts on arrival from `briefing` (never after
+   a failure, which would loop), each stage is written down as it is entered and
+   read back by the screen, and the preview starts itself when files appear.
 25. **The build page was a vertical stack**, so the preview began below the
    fold and the application was never visible beside the conversation about it.
    Now two panes: brief and composer left, preview right. The preview also

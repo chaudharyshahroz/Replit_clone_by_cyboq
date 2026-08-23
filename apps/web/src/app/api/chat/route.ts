@@ -483,8 +483,14 @@ export async function POST(request: Request): Promise<Response> {
 
             /*
              * The brief lands here; the file tree, preview and version history
-             * do not, because those are a workspace rather than a message. The
-             * link is how you get to them, and the conversation stays put.
+             * do not, because those are a workspace rather than a message.
+             *
+             * The reader is taken there rather than handed a link. Asking for
+             * an application and then being asked to click through to it puts a
+             * manual step in the middle of one intention — and the link was
+             * being missed, which left people looking at a summary wondering
+             * where their app was. The message stays in the conversation, so
+             * coming back to it later still works.
              */
             text = [
               `**${name}**`,
@@ -496,6 +502,7 @@ export async function POST(request: Request): Promise<Response> {
               `[Open the build workspace](/build/${buildId}) to generate the code, preview it and revise.`,
             ].join('\n');
             send({ type: 'text-delta', text });
+            send({ type: 'navigate', url: `/build/${buildId}` });
           } else if (tool === 'research') {
             const adapters = [
               createWebAdapter(),

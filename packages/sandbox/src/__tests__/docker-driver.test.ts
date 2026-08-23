@@ -22,6 +22,7 @@ import { createDockerSandboxDriver } from '../drivers/docker';
 import { demultiplex, parseDockerHost } from '../docker-api';
 import { createDockerSandboxDriver as makeDriver, previewSubdomain, previewUrl, proxyLabels } from '../drivers/docker';
 import { DEFAULT_LIMITS } from '../types';
+import { DockerError } from '../docker-api';
 
 const driver = createDockerSandboxDriver({
   host: 'tcp://10.0.0.5:2375',
@@ -465,5 +466,55 @@ describe('previews served from a domain', () => {
     await driver.create('sbx_1', DEFAULT_LIMITS, { publishPort: 43000 });
     expect(createdConfig().HostConfig.PortBindings['43000/tcp']).toBeDefined();
     expect(createdConfig()['Labels']['traefik.enable']).toBeUndefined();
+  });
+});
+
+/**
+ * A missing image.
+ *
+ * The sandbox image was treated as something installed once and kept. It is
+ * not: `docker system prune` removes any image no container is currently using,
+ * and a sandbox image is unused by definition between builds. The first build
+ * after a routine cleanup failed with "No such image", which reads as a broken
+ * deployment rather than a missing download.
+ */
+describe('when the host does not have the image', () => {
+  it('pulls it and creates the container anyway', async () => {
+    let createAttempts = 0;
+
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      if (String(path).includes('/containers/create')) {
+        createAttempts += 1;
+        if (createAttempts === 1) {
+          throw new DockerError(404, 'No such image: node:22-bookworm-slim');
+        }
+      }
+      return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
+    });
+
+    const handle = await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    const pull = dockerRequest.mock.calls.find((args) => String(args[2]).includes('/images/create'));
+    expect(pull).toBeDefined();
+    expect(String(pull?.[2])).toContain('fromImage=node');
+    expect(String(pull?.[2])).toContain('tag=22-bookworm-slim');
+
+    expect(createAttempts).toBe(2);
+    expect(handle.externalId).toBe('container-1');
+  });
+
+  /* Any other refusal is a real failure and must not look like a missing image. */
+  it('does not pull for a failure that is not a missing image', async () => {
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      if (String(path).includes('/containers/create')) {
+        throw new DockerError(409, 'Conflict. The container name is already in use');
+      }
+      return { status: 200, body: Buffer.from('{}') };
+    });
+
+    await expect(driver.create('sbx_1', DEFAULT_LIMITS)).rejects.toThrow(/Conflict/);
+    expect(
+      dockerRequest.mock.calls.some((args) => String(args[2]).includes('/images/create')),
+    ).toBe(false);
   });
 });

@@ -161,6 +161,8 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 type ServerEvent =
+  /* Kept in step with StreamEvent in @reklu/ai by hand; they are two copies. */
+  | { type: 'navigate'; url: string }
   | { type: 'start'; modelKey: string; routingReason?: string }
   | {
       type: 'sources';
@@ -459,6 +461,8 @@ export function ChatView({
       abortRef.current = controller;
       let assembled = '';
       let capturedSources: readonly CitedSource[] = [];
+      /** Where to go once the turn is finished, if the server asked. */
+      let navigateTo: string | undefined;
       let capturedFailed: number | undefined;
       let usedModelKey: string | undefined;
       let createdConversationId: string | undefined;
@@ -551,6 +555,14 @@ export function ChatView({
                * chain of thought is not ours to display.
                */
               setStage({ label: 'Reasoning' });
+            } else if (event.type === 'navigate') {
+              /*
+               * Held until the turn ends. Navigating mid-stream would unmount
+               * this view while the server is still writing to it, losing the
+               * rest of the message — which is kept, so returning to the
+               * conversation later still shows what was decided.
+               */
+              navigateTo = event.url;
             } else if (event.type === 'status') {
               /*
                * Real stages from the server, not a spinner pretending to know
@@ -615,6 +627,13 @@ export function ChatView({
           window.history.replaceState(null, '', `/chat/${createdConversationId}`);
           router.refresh();
         }
+
+        /*
+         * Last, and only once the message is safely in the transcript. A build
+         * is a workspace rather than a message, so the reader is taken to it
+         * instead of being handed a link to notice.
+         */
+        if (navigateTo) router.push(navigateTo);
       }
     },
     [attachments, conversationId, modelKey, router, streaming, tool],

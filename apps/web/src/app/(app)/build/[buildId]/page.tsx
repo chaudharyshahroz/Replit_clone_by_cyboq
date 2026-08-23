@@ -98,6 +98,7 @@ export default async function BuildDetailPage({
               brief={project.brief as unknown as BuildBrief}
               buildId={buildId}
               hasFiles={files.length > 0}
+              status={project.status}
             />
           ) : null}
 

@@ -139,6 +139,62 @@ export function previewUrl(host: string, port: number): string {
   return `http://${host}:${port}`;
 }
 
+/**
+ * Create the container, pulling the image if the host does not have it.
+ *
+ * The image was treated as something an operator installs once and keeps. They
+ * do not: `docker system prune` removes any image no container is currently
+ * using, and a sandbox image is unused by definition between builds. So the
+ * first build after a routine cleanup failed with "No such image", which reads
+ * as a broken deployment rather than as a missing download.
+ *
+ * Pulled on demand instead, once, and only when the daemon says it is missing.
+ */
+async function createContainer(
+  target: DockerTarget,
+  config: unknown,
+  image: string,
+): Promise<{ Id: string }> {
+  try {
+    const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
+    return JSON.parse(response.body.toString('utf8')) as { Id: string };
+  } catch (error) {
+    const missing =
+      error instanceof DockerError &&
+      error.status === 404 &&
+      /no such image/i.test(error.message);
+
+    if (!missing) throw error;
+
+    logger.info('Sandbox image is missing; pulling it', { image });
+    await pullImage(target, image);
+
+    const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
+    return JSON.parse(response.body.toString('utf8')) as { Id: string };
+  }
+}
+
+/** Pull an image and wait for it to finish. */
+async function pullImage(target: DockerTarget, image: string): Promise<void> {
+  const [name, tag = 'latest'] = image.includes(':')
+    ? [image.slice(0, image.lastIndexOf(':')), image.slice(image.lastIndexOf(':') + 1)]
+    : [image];
+
+  /*
+   * Generous, and deliberately so: a first pull on a small machine downloads
+   * a few hundred megabytes, and failing it halfway leaves the build unable to
+   * start for a reason that has nothing to do with the build.
+   */
+  await dockerRequest(
+    target,
+    'POST',
+    `/images/create?fromImage=${encodeURIComponent(name)}&tag=${encodeURIComponent(tag)}`,
+    { timeoutMs: 600_000 },
+  );
+
+  logger.info('Pulled the sandbox image', { image });
+}
+
 function wrap(stage: string, error: unknown): never {
   if (error instanceof DockerError) {
     throw new SandboxError(
@@ -253,10 +309,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
 
       let created: { Id: string };
       try {
-        const response = await dockerRequest(target, 'POST', '/containers/create', {
-          json: config,
-        });
-        created = JSON.parse(response.body.toString('utf8')) as { Id: string };
+        created = await createContainer(target, config, options.image);
         await dockerRequest(target, 'POST', `/containers/${created.Id}/start`);
       } catch (error) {
         wrap('container creation', error);
