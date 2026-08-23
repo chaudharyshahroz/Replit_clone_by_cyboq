@@ -74,14 +74,20 @@ export default async function BuildDetailPage({
        visible at the same time as the conversation about it. Getting to the
        application meant leaving the page that describes it.
 
-       The height is conditional, and that is the point. Side by side, the two
-       panes fill exactly one screen and scroll internally. Stacked, they must
-       grow instead: pinning the container to the viewport while its children
-       stacked past it left the content overflowing its own box, so scrolling
-       ran off the end of the layout and into the page background — a black band
-       under everything, which is what this looked like from the outside.
+       This container owns its scrolling at every width, which is the only
+       arrangement where the page cannot scroll past its own layout.
+
+       Leaving that to the app shell meant two scroll containers disagreeing
+       about how tall the content was: the shell scrolled, this box did not
+       follow, and below it there was nothing to paint — a black band under
+       everything. Whether it happened depended on which pane the pointer was
+       over, because that decided which container received the wheel.
+
+       Side by side the two panes fill one screen and each scrolls internally.
+       Stacked, they flow and this box scrolls instead. Either way the shell
+       never scrolls, so there is never a gap beneath.
     */
-    <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
+    <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       <aside className="flex shrink-0 flex-col border-b border-border lg:h-full lg:w-[26rem] lg:border-b-0 lg:border-r xl:w-[30rem]">
         <header className="shrink-0 border-b border-border px-5 py-4">
           <Link href="/build" className="rounded text-sm text-text-muted hover:text-text">
