@@ -73,8 +73,15 @@ export default async function BuildDetailPage({
        so the preview began below the fold and the thing being built was never
        visible at the same time as the conversation about it. Getting to the
        application meant leaving the page that describes it.
+
+       The height is conditional, and that is the point. Side by side, the two
+       panes fill exactly one screen and scroll internally. Stacked, they must
+       grow instead: pinning the container to the viewport while its children
+       stacked past it left the content overflowing its own box, so scrolling
+       ran off the end of the layout and into the page background — a black band
+       under everything, which is what this looked like from the outside.
     */
-    <div className="flex h-full flex-col lg:flex-row">
+    <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
       <aside className="flex shrink-0 flex-col border-b border-border lg:h-full lg:w-[26rem] lg:border-b-0 lg:border-r xl:w-[30rem]">
         <header className="shrink-0 border-b border-border px-5 py-4">
           <Link href="/build" className="rounded text-sm text-text-muted hover:text-text">
@@ -111,7 +118,14 @@ export default async function BuildDetailPage({
         </div>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1">
+      {/*
+        A usable height when the panes are stacked, and none when they are side
+        by side. Below `lg` the two panes sit one above the other and each needs
+        to size to its own content — the preview would otherwise collapse to
+        nothing, since a flex item with no basis in a column takes the height it
+        is given.
+      */}
+      <div className="min-h-[32rem] min-w-0 flex-1 lg:min-h-0">
         <BuildWorkspace
           buildId={buildId}
           files={files}
