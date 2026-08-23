@@ -388,7 +388,14 @@ export function BuildWorkspace({
         preview gets the whole pane.
       */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/*
+          `min-h-0` is load-bearing. A flex item in a column defaults to
+          `min-height: auto`, which means "at least as tall as my content" — so
+          without it this box grew to fit the whole file list, the panel inside
+          it never overflowed, and nothing scrolled anywhere. The content simply
+          extended past the screen and was clipped further out.
+        */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5" aria-label="Workspace panels">
             {panels.map(({ id, label, icon: Icon }) => (
               <button

@@ -113,7 +113,15 @@ export function BriefPanel({
   ];
 
   return (
-    <div>
+    /*
+      The composer sits at the bottom and stays there.
+      
+      It used to be the last thing in a scrolling column, so it drifted off
+      screen as the build log grew — the input you need most while a build runs
+      was the first thing the build pushed out of view.
+    */
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -214,6 +222,11 @@ export function BriefPanel({
             </p>
           ) : null}
 
+        </div>
+      ) : null}
+      </div>
+
+      <div className="shrink-0 border-t border-border px-5 py-3">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -251,8 +264,7 @@ export function BriefPanel({
               )}
             </button>
           </form>
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 }

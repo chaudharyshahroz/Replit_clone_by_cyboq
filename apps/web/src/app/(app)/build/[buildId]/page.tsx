@@ -116,7 +116,12 @@ export default async function BuildDetailPage({
         </header>
 
         {/* The pane scrolls; the panes do not scroll each other. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {/*
+          No scrolling here. The panel owns the pane so it can keep its composer
+          pinned to the bottom while everything above it scrolls — a box that
+          scrolls as a whole cannot do that.
+        */}
+        <div className="flex min-h-0 flex-1 flex-col">
           {project.brief ? (
             <BriefPanel
               brief={project.brief as unknown as BuildBrief}
