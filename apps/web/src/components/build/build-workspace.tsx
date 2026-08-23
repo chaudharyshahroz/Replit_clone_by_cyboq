@@ -554,9 +554,27 @@ export function BuildWorkspace({
                   <iframe
                     src={livePreview}
                     title="Application preview"
-                    // Served from a separate origin and sandboxed: generated
-                    // code must never reach Reklu's session cookie.
-                    sandbox="allow-scripts allow-forms"
+                    /*
+                      `allow-same-origin` is required, not a relaxation.
+                      
+                      Without it the framed page has an *opaque* origin, and
+                      every storage access inside it throws — which stops a
+                      React app hydrating and leaves a white rectangle with no
+                      error anywhere the reader can see. That was the whole
+                      symptom: the frame loaded and the app never mounted.
+
+                      It is safe because the preview is served from somewhere
+                      else. The dangerous combination is `allow-scripts` plus
+                      `allow-same-origin` on a document that shares the parent's
+                      origin, which could then reach into the parent and remove
+                      its own sandbox. Previews run on their own domain, and
+                      `loadServerEnv` refuses a configuration where they do not.
+
+                      What stays withheld still matters: no top-level
+                      navigation, no downloads, no pointer lock, no access to
+                      Reklu's cookies — those belong to another origin.
+                    */
+                    sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
                     className="min-h-[480px] flex-1 border-0 bg-white"
                   />
                 ) : buildStage ? (

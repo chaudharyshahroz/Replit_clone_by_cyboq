@@ -396,6 +396,38 @@ function crossFieldProblems(env: ServerEnv): string[] {
      * person who generated it — the one thing running previews on a separate
      * origin exists to prevent.
      */
+    /*
+     * A preview must never share Reklu's origin.
+     *
+     * The preview iframe is granted `allow-same-origin`, without which the
+     * framed page has an opaque origin and every storage access inside it
+     * throws — which stops a React app hydrating and renders a white rectangle
+     * with no error anywhere the reader can see.
+     *
+     * That grant is safe only because the preview is somewhere else: combined
+     * with `allow-scripts` on a *same-origin* document, it would let the framed
+     * page reach into Reklu and drop its own sandbox. Same origin is therefore
+     * refused here rather than trusted not to happen.
+     */
+    if (env.SANDBOX_PREVIEW_DOMAIN) {
+      const appHost = (() => {
+        try {
+          return new URL(env.APP_URL).hostname.toLowerCase();
+        } catch {
+          return '';
+        }
+      })();
+
+      if (appHost && env.SANDBOX_PREVIEW_DOMAIN.toLowerCase() === appHost) {
+        problems.push(
+          `SANDBOX_PREVIEW_DOMAIN (${env.SANDBOX_PREVIEW_DOMAIN}) is Reklu's own host. ` +
+            'Previews must be served from a different origin, or generated code could ' +
+            'reach the page that framed it. Use a subdomain such as ' +
+            `preview.${appHost}.`,
+        );
+      }
+    }
+
     if (env.SANDBOX_PREVIEW_DOMAIN && env.SESSION_COOKIE_DOMAIN) {
       const cookieDomain = env.SESSION_COOKIE_DOMAIN.replace(/^\./, '');
       if (
