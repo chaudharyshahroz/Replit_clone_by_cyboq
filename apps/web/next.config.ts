@@ -67,6 +67,24 @@ const config: NextConfig = {
      * `frame-ancestors 'none'` is the modern form of X-Frame-Options, kept
      * alongside it for browsers that only honour the older header.
      */
+    /*
+     * Build previews, when they are served from a domain of their own.
+     *
+     * A generated application is framed by the build workspace, and `frame-src`
+     * decides whether the browser will allow that at all. Without this the
+     * frame was refused before the preview was even requested — and Chrome says
+     * only "this content is blocked", which reads as a fault in the preview
+     * rather than in the page doing the framing. The preview itself worked
+     * perfectly when opened directly, which made it look like Reklu was
+     * breaking something it was in fact forbidding.
+     *
+     * A wildcard over one subdomain Reklu itself controls, and only when that
+     * subdomain is configured: every sandbox gets its own name under it, so
+     * there is no fixed host to name.
+     */
+    const previewDomain = process.env.SANDBOX_PREVIEW_DOMAIN?.trim();
+    const previewFrameSrc = previewDomain ? ` https://*.${previewDomain}` : '';
+
     const csp = [
       "default-src 'self'",
       // 'unsafe-eval' is NOT granted: nothing in Reklu needs it, and it is the
@@ -76,8 +94,8 @@ const config: NextConfig = {
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "connect-src 'self' https://api.whop.com https://js.whop.com",
-      // Whop's checkout iframe, and nothing else.
-      "frame-src 'self' https://whop.com https://js.whop.com",
+      // Whop's checkout iframe, and build previews when they have a domain.
+      `frame-src 'self' https://whop.com https://js.whop.com${previewFrameSrc}`,
       "object-src 'none'",
       "base-uri 'self'",
       // A form posting off-origin is exfiltration, not a feature Reklu has.
