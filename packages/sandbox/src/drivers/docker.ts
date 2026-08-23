@@ -154,23 +154,57 @@ async function createContainer(
   target: DockerTarget,
   config: unknown,
   image: string,
+  network: string,
 ): Promise<{ Id: string }> {
   try {
     const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
   } catch (error) {
-    const missing =
-      error instanceof DockerError &&
-      error.status === 404 &&
-      /no such image/i.test(error.message);
+    if (!(error instanceof DockerError)) throw error;
 
-    if (!missing) throw error;
-
-    logger.info('Sandbox image is missing; pulling it', { image });
-    await pullImage(target, image);
+    /*
+     * Both of these are removed by `docker system prune`, which takes any image
+     * no container is using and any network nothing is attached to — and a
+     * sandbox image and network are unused by definition between builds. So a
+     * routine cleanup broke the next build with an error that reads like a
+     * broken deployment rather than a missing download.
+     */
+    if (error.status === 404 && /no such image/i.test(error.message)) {
+      logger.info('Sandbox image is missing; pulling it', { image });
+      await pullImage(target, image);
+    } else if (/network .* not found/i.test(error.message)) {
+      logger.info('Sandbox network is missing; creating it', { network });
+      await createNetwork(target, network);
+    } else {
+      throw error;
+    }
 
     const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
+  }
+}
+
+/**
+ * Create the sandbox network.
+ *
+ * Recreated with the same subnet the firewall rules name, so a network that has
+ * been pruned comes back constrained rather than coming back open. A rule that
+ * silently stops applying is worse than one that was never written.
+ */
+async function createNetwork(target: DockerTarget, network: string): Promise<void> {
+  try {
+    await dockerRequest(target, 'POST', '/networks/create', {
+      json: {
+        Name: network,
+        Driver: 'bridge',
+        CheckDuplicate: true,
+        IPAM: { Config: [{ Subnet: '172.31.0.0/16' }] },
+      },
+    });
+  } catch (error) {
+    // A race with another build creating it first is success, not failure.
+    if (error instanceof DockerError && error.status === 409) return;
+    throw error;
   }
 }
 
@@ -309,7 +343,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
 
       let created: { Id: string };
       try {
-        created = await createContainer(target, config, options.image);
+        created = await createContainer(target, config, options.image, options.network);
         await dockerRequest(target, 'POST', `/containers/${created.Id}/start`);
       } catch (error) {
         wrap('container creation', error);

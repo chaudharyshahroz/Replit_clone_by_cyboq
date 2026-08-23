@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { ArrowUp, ChevronDown, Loader2 } from 'lucide-react';
 import type { BuildBrief } from '@reklu/build';
-import { buildProgressAction, generateBuildAction } from '../actions';
+import { buildProgressAction, generateBuildAction, type BuildStep } from '../actions';
+import { BuildLog } from './build-log';
 
 /**
  * The Build Brief (spec §29).
@@ -30,6 +31,7 @@ export function BriefPanel({
   const [pending, startTransition] = useTransition();
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
   const [stage, setStage] = useState<string | null>(null);
+  const [steps, setSteps] = useState<readonly BuildStep[]>([]);
 
   const generate = (instruction: string) =>
     startTransition(async () => {
@@ -59,6 +61,19 @@ export function BriefPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasFiles, status]);
 
+  /* Whatever the build already did, so the log survives a reload. */
+  useEffect(() => {
+    let cancelled = false;
+    void buildProgressAction(buildId)
+      .then((progress) => {
+        if (!cancelled) setSteps(progress.steps);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [buildId]);
+
   /*
    * Real stages, read back from the build itself as it enters them. Nothing
    * here is invented: each phrase is written by the generator at the moment it
@@ -71,7 +86,9 @@ export function BriefPanel({
     const timer = setInterval(async () => {
       try {
         const progress = await buildProgressAction(buildId);
-        if (!cancelled) setStage(progress.detail);
+        if (cancelled) return;
+        setStage(progress.detail);
+        setSteps(progress.steps);
       } catch {
         // A failed poll is not worth reporting; the generation itself reports.
       }
@@ -155,24 +172,29 @@ export function BriefPanel({
             The brief already says what to build; asking the person to describe
             it a second time is asking them to repeat themselves to a form.
           */}
-          {!hasFiles ? (
+          {/*
+            The log replaces the button while a build is running. A spinner on a
+            button says something is happening and nothing about what, for the
+            two minutes where that is the only question.
+          */}
+          {pending ? (
+            <BuildLog steps={steps} running />
+          ) : !hasFiles ? (
             <div className="mt-4">
               <button
                 type="button"
-                disabled={pending}
                 onClick={() => generate('Build it, exactly as described in the brief.')}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-60"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
               >
-                {pending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
-                ) : null}
-                {pending ? (stage ?? 'Generating the app') : 'Generate this app'}
+                Generate this app
               </button>
               <p className="mt-2 text-xs text-text-muted">
                 Or change the brief first by describing what is wrong with it below.
               </p>
             </div>
-          ) : null}
+          ) : (
+            <BuildLog steps={steps} running={false} />
+          )}
 
           {/*
             Said out loud. Generation used to report nothing at all — a failed

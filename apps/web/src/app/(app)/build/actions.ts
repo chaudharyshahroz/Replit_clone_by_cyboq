@@ -23,7 +23,7 @@ import {
   type BuildBrief,
   runDesignPass,
 } from '@reklu/build';
-import { buildProjects, db } from '@reklu/database';
+import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
 import { errors, isRekluError, logger, newId, slugify } from '@reklu/shared';
@@ -117,10 +117,39 @@ const STAGE_LABELS: Record<string, string> = {
   starting_preview: 'Starting the preview',
 };
 
+export interface BuildStep {
+  readonly id: string;
+  readonly kind: string;
+  readonly message: string;
+  readonly path: string | null;
+}
+
 export interface BuildProgress {
   readonly status: string;
   readonly detail: string | null;
   readonly fileCount: number;
+  readonly steps: readonly BuildStep[];
+}
+
+/** Record one step, as it happens. Never fails the build it is describing. */
+async function recordStep(params: {
+  buildId: string;
+  workspaceId: string;
+  kind: string;
+  message: string;
+  path?: string;
+}): Promise<void> {
+  try {
+    await db.insert(buildEvents).values({
+      buildProjectId: params.buildId,
+      workspaceId: params.workspaceId,
+      kind: params.kind,
+      message: params.message,
+      path: params.path ?? null,
+    });
+  } catch (error) {
+    logger.debug('Could not record a build step', { buildId: params.buildId, error });
+  }
 }
 
 /** What the build is doing right now, for a screen that is watching it. */
@@ -137,12 +166,26 @@ export async function buildProgressAction(buildId: string): Promise<BuildProgres
 
   if (!project) throw errors.notFound('Build project', buildId);
 
-  const files = await loadTree(buildId, workspace.workspaceId);
+  const [files, steps] = await Promise.all([
+    loadTree(buildId, workspace.workspaceId),
+    db
+      .select({
+        id: buildEvents.id,
+        kind: buildEvents.kind,
+        message: buildEvents.message,
+        path: buildEvents.path,
+      })
+      .from(buildEvents)
+      .where(eq(buildEvents.buildProjectId, buildId))
+      .orderBy(buildEvents.createdAt)
+      .limit(200),
+  ]);
 
   return {
     status: project.status,
     detail: project.statusDetail,
     fileCount: files.length,
+    steps,
   };
 }
 
@@ -229,6 +272,23 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
           statusDetail: STAGE_LABELS[stage] ?? null,
         })
         .where(eq(buildProjects.id, buildId));
+
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message: STAGE_LABELS[stage] ?? stage,
+      });
+    },
+    /* Named as it is written, not listed afterwards. */
+    onFile: async (path) => {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'file',
+        message: path,
+        path,
+      });
     },
   });
 
@@ -275,6 +335,13 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
       .where(eq(buildProjects.id, buildId));
 
     try {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message: STAGE_LABELS.designing ?? 'Designing the interface',
+      });
+
       const designed = await runDesignPass({ brief, files: merged, model });
       if (designed.files.length > 0) {
         merged = mergeTree(merged, designed.files);
@@ -324,6 +391,15 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
    * generation worked, the page did not know, and the button read as broken.
    */
   revalidatePath(`/build/${buildId}`);
+
+  await recordStep({
+    buildId,
+    workspaceId: workspace.workspaceId,
+    kind: 'note',
+    message: `Wrote ${instrumented.files.length} file${
+      instrumented.files.length === 1 ? '' : 's'
+    }.`,
+  });
 
   return {
     ok: true,

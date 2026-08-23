@@ -64,6 +64,13 @@
       "when": 1787379855455,
       "tag": "0008_hot_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787472230629,
+      "tag": "0009_complete_sunspot",
+      "breakpoints": true
     }
   ]
 }

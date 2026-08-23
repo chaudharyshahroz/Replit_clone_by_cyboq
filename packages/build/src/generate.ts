@@ -28,6 +28,9 @@ export type BuildStage =
 
 export type BuildStageReporter = (stage: BuildStage, detail?: string) => void | Promise<void>;
 
+/** Called as each file finishes being written, with the path it landed at. */
+export type BuildFileReporter = (path: string) => void | Promise<void>;
+
 const GENERATION_PROMPT = [
   'You generate a complete, working application from a build brief.',
   '',
@@ -60,6 +63,15 @@ export interface GenerateBuildOptions {
   /** Existing tree, for an edit rather than a first generation. */
   readonly existingFiles?: readonly GeneratedFile[];
   readonly signal?: AbortSignal;
+  /**
+   * Told about each file as it completes.
+   *
+   * Generation was a single call that returned everything at once, so the only
+   * honest thing a screen could say for two minutes was "writing the code".
+   * Streaming the response and parsing it as it arrives means each file can be
+   * named at the moment it is actually written.
+   */
+  readonly onFile?: BuildFileReporter | undefined;
 }
 
 export interface GenerationResult {
@@ -107,15 +119,42 @@ export async function generateFiles(
    */
   const system = `${GENERATION_PROMPT}\n${skillGuidanceFor(options.brief.target)}`;
 
-  const result = await provider.generate({
+  /*
+   * Streamed rather than awaited whole. The text is the same either way; what
+   * changes is that a file can be announced when it is written instead of every
+   * file appearing at once when the call returns.
+   */
+  let text = '';
+  const announced = new Set<string>();
+
+  for await (const event of provider.stream({
     modelIdentifier: options.model.modelIdentifier,
     messages,
     system,
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
     ...(options.signal ? { signal: options.signal } : {}),
-  });
+  })) {
+    if (event.type !== 'text-delta') continue;
+    text += event.text;
 
-  const parsed = parseGeneratedFiles(result.text);
+    /*
+     * Only when a fence appears. Re-parsing on every token would be quadratic
+     * over a hundred kilobytes of output.
+     *
+     * A file is announced when its opening fence arrives — the path is on the
+     * line before it and is therefore already complete — so the report says
+     * what is being written now rather than what was written a moment ago.
+     */
+    if (!options.onFile || !event.text.includes('```')) continue;
+
+    for (const file of parseGeneratedFiles(text).files) {
+      if (announced.has(file.path)) continue;
+      announced.add(file.path);
+      await options.onFile(file.path);
+    }
+  }
+
+  const parsed = parseGeneratedFiles(text);
 
   if (parsed.rejected.length > 0) {
     // Surfaced rather than swallowed: a model emitting `.env` or a traversal

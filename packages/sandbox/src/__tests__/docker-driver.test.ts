@@ -503,6 +503,36 @@ describe('when the host does not have the image', () => {
     expect(handle.externalId).toBe('container-1');
   });
 
+  /*
+   * `docker system prune` removes unused networks as well as unused images, and
+   * a sandbox network is unused by definition between builds.
+   */
+  it('recreates the network, with the subnet the firewall rules name', async () => {
+    let attempts = 0;
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      if (String(path).includes('/containers/create')) {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new DockerError(404, 'network reklu-sandbox not found');
+        }
+      }
+      return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
+    });
+
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    const create = dockerRequest.mock.calls.find((args) =>
+      String(args[2]).includes('/networks/create'),
+    );
+    const json = (create?.[3] as { json: Record<string, any> }).json;
+
+    expect(json.Name).toBe('reklu-sandbox');
+    // Same subnet the DROP rules are written against; a network that came back
+    // wider would leave those rules silently not applying.
+    expect(json.IPAM.Config[0].Subnet).toBe('172.31.0.0/16');
+    expect(attempts).toBe(2);
+  });
+
   /* Any other refusal is a real failure and must not look like a missing image. */
   it('does not pull for a failure that is not a missing image', async () => {
     dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {

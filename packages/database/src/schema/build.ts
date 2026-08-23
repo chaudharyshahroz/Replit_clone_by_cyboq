@@ -292,3 +292,39 @@ export type BuildVersion = typeof buildVersions.$inferSelect;
 export type BuildFile = typeof buildFiles.$inferSelect;
 export type Sandbox = typeof sandboxes.$inferSelect;
 export type Deployment = typeof deployments.$inferSelect;
+
+/**
+ * What a build did, step by step.
+ *
+ * A build takes minutes and used to report one word — "generating" — for all of
+ * it, so the screen had nothing to show and no way to show that anything was
+ * happening. These are the steps as they happen, written by the build itself,
+ * and they are what the workspace reads back.
+ *
+ * Kept after the build finishes: "what did it actually do" is a question people
+ * ask afterwards, not only while waiting.
+ */
+export const buildEvents = pgTable(
+  'build_events',
+  {
+    id: primaryId('buildEvent'),
+    buildProjectId: text('build_project_id')
+      .notNull()
+      .references(() => buildProjects.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    /** stage | file | note | error */
+    kind: text('kind').notNull().default('stage'),
+    /** What to show, in the words a reader would use. */
+    message: text('message').notNull(),
+    /** The file this step concerns, when it concerns one. */
+    path: text('path'),
+
+    ...timestamps,
+  },
+  (table) => [index('build_events_project_idx').on(table.buildProjectId, table.createdAt)],
+);
+
+export type BuildEvent = typeof buildEvents.$inferSelect;

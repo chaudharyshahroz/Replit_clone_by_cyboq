@@ -850,11 +850,22 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    with one job — keep the behaviour, raise the design — run on first
    generation only, for targets where presentation is the product. Failure is
    absorbed: a plain working app beats no app.
-26. **The sandbox image was treated as installed once and kept.** It is not:
+26. **`docker system prune` broke the next build, twice.** It removes any image
+   no container is using *and* any network nothing is attached to — and a
+   sandbox image and network are both unused by definition between builds. Each
+   surfaced as an error that reads like a broken deployment. Both are recreated
+   on demand now, the network with the same subnet the firewall rules name so it
+   does not come back unconstrained.
+26b. **The sandbox image was treated as installed once and kept.** It is not:
    `docker system prune` removes any image no container is using, and a sandbox
    image is unused by definition between builds — so the first build after a
    routine cleanup failed with "No such image". Pulled on demand now, once, and
    only when the daemon says it is missing.
+28. **A build reported one word for two minutes.** Generation was a single
+   non-streaming call, so "generating" was the only honest thing to show for
+   its whole duration. It now streams, names each file as its block begins, and
+   writes every step to `build_events` — which the workspace reads back as a
+   log. Nothing is on a timer; if the list stops moving, the build has stopped.
 27. **Building took four deliberate steps**: read a message, notice a link,
    click it, press a button. Now one: the chat navigates to the workspace when
    the brief is ready, generation starts on arrival from `briefing` (never after
