@@ -45,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* Desktop is the priority workspace (spec §7); the sidebar collapses out
           of the way below `md` rather than being compressed. */}
       <div className="hidden md:block">

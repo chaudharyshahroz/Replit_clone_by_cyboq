@@ -31,7 +31,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen antialiased">
+      <body className="min-h-dvh antialiased">
         {/* Spec §99: keyboard users should be able to skip repeated navigation. */}
         <a
           href="#main"

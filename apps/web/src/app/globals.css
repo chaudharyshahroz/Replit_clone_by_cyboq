@@ -467,3 +467,21 @@ body {
 main:has([data-fills-screen]) {
   overflow: hidden;
 }
+
+/*
+ * The document itself, too.
+ *
+ * Containing the shell was not enough: the page still scrolled, by 225px, one
+ * level further out. `100vh` is not the visible viewport on a phone — it counts
+ * the area behind the browser's own chrome — so a shell sized to it is taller
+ * than the screen and the document scrolls to reveal the difference, showing
+ * background beneath a layout that looked correct at every level inside.
+ *
+ * `dvh` fixes the arithmetic and this makes the arithmetic not matter: on a
+ * route that fills the screen, nothing outside it scrolls at all. Marketing
+ * pages carry no such mark and scroll normally.
+ */
+html:has([data-fills-screen]),
+body:has([data-fills-screen]) {
+  overflow: hidden;
+}
