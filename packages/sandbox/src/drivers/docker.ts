@@ -154,34 +154,50 @@ async function createContainer(
   target: DockerTarget,
   config: unknown,
   image: string,
-  network: string,
 ): Promise<{ Id: string }> {
   try {
     const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
   } catch (error) {
-    if (!(error instanceof DockerError)) throw error;
-
     /*
-     * Both of these are removed by `docker system prune`, which takes any image
-     * no container is using and any network nothing is attached to — and a
-     * sandbox image and network are unused by definition between builds. So a
-     * routine cleanup broke the next build with an error that reads like a
-     * broken deployment rather than a missing download.
+     * `docker system prune` removes any image no container is using, and a
+     * sandbox image is unused by definition between builds — so a routine
+     * cleanup broke the next build with an error that reads like a broken
+     * deployment rather than a missing download.
      */
-    if (error.status === 404 && /no such image/i.test(error.message)) {
-      logger.info('Sandbox image is missing; pulling it', { image });
-      await pullImage(target, image);
-    } else if (/network .* not found/i.test(error.message)) {
-      logger.info('Sandbox network is missing; creating it', { network });
-      await createNetwork(target, network);
-    } else {
-      throw error;
-    }
+    const missingImage =
+      error instanceof DockerError &&
+      error.status === 404 &&
+      /no such image/i.test(error.message);
+
+    if (!missingImage) throw error;
+
+    logger.info('Sandbox image is missing; pulling it', { image });
+    await pullImage(target, image);
 
     const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
   }
+}
+
+/**
+ * Make sure the sandbox network exists.
+ *
+ * `docker system prune` removes any network nothing is attached to, and a
+ * sandbox network is unattached by definition between builds. Asked for
+ * directly rather than inferred from a failure, because the failure arrives
+ * from `start` while the network is named at `create`.
+ */
+async function ensureNetwork(target: DockerTarget, network: string): Promise<void> {
+  try {
+    await dockerRequest(target, 'GET', `/networks/${encodeURIComponent(network)}`);
+    return;
+  } catch (error) {
+    if (!(error instanceof DockerError) || error.status !== 404) throw error;
+  }
+
+  logger.info('Sandbox network is missing; creating it', { network });
+  await createNetwork(target, network);
 }
 
 /**
@@ -343,7 +359,19 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
 
       let created: { Id: string };
       try {
-        created = await createContainer(target, config, options.image, options.network);
+        /*
+         * Checked before creating, not recovered from afterwards.
+         *
+         * A missing network does not fail `containers/create` — Docker records
+         * the configuration happily and only attaches at `start`, so the error
+         * arrives from a different call than the one that named the network.
+         * Reacting to it there meant retrying the wrong request, and the fix
+         * for a pruned network did nothing. Asking first needs no error message
+         * to be parsed at all.
+         */
+        await ensureNetwork(target, options.network);
+
+        created = await createContainer(target, config, options.image);
         await dockerRequest(target, 'POST', `/containers/${created.Id}/start`);
       } catch (error) {
         wrap('container creation', error);

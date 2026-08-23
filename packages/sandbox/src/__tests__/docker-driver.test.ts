@@ -505,16 +505,18 @@ describe('when the host does not have the image', () => {
 
   /*
    * `docker system prune` removes unused networks as well as unused images, and
-   * a sandbox network is unused by definition between builds.
+   * a sandbox network is unattached by definition between builds.
+   *
+   * A missing network does not fail `containers/create` — Docker records the
+   * configuration and only attaches at `start` — so this is asked for directly
+   * rather than recovered from a failure. The first attempt at this fix
+   * retried `create` on an error that came from `start`, and therefore did
+   * nothing at all.
    */
-  it('recreates the network, with the subnet the firewall rules name', async () => {
-    let attempts = 0;
-    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
-      if (String(path).includes('/containers/create')) {
-        attempts += 1;
-        if (attempts === 1) {
-          throw new DockerError(404, 'network reklu-sandbox not found');
-        }
+  it('creates the network when the daemon does not have it', async () => {
+    dockerRequest.mockImplementation(async (_t: unknown, method: unknown, path: unknown) => {
+      if (method === 'GET' && String(path).startsWith('/networks/')) {
+        throw new DockerError(404, 'network reklu-sandbox not found');
       }
       return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
     });
@@ -530,7 +532,26 @@ describe('when the host does not have the image', () => {
     // Same subnet the DROP rules are written against; a network that came back
     // wider would leave those rules silently not applying.
     expect(json.IPAM.Config[0].Subnet).toBe('172.31.0.0/16');
-    expect(attempts).toBe(2);
+  });
+
+  /* The check happens before the container is created, not after it fails. */
+  it('checks the network before creating the container', async () => {
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    const order = dockerRequest.mock.calls.map((args) => String(args[2]));
+    const networkCheck = order.findIndex((path) => path.startsWith('/networks/'));
+    const containerCreate = order.findIndex((path) => path.includes('/containers/create'));
+
+    expect(networkCheck).toBeGreaterThanOrEqual(0);
+    expect(networkCheck).toBeLessThan(containerCreate);
+  });
+
+  it('does not recreate a network that already exists', async () => {
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    expect(
+      dockerRequest.mock.calls.some((args) => String(args[2]).includes('/networks/create')),
+    ).toBe(false);
   });
 
   /* Any other refusal is a real failure and must not look like a missing image. */
