@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { buildProgressAction, previewLogsAction } from '@/app/(app)/build/actions';
+import { ExportPanel } from './export-panel';
+import { fileLook, languageFor } from '@/lib/file-icon';
+import { TOKEN_CLASS, tokenize } from '@/lib/highlight';
 import {
   AlertTriangle,
   ChevronRight,
@@ -11,6 +14,7 @@ import {
   History,
   Loader2,
   Monitor,
+  Rocket,
   MousePointerClick,
   Play,
   ShieldAlert,
@@ -32,7 +36,7 @@ export interface BuildCheckpoint {
   readonly createdAt: string;
 }
 
-type Panel = 'code' | 'console' | 'preview' | 'history';
+type Panel = 'code' | 'console' | 'preview' | 'history' | 'deploy';
 
 /** Build a nested tree from flat paths, for the file explorer (spec §31). */
 interface TreeNode {
@@ -98,7 +102,17 @@ function FileTree({
                   : 'text-text-secondary hover:bg-surface-hover hover:text-text'
               }`}
             >
-              <FileText className="h-3 w-3 shrink-0" strokeWidth={1.75} />
+              {(() => {
+                /* Shape and colour by kind, so the eye can find a stylesheet
+                   or a config without reading forty identical rows. */
+                const look = fileLook(child.path);
+                return (
+                  <look.icon
+                    className={`h-3.5 w-3.5 shrink-0 ${look.className}`}
+                    strokeWidth={1.75}
+                  />
+                );
+              })()}
               <span className="truncate">{child.name}</span>
               {/* Changed-file indicator (spec §31). */}
               {changed.has(child.path) ? (
@@ -342,6 +356,12 @@ export function BuildWorkspace({
     { id: 'preview', label: 'Preview', icon: Monitor },
     { id: 'console', label: 'Console', icon: Terminal },
     { id: 'history', label: 'History', icon: History },
+    /*
+      Shipping is a step, not a sidebar ornament. It sat in the pane where the
+      conversation happens, competing with the brief and the log for the space
+      those actually need.
+    */
+    { id: 'deploy', label: 'Deploy', icon: Rocket },
   ];
 
   return (
@@ -359,29 +379,15 @@ export function BuildWorkspace({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
-        {/* ---- File explorer (spec §31) ---- */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface/30 md:flex">
-          <h2 className="px-3 py-2.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
-            Files
-          </h2>
-          <div className="flex-1 overflow-y-auto px-1.5 pb-3">
-            {files.length === 0 ? (
-              <p className="px-2 text-xs leading-relaxed text-text-muted">
-                No files yet. Describe what you want built and Reklu will generate them.
-              </p>
-            ) : (
-              <FileTree
-                node={tree}
-                depth={0}
-                selected={selectedPath}
-                changed={changed}
-                onSelect={setSelectedPath}
-              />
-            )}
-          </div>
-        </aside>
-
+      {/*
+        The file tree belongs to the code view, not to the workspace.
+        
+        It used to sit beside every panel, so a preview — the thing most people
+        open this for — was permanently narrowed by a list of filenames nobody
+        was reading at that moment. It now appears when the code does, and the
+        preview gets the whole pane.
+      */}
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex min-w-0 flex-1 flex-col">
           <nav className="flex items-center gap-1 border-b border-border px-3 py-1.5" aria-label="Workspace panels">
             {panels.map(({ id, label, icon: Icon }) => (
@@ -404,20 +410,56 @@ export function BuildWorkspace({
 
           <div className="min-h-0 flex-1 overflow-auto">
             {panel === 'code' ? (
-              selected ? (
-                <div>
-                  <p className="border-b border-border px-4 py-2 font-mono text-[0.6875rem] text-text-muted">
-                    {selected.path}
-                  </p>
-                  <pre className="overflow-x-auto p-4">
-                    <code className="font-mono text-[0.75rem] leading-relaxed text-text-secondary">
-                      {selected.content}
-                    </code>
-                  </pre>
+              <div className="flex h-full min-h-0">
+                <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface/30 md:flex">
+                  <h2 className="px-3 py-2.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
+                    Files
+                  </h2>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+                    {files.length === 0 ? (
+                      <p className="px-2 text-xs leading-relaxed text-text-muted">
+                        No files yet. Describe what you want built and Reklu will generate them.
+                      </p>
+                    ) : (
+                      <FileTree
+                        node={tree}
+                        depth={0}
+                        selected={selectedPath}
+                        changed={changed}
+                        onSelect={setSelectedPath}
+                      />
+                    )}
+                  </div>
+                </aside>
+
+                <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+                  {selected ? (
+                    <div>
+                      <p className="sticky top-0 z-10 border-b border-border bg-canvas px-4 py-2 font-mono text-[0.6875rem] text-text-muted">
+                        {selected.path}
+                      </p>
+                      <pre className="overflow-x-auto p-4">
+                        <code className="font-mono text-[0.75rem] leading-relaxed">
+                          {/*
+                            Coloured by a lexer that knows comments and strings
+                            take precedence over everything else — the mistake
+                            that makes a naive highlighter mangle ordinary code.
+                          */}
+                          {tokenize(selected.content, languageFor(selected.path)).map(
+                            (token, index) => (
+                              <span key={index} className={TOKEN_CLASS[token.kind]}>
+                                {token.text}
+                              </span>
+                            ),
+                          )}
+                        </code>
+                      </pre>
+                    </div>
+                  ) : (
+                    <p className="p-6 text-sm text-text-muted">Select a file to view it.</p>
+                  )}
                 </div>
-              ) : (
-                <p className="p-6 text-sm text-text-muted">Select a file to view it.</p>
-              )
+              </div>
             ) : null}
 
             {panel === 'preview' ? (
@@ -622,6 +664,12 @@ export function BuildWorkspace({
                   here — including compile errors.
                 </p>
               )
+            ) : null}
+
+            {panel === 'deploy' ? (
+              <div className="mx-auto max-w-xl p-6">
+                <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
+              </div>
             ) : null}
 
             {panel === 'history' ? (

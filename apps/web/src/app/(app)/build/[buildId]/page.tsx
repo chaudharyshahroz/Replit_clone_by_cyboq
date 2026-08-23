@@ -8,7 +8,6 @@ import { sandboxStatus } from '@reklu/sandbox';
 import { BuildWorkspace } from '@/components/build/build-workspace';
 import { getAppContext } from '@/lib/auth-context';
 import { editSelectionAction, startPreviewAction } from '../actions';
-import { ExportPanel } from '@/components/build/export-panel';
 import { BriefPanel } from './brief-panel';
 import { previewFramingProblem } from '@/lib/preview-framing';
 
@@ -127,9 +126,6 @@ export default async function BuildDetailPage({
             />
           ) : null}
 
-          <div className="mt-6 border-t border-border pt-5">
-            <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
-          </div>
         </div>
       </aside>
 
