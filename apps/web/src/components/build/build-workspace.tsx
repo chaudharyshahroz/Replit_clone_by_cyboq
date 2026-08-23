@@ -167,6 +167,7 @@ export function BuildWorkspace({
   previewUrl,
   sandboxIsolated,
   sandboxDetail,
+  framingProblem,
   onStartPreview,
   onEditSelection,
 }: {
@@ -177,6 +178,14 @@ export function BuildWorkspace({
   previewUrl: string | null;
   sandboxIsolated: boolean;
   sandboxDetail: string;
+  /**
+   * Why the browser will refuse to frame the preview, when it will.
+   *
+   * The refusal itself says only "this content is blocked", which names neither
+   * the policy nor the page that set it — so without this the evidence points
+   * at the preview, which is working.
+   */
+  framingProblem?: string | null;
   onStartPreview: (buildId: string) => Promise<{ url: string | null; output: string; error?: string }>;
   onEditSelection: (
     buildId: string,
@@ -495,7 +504,24 @@ export function BuildWorkspace({
                   </form>
                 ) : null}
 
-                {livePreview && blockedAsMixedContent(livePreview) ? (
+                {livePreview && framingProblem ? (
+                  <div className="p-6">
+                    <p className="text-sm text-text">
+                      This preview cannot be shown inside Reklu
+                    </p>
+                    <p className="mt-2 max-w-lg text-sm leading-relaxed text-text-secondary">
+                      {framingProblem}
+                    </p>
+                    <a
+                      href={livePreview}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition-colors hover:bg-accent-hover"
+                    >
+                      Open the preview in a new tab
+                    </a>
+                  </div>
+                ) : livePreview && blockedAsMixedContent(livePreview) ? (
                   /*
                    * Said, rather than shown as an empty panel. A plain-http
                    * preview inside this https page is blocked by the browser

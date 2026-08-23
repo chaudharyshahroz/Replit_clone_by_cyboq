@@ -10,6 +10,7 @@ import { getAppContext } from '@/lib/auth-context';
 import { editSelectionAction, startPreviewAction } from '../actions';
 import { ExportPanel } from '@/components/build/export-panel';
 import { BriefPanel } from './brief-panel';
+import { previewFramingProblem } from '@/lib/preview-framing';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +60,8 @@ export default async function BuildDetailPage({
   ]);
 
   const status = sandboxStatus();
+  /* Said here, where the blank frame appears, rather than only in a log. */
+  const framingProblem = previewFramingProblem();
   const latest = checkpoints[0];
 
   return (
@@ -126,6 +129,7 @@ export default async function BuildDetailPage({
           onEditSelection={editSelectionAction}
           sandboxIsolated={status.isolated && status.available}
           sandboxDetail={status.detail}
+          framingProblem={framingProblem}
         />
       </div>
     </div>

@@ -44,6 +44,20 @@ const config: NextConfig = {
   // postgres.js and other node-native deps must not be bundled for the server.
   serverExternalPackages: ['postgres', 'ioredis', 'bullmq'],
 
+  /*
+   * The preview domain as it was at compile time, frozen into the bundle.
+   *
+   * next.config's headers() is evaluated while building and its result is
+   * baked into the image, so the Content-Security-Policy cannot see a value
+   * supplied later. Keeping the compile-time value lets the running app notice
+   * when it disagrees with the configured one and say so — the alternative is
+   * a preview that is refused with no indication of why, which cost several
+   * rounds of looking in the wrong place.
+   */
+  env: {
+    REKLU_BUILT_PREVIEW_DOMAIN: process.env.SANDBOX_PREVIEW_DOMAIN?.trim() ?? '',
+  },
+
   // Type errors must fail the build — never ship a build that skipped them.
   typescript: { ignoreBuildErrors: false },
 

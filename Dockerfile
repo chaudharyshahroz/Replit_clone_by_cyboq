@@ -30,6 +30,14 @@ FROM base AS build
 # are stage-local metadata, never written to disk, and the runtime stage below
 # starts from a clean environment, so none of them can reach the final image.
 # Real configuration is injected by the orchestrator at run time.
+# Baked in, because Next evaluates next.config's headers() while compiling and
+# freezes the result into the image. A Content-Security-Policy that names the
+# preview domain therefore has to know it *here* — supplying it only at run time
+# leaves the shipped policy silently missing the allowance, and the browser
+# refuses to frame a preview that is working perfectly.
+ARG SANDBOX_PREVIEW_DOMAIN=""
+ENV SANDBOX_PREVIEW_DOMAIN=$SANDBOX_PREVIEW_DOMAIN
+
 ENV APP_URL=http://build.invalid \
     DATABASE_URL=postgresql://build:build@build.invalid:5432/build \
     REDIS_URL=redis://build.invalid:6379 \

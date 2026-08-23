@@ -29,6 +29,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Read while compiling, not at run time: see the note in the Dockerfile.
+        SANDBOX_PREVIEW_DOMAIN: ${SANDBOX_PREVIEW_DOMAIN:-}
     image: reklu-app:latest
     command: ["migrate"]
     restart: "no"
@@ -48,6 +51,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Read while compiling, not at run time: see the note in the Dockerfile.
+        SANDBOX_PREVIEW_DOMAIN: ${SANDBOX_PREVIEW_DOMAIN:-}
     image: reklu-app:latest
     command: ["web"]
     restart: unless-stopped
@@ -92,6 +98,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Read while compiling, not at run time: see the note in the Dockerfile.
+        SANDBOX_PREVIEW_DOMAIN: ${SANDBOX_PREVIEW_DOMAIN:-}
     image: reklu-app:latest
     command: ["worker"]
     restart: unless-stopped
