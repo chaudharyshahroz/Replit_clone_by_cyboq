@@ -87,7 +87,16 @@ export default async function BuildDetailPage({
        Stacked, they flow and this box scrolls instead. Either way the shell
        never scrolls, so there is never a gap beneath.
     */
-    <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+    <div
+      /*
+        Tells the shell to stop scrolling this route. See globals.css: the
+        height arithmetic that should have made this unnecessary is the thing
+        that kept being subtly wrong, so the page says what it needs instead of
+        the shell inferring it.
+      */
+      data-fills-screen
+      className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
+    >
       <aside className="flex shrink-0 flex-col border-b border-border lg:h-full lg:w-[26rem] lg:border-b-0 lg:border-r xl:w-[30rem]">
         <header className="shrink-0 border-b border-border px-5 py-4">
           <Link href="/build" className="rounded text-sm text-text-muted hover:text-text">

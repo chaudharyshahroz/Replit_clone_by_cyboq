@@ -448,3 +448,22 @@ body {
     justify-content: center;
   }
 }
+
+/*
+ * A page that manages its own scrolling must not also be scrolled by the shell.
+ *
+ * The build workspace is two panes that each scroll internally and together fill
+ * exactly one screen. The shell's main area scrolls too, and when the two
+ * disagreed about the content height the shell won: it scrolled past the end of
+ * the layout, leaving the page background visible beneath it. Which of them
+ * received the wheel depended on where the pointer was, so the same page
+ * scrolled over one pane and not another.
+ *
+ * Stated here rather than computed from heights, because the height arithmetic
+ * is exactly what was already wrong. A page marks itself as owning the screen
+ * and the shell stops scrolling — no measurement involved, and nothing to get
+ * subtly wrong at one breakpoint and not another.
+ */
+main:has([data-fills-screen]) {
+  overflow: hidden;
+}
