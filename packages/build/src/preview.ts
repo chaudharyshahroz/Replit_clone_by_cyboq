@@ -13,7 +13,7 @@
 import { createServer } from 'node:net';
 import { and, eq, isNull, ne } from 'drizzle-orm';
 import { buildProjects, db, sandboxes } from '@reklu/database';
-import { sandbox, sandboxStatus, type PreviewHandle } from '@reklu/sandbox';
+import { DEV_LOG_PATH, sandbox, sandboxStatus, type PreviewHandle } from '@reklu/sandbox';
 import { errors, logger, newId } from '@reklu/shared';
 import { devCommandFor, parseManifest } from './dev-command';
 import { materialize, type BuildStageReporter } from './generate';
@@ -281,6 +281,59 @@ export async function stopPreview(
    * left a container running for every build ever previewed.
    */
   await destroyPreviousSandboxes(buildProjectId, workspaceId);
+}
+
+/**
+ * What the preview server has printed.
+ *
+ * The dev server's own output is where a compile error appears — and until it
+ * was captured, that error existed only in the browser tab of whoever opened
+ * the preview. Reklu could not see it, so the Console tab it offers for exactly
+ * this question was empty while the answer sat inside the container.
+ */
+export async function previewLogs(
+  buildProjectId: string,
+  workspaceId: string,
+): Promise<string> {
+  const [row] = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId })
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.buildProjectId, buildProjectId),
+        eq(sandboxes.workspaceId, workspaceId),
+        eq(sandboxes.status, 'running'),
+      ),
+    )
+    .limit(1);
+
+  if (!row?.externalId) return '';
+
+  const driver = sandbox();
+
+  try {
+    const result = await driver.exec(
+      {
+        id: row.id,
+        driver: driver.name,
+        externalId: row.externalId,
+        limits: DEFAULT_PREVIEW_LIMITS,
+        isIsolated: driver.isIsolated,
+      },
+      {
+        command: 'sh',
+        // Bounded: a dev server left running for an hour writes a lot, and the
+        // useful part is always the end.
+        args: ['-c', `tail -c 20000 ${DEV_LOG_PATH} 2>/dev/null || true`],
+        timeoutMs: 15_000,
+      },
+    );
+
+    return result.stdout || result.stderr;
+  } catch (error) {
+    logger.debug('Could not read preview logs', { buildProjectId, error });
+    return '';
+  }
 }
 
 /** The live preview for a project, if one is running. */

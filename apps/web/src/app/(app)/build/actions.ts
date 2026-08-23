@@ -22,6 +22,7 @@ import {
   needsDesignPass,
   type BuildBrief,
   runDesignPass,
+  previewLogs,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -574,4 +575,15 @@ export async function exportToGitHubAction(buildId: string): Promise<ExportState
 
 export async function deployToVercelAction(buildId: string): Promise<ExportState> {
   return runExport(buildId, 'vercel', deployToVercel);
+}
+
+/**
+ * What the preview server has printed since it started.
+ *
+ * Read on demand rather than streamed: a compile error is the only reason
+ * anyone opens this, and it does not need to arrive within a second.
+ */
+export async function previewLogsAction(buildId: string): Promise<string> {
+  const { workspace } = await getAppContext();
+  return previewLogs(buildId, workspace.workspaceId);
 }

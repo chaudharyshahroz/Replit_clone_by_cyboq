@@ -66,6 +66,9 @@ const GID = 1000;
 const HOME = '/home/node';
 const WORKDIR = `${HOME}/app`;
 
+/** Where the preview server's output is kept, for the Console tab to read. */
+export const DEV_LOG_PATH = '/tmp/dev-server.log';
+
 export interface DockerDriverOptions {
   readonly host: string;
   readonly image: string;
@@ -81,6 +84,8 @@ export interface DockerDriverOptions {
   readonly proxyNetwork?: string | undefined;
   readonly certResolver?: string | undefined;
   readonly entrypoint?: string | undefined;
+  /** Reklu's own origin, the only page allowed to frame a preview. */
+  readonly appOrigin?: string | undefined;
 }
 
 /**
@@ -102,8 +107,11 @@ export function proxyLabels(params: {
   readonly network: string;
   readonly certResolver: string;
   readonly entrypoint: string;
+  /** Reklu's own origin, the only page allowed to frame a preview. */
+  readonly frameAncestor: string;
 }): Record<string, string> {
   const router = `reklu-preview-${previewSubdomain(params.sandboxId)}`;
+  const middleware = `${router}-frame`;
 
   return {
     'traefik.enable': 'true',
@@ -114,6 +122,25 @@ export function proxyLabels(params: {
     [`traefik.http.routers.${router}.entrypoints`]: params.entrypoint,
     [`traefik.http.routers.${router}.tls.certresolver`]: params.certResolver,
     [`traefik.http.services.${router}.loadbalancer.server.port`]: String(params.port),
+
+    /*
+     * Let Reklu frame the preview, and nobody else.
+     *
+     * Generated applications routinely set `X-Frame-Options: DENY` — it is
+     * standard advice and the model follows it — which is correct for the app
+     * and fatal for a preview: the browser refuses the frame and shows "this
+     * content is blocked", with nothing to say it came from the app's own
+     * header rather than from Reklu.
+     *
+     * The old header is removed and replaced by `frame-ancestors` naming
+     * Reklu's origin alone. That is narrower than what was there: it permits
+     * one page instead of forbidding all of them, and still refuses every other
+     * site on the internet.
+     */
+    [`traefik.http.middlewares.${middleware}.headers.customresponseheaders.X-Frame-Options`]: '',
+    [`traefik.http.middlewares.${middleware}.headers.customresponseheaders.Content-Security-Policy`]:
+      `frame-ancestors 'self' ${params.frameAncestor}`,
+    [`traefik.http.routers.${router}.middlewares`]: middleware,
   };
 }
 
@@ -300,6 +327,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
             network: options.proxyNetwork ?? 'dokploy-network',
             certResolver: options.certResolver ?? 'letsencrypt',
             entrypoint: options.entrypoint ?? 'websecure',
+            frameAncestor: options.appOrigin ?? '',
           }),
         );
       }
@@ -581,7 +609,15 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
        * step, which is exactly the shape of the bug this driver is being added
        * alongside.
        */
-      const line = [command.command, ...command.args].join(' ');
+      /*
+       * Output kept, not discarded.
+       *
+       * The server was started detached with its streams closed, so a compile
+       * error — the commonest way a generated app fails — appeared only in the
+       * browser tab of whoever opened the preview. Reklu had no idea anything
+       * was wrong, and the Console tab it offers for exactly this was empty.
+       */
+      const line = `${[command.command, ...command.args].join(' ')} > ${DEV_LOG_PATH} 2>&1`;
 
       try {
         const createResponse = await dockerRequest(
@@ -687,5 +723,6 @@ export function dockerDriverFromEnv(): SandboxDriver {
     proxyNetwork: env.SANDBOX_PROXY_NETWORK,
     certResolver: env.SANDBOX_PROXY_CERT_RESOLVER,
     entrypoint: env.SANDBOX_PROXY_ENTRYPOINT,
+    appOrigin: env.APP_URL,
   });
 }

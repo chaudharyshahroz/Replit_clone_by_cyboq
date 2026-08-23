@@ -379,6 +379,39 @@ describe('reading command output', () => {
  * all three.
  */
 describe('previews served from a domain', () => {
+  /*
+   * Generated apps routinely set X-Frame-Options: DENY — it is standard advice
+   * and the model follows it — which is correct for the app and fatal for a
+   * preview: the browser refuses the frame and says only "this content is
+   * blocked", with nothing to indicate the header came from the app itself.
+   */
+  it('lets Reklu frame the preview, and nobody else', () => {
+    const labels = proxyLabels({
+      sandboxId: 'sbx_abc123',
+      host: 'x.example.com',
+      port: 43000,
+      network: 'dokploy-network',
+      certResolver: 'letsencrypt',
+      entrypoint: 'websecure',
+      frameAncestor: 'https://reklu.app',
+    });
+
+    const values = Object.entries(labels);
+
+    // The app's own refusal is cleared...
+    expect(
+      values.find(([key]) => key.includes('X-Frame-Options'))?.[1],
+    ).toBe('');
+
+    // ...and replaced by something narrower: one permitted page, not none.
+    const csp = values.find(([key]) => key.includes('Content-Security-Policy'))?.[1];
+    expect(csp).toContain('frame-ancestors');
+    expect(csp).toContain('https://reklu.app');
+
+    // And the middleware is actually attached to the router.
+    expect(values.some(([key]) => key.endsWith('.middlewares'))).toBe(true);
+  });
+
   const proxied = makeDriver({
     host: 'unix:///var/run/docker.sock',
     image: 'node:22-bookworm-slim',
@@ -398,6 +431,7 @@ describe('previews served from a domain', () => {
       network: 'dokploy-network',
       certResolver: 'letsencrypt',
       entrypoint: 'websecure',
+      frameAncestor: 'https://reklu.app',
     });
 
     expect(labels['traefik.enable']).toBe('true');
@@ -417,6 +451,7 @@ describe('previews served from a domain', () => {
       network: 'dokploy-network',
       certResolver: 'letsencrypt',
       entrypoint: 'websecure',
+      frameAncestor: 'https://reklu.app',
     });
     expect(labels['traefik.docker.network']).toBe('dokploy-network');
   });

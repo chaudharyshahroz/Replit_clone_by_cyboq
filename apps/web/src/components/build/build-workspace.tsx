@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { buildProgressAction } from '@/app/(app)/build/actions';
+import { buildProgressAction, previewLogsAction } from '@/app/(app)/build/actions';
 import {
   AlertTriangle,
   ChevronRight,
@@ -234,6 +234,37 @@ export function BuildWorkspace({
    * its own rather than waiting to be asked for.
    */
   const [buildStage, setBuildStage] = useState<string | null>(null);
+
+  /**
+   * The preview server's own output.
+   *
+   * Where a compile error actually appears. Until this was read back, that
+   * error lived only in the browser tab of whoever opened the preview — so
+   * Reklu showed a blank frame and an empty Console, while the answer sat
+   * inside the container.
+   */
+  const [serverLog, setServerLog] = useState('');
+
+  useEffect(() => {
+    if (!livePreview) return;
+
+    let cancelled = false;
+    const read = async () => {
+      try {
+        const output = await previewLogsAction(buildId);
+        if (!cancelled && output.trim().length > 0) setServerLog(output);
+      } catch {
+        // The Console simply stays as it was; nothing here is worth an alert.
+      }
+    };
+
+    void read();
+    const timer = setInterval(read, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [livePreview, buildId]);
 
   useEffect(() => {
     if (files.length > 0) return;
@@ -535,15 +566,16 @@ export function BuildWorkspace({
             ) : null}
 
             {panel === 'console' ? (
-              (previewOutput || consoleOutput).trim().length > 0 ? (
+              (serverLog || previewOutput || consoleOutput).trim().length > 0 ? (
                 <pre className="overflow-x-auto p-4">
                   <code className="font-mono text-[0.75rem] leading-relaxed text-text-secondary">
-                    {previewOutput || consoleOutput}
+                    {serverLog || previewOutput || consoleOutput}
                   </code>
                 </pre>
               ) : (
                 <p className="p-6 text-sm text-text-muted">
-                  No output yet. Install and build output appears here — including failures.
+                  No output yet. Install output and the dev server&rsquo;s own log appear
+                  here — including compile errors.
                 </p>
               )
             ) : null}

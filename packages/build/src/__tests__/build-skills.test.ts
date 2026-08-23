@@ -81,6 +81,17 @@ describe('the guidance a build receives', () => {
     }
   });
 
+  /*
+   * The most common way a generated page fails to compile: a font weight the
+   * family does not publish. It is a correctness rule wearing a style rule's
+   * clothes, so it belongs in the standards every target receives.
+   */
+  it('warns every target about font weights that do not exist', () => {
+    for (const target of TARGETS) {
+      expect(skillGuidanceFor(target).toLowerCase(), target).toContain('weights');
+    }
+  });
+
   it('never lets a build hard-code a secret', () => {
     for (const target of TARGETS) {
       expect(skillGuidanceFor(target).toLowerCase(), target).toContain('environment variables');

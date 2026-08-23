@@ -45,6 +45,7 @@ export const CORE_ENGINEERING: BuildSkill = {
     'No secret is ever hard-coded. Read configuration from environment variables and document each one in README.md.',
     'Components stay small enough to read in one screen. Extract rather than nest deeply.',
     'Accessible by construction: labelled controls, keyboard reachable, visible focus, contrast that passes.',
+    'A web font must exist and must publish the weights you ask for. Only request weights you are certain of — 400 and 700 are safe — or use a system font stack. A page that does not compile is worth less than a plain one.',
     'Name things for what they do in the product, not for the pattern they use.',
   ],
 };
