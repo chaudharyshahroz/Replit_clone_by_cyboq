@@ -580,9 +580,19 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
               WorkingDir: execOptions.cwd ? `${WORKDIR}/${execOptions.cwd}` : WORKDIR,
               // Reklu's own environment is never merged in. The child sees a
               // PATH, a HOME, and whatever the caller asked for.
-              Env: Object.entries(isolatedEnv(execOptions.env ?? {})).map(
-                ([key, value]) => `${key}=${value}`,
-              ),
+              /*
+               * The image's own npm cache, not a scratch directory.
+               *
+               * `isolatedEnv` points npm at /tmp so a local subprocess cannot
+               * touch the developer's real cache. Inside a container there is no
+               * such cache to protect, and pointing at /tmp discards the warm one
+               * the image ships with — turning every first install into a full
+               * download of packages already sitting on disk. A read-only image
+               * layer cannot carry anything between builds.
+               */
+              Env: Object.entries(
+                isolatedEnv({ NPM_CONFIG_CACHE: `${HOME}/.npm`, ...(execOptions.env ?? {}) }),
+              ).map(([key, value]) => `${key}=${value}`),
               AttachStdout: true,
               AttachStderr: true,
               Tty: false,

@@ -82,7 +82,28 @@ over the host's own credentials.
 
 Persist the rules (`iptables-persistent`, or your provider's firewall).
 
-### 4. Pull the build image
+### 4. Build the sandbox image
+
+Every generated Next.js application installs the same couple of hundred
+packages, and on a small machine that download is most of the wait before a
+first preview appears. Building the image with the cache already warm turns it
+into a local copy instead.
+
+```bash
+docker build -f docker/sandbox.Dockerfile -t reklu-sandbox:latest .
+```
+
+Then set `SANDBOX_DOCKER_IMAGE=reklu-sandbox:latest`.
+
+The cache lives in a read-only image layer: a build reads from it and cannot
+write to it, so nothing one build installs can reach the next. That is what
+makes it safe to share, and why it is a cache rather than a pre-installed
+`node_modules`.
+
+Rebuild it every few months. A stale cache is not wrong, only less useful — npm
+fetches whatever is missing.
+
+Or skip it and use the plain image, which works and is slower:
 
 ```bash
 docker pull node:22-bookworm-slim

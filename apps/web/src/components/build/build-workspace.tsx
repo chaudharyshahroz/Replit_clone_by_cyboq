@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { buildProgressAction, previewLogsAction } from '@/app/(app)/build/actions';
 import { ExportPanel } from './export-panel';
 import { fileLook, languageFor } from '@/lib/file-icon';
+import { siteRoutes } from '@/lib/site-routes';
 import { TOKEN_CLASS, tokenize } from '@/lib/highlight';
 import {
   AlertTriangle,
@@ -13,6 +14,10 @@ import {
   FileText,
   History,
   Loader2,
+  Tablet,
+  Smartphone,
+  RotateCw,
+  ExternalLink,
   Monitor,
   Rocket,
   MousePointerClick,
@@ -37,6 +42,20 @@ export interface BuildCheckpoint {
 }
 
 type Panel = 'code' | 'console' | 'preview' | 'history' | 'deploy';
+
+type DeviceName = 'desktop' | 'tablet' | 'mobile';
+
+/**
+ * The widths to check a layout at.
+ *
+ * Real device widths rather than round numbers: 390 is an iPhone and 820 an
+ * iPad, and a layout that holds at 400 but breaks at 390 is broken.
+ */
+const DEVICES: readonly { id: DeviceName; label: string; width: number | null; icon: typeof Monitor }[] = [
+  { id: 'desktop', label: 'Desktop', width: null, icon: Monitor },
+  { id: 'tablet', label: 'Tablet', width: 820, icon: Tablet },
+  { id: 'mobile', label: 'Mobile', width: 390, icon: Smartphone },
+];
 
 /** Build a nested tree from flat paths, for the file explorer (spec §31). */
 interface TreeNode {
@@ -268,6 +287,26 @@ export function BuildWorkspace({
    */
   const [serverLog, setServerLog] = useState('');
 
+  /**
+   * How the preview is being looked at.
+   *
+   * A generated page is meant to work at every width, and the only honest way
+   * to check that is to look at it at those widths. The frame is narrowed
+   * rather than the page being scaled, so what appears is the layout the
+   * browser actually chooses at 390px — not a shrunken picture of the wide one.
+   */
+  const [device, setDevice] = useState<DeviceName>('desktop');
+  const [route, setRoute] = useState('/');
+  /** Bumped to remount the frame, which is what reloading it means. */
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const routes = useMemo(() => siteRoutes(files.map((file) => file.path)), [files]);
+
+  /* A page that no longer exists after an edit should not stay selected. */
+  useEffect(() => {
+    if (!routes.some((entry) => entry.path === route)) setRoute(routes[0]?.path ?? '/');
+  }, [routes, route]);
+
   useEffect(() => {
     if (!livePreview) return;
 
@@ -471,7 +510,84 @@ export function BuildWorkspace({
 
             {panel === 'preview' ? (
               <div className="flex h-full flex-col">
-                <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+                <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+                  {/* ---- Width, on the left ---- */}
+                  <div
+                    role="radiogroup"
+                    aria-label="Preview width"
+                    className="inline-flex items-center gap-0.5 rounded-lg border border-border p-0.5"
+                  >
+                    {DEVICES.map(({ id, label, icon: Icon }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={device === id}
+                        title={label}
+                        onClick={() => setDevice(id)}
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                          device === id
+                            ? 'bg-surface-raised text-text'
+                            : 'text-text-muted hover:text-text'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                        <span className="sr-only">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ---- Which page, and reloading it, in the middle ---- */}
+                  <div className="mx-auto inline-flex items-center gap-1 rounded-full border border-border px-1 py-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setReloadKey((value) => value + 1)}
+                      disabled={!livePreview}
+                      title="Reload the preview"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-muted transition-colors hover:text-text disabled:opacity-40"
+                    >
+                      <RotateCw className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      <span className="sr-only">Reload the preview</span>
+                    </button>
+
+                    {/*
+                      Every page here comes from a file that defines it, so this
+                      cannot offer one that 404s — which would make the menu
+                      worse than not having it.
+                    */}
+                    <label className="sr-only" htmlFor="preview-route">
+                      Page
+                    </label>
+                    <select
+                      id="preview-route"
+                      value={route}
+                      onChange={(event) => setRoute(event.target.value)}
+                      disabled={!livePreview}
+                      className="max-w-[16rem] truncate bg-transparent px-1 py-0.5 text-sm text-text focus:outline-none disabled:opacity-40"
+                    >
+                      {routes.map((entry) => (
+                        <option key={entry.path} value={entry.path}>
+                          {entry.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* ---- Out of Reklu, on the right ---- */}
+                  <a
+                    href={livePreview ? `${livePreview}${route === '/' ? '' : route}` : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled={!livePreview}
+                    title="Open the preview in a new tab"
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:text-text ${
+                      livePreview ? '' : 'pointer-events-none opacity-40'
+                    }`}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    <span className="sr-only">Open the preview in a new tab</span>
+                  </a>
+
                   <button
                     type="button"
                     onClick={() => void start()}
@@ -483,25 +599,8 @@ export function BuildWorkspace({
                     ) : (
                       <Play className="h-3.5 w-3.5" strokeWidth={2} />
                     )}
-                    {livePreview ? 'Restart preview' : 'Start preview'}
+                    {livePreview ? 'Restart' : 'Start preview'}
                   </button>
-
-                  {livePreview ? (
-                    <>
-                      <a
-                        href={livePreview}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded text-xs text-accent hover:text-accent-hover"
-                      >
-                        Open externally
-                      </a>
-                      <span className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
-                        <MousePointerClick className="h-3 w-3" strokeWidth={1.75} />
-                        Alt+click an element to edit it
-                      </span>
-                    </>
-                  ) : null}
                 </div>
 
                 {previewError ? (
@@ -600,32 +699,45 @@ export function BuildWorkspace({
                     </p>
                   </div>
                 ) : livePreview ? (
-                  <iframe
-                    src={livePreview}
-                    title="Application preview"
-                    /*
-                      `allow-same-origin` is required, not a relaxation.
-                      
-                      Without it the framed page has an *opaque* origin, and
-                      every storage access inside it throws — which stops a
-                      React app hydrating and leaves a white rectangle with no
-                      error anywhere the reader can see. That was the whole
-                      symptom: the frame loaded and the app never mounted.
+                  /*
+                    The frame is narrowed, not scaled. A scaled screenshot of the
+                    wide layout would show what the page looks like shrunk; this
+                    shows the layout the browser actually chooses at that width,
+                    which is the only version worth checking.
+                  */
+                  <div
+                    className={`min-h-0 flex-1 overflow-auto ${
+                      device === 'desktop' ? '' : 'flex justify-center bg-surface/40 p-4'
+                    }`}
+                  >
+                    <iframe
+                      key={`${route}-${reloadKey}`}
+                      src={`${livePreview}${route === '/' ? '' : route}`}
+                      title="Application preview"
+                      style={
+                        DEVICES.find((entry) => entry.id === device)?.width
+                          ? { width: DEVICES.find((entry) => entry.id === device)!.width! }
+                          : undefined
+                      }
+                      /*
+                        `allow-same-origin` is required, not a relaxation. Without
+                        it the framed page has an opaque origin and every storage
+                        access inside it throws, so a React app never hydrates and
+                        the frame renders white.
 
-                      It is safe because the preview is served from somewhere
-                      else. The dangerous combination is `allow-scripts` plus
-                      `allow-same-origin` on a document that shares the parent's
-                      origin, which could then reach into the parent and remove
-                      its own sandbox. Previews run on their own domain, and
-                      `loadServerEnv` refuses a configuration where they do not.
-
-                      What stays withheld still matters: no top-level
-                      navigation, no downloads, no pointer lock, no access to
-                      Reklu's cookies — those belong to another origin.
-                    */
-                    sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
-                    className="min-h-[480px] flex-1 border-0 bg-white"
-                  />
+                        It is safe because the preview is served from somewhere
+                        else — the dangerous pairing with `allow-scripts` is a
+                        document sharing the parent's origin, and `loadServerEnv`
+                        refuses a configuration where that could happen.
+                      */
+                      sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
+                      className={`border-0 bg-white ${
+                        device === 'desktop'
+                          ? 'h-full w-full'
+                          : 'h-full max-w-full shrink-0 rounded-lg shadow-2xl shadow-black/40'
+                      }`}
+                    />
+                  </div>
                 ) : buildStage ? (
                   /*
                     The build, while it is happening. This panel was empty for
