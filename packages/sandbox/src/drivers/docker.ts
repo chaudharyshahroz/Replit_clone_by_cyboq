@@ -251,6 +251,60 @@ async function createNetwork(target: DockerTarget, network: string): Promise<voi
   }
 }
 
+/**
+ * Run a command in a container and wait for it to actually finish.
+ *
+ * The streams are attached deliberately. With nothing attached, Docker has no
+ * output to deliver and `/exec/start` returns as soon as the process is
+ * launched — so an awaited call that reads like "do this, then continue" does
+ * not wait at all. `mkdir` was called that way, and the file upload that
+ * depended on it raced it: the archive arrived at a directory that did not exist
+ * yet, and the failure surfaced as Docker refusing to write files.
+ *
+ * The exit code is checked for the same reason. A command that fails silently
+ * is worse than one that fails, because the error appears somewhere else.
+ */
+async function runToCompletion(
+  target: DockerTarget,
+  containerId: string,
+  cmd: readonly string[],
+): Promise<void> {
+  const created = await dockerRequest(target, 'POST', `/containers/${containerId}/exec`, {
+    json: {
+      Cmd: [...cmd],
+      User: `${UID}:${GID}`,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: false,
+    },
+  });
+
+  const { Id } = JSON.parse(created.body.toString('utf8')) as { Id: string };
+
+  const output = await dockerRequest(target, 'POST', `/exec/${Id}/start`, {
+    json: { Detach: false, Tty: false },
+    timeoutMs: 60_000,
+  });
+
+  const inspect = await dockerRequest(target, 'GET', `/exec/${Id}/json`);
+  const { ExitCode } = JSON.parse(inspect.body.toString('utf8')) as {
+    ExitCode: number | null;
+  };
+
+  /*
+   * A number, or nothing. Docker always reports one for a finished process, but
+   * treating an absent code as a failure invents an error out of a shape we did
+   * not expect — the opposite of the problem this function exists to fix.
+   */
+  if (typeof ExitCode === 'number' && ExitCode !== 0) {
+    const { stdout, stderr } = demultiplex(output.body);
+    throw new SandboxError(
+      'DRIVER_ERROR',
+      `${cmd.join(' ')} failed with exit ${ExitCode}: ${(stderr || stdout).slice(0, 300)}`,
+    );
+  }
+}
+
 /** Pull an image and wait for it to finish. */
 async function pullImage(target: DockerTarget, image: string): Promise<void> {
   const [name, tag = 'latest'] = image.includes(':')
@@ -429,19 +483,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
        * unwritable by the build.
        */
       try {
-        const mkdir = await dockerRequest(target, 'POST', `/containers/${created.Id}/exec`, {
-          json: {
-            Cmd: ['mkdir', '-p', WORKDIR],
-            User: `${UID}:${GID}`,
-            AttachStdout: false,
-            AttachStderr: false,
-            Tty: false,
-          },
-        });
-        const { Id: mkdirId } = JSON.parse(mkdir.body.toString('utf8')) as { Id: string };
-        await dockerRequest(target, 'POST', `/exec/${mkdirId}/start`, {
-          json: { Detach: false, Tty: false },
-        });
+        await runToCompletion(target, created.Id, ['mkdir', '-p', WORKDIR]);
       } catch (error) {
         wrap('preparing the working directory', error);
       }

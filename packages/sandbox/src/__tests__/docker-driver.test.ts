@@ -88,6 +88,41 @@ describe('how a sandbox container is created', () => {
     expect(json.User).toBe('1000:1000');
   });
 
+  /*
+   * With no streams attached, Docker returns from `/exec/start` as soon as the
+   * process is launched — so an awaited call that reads like "do this, then
+   * continue" does not wait. The file upload raced the mkdir it depended on and
+   * arrived at a directory that did not exist yet.
+   */
+  it('waits for the directory to exist before anything writes to it', async () => {
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    const mkdirCall = dockerRequest.mock.calls.find((args) =>
+      String(JSON.stringify(args[3] ?? null)).includes('mkdir'),
+    );
+    const json = (mkdirCall?.[3] as { json: Record<string, any> }).json;
+
+    expect(json.AttachStdout).toBe(true);
+    expect(json.AttachStderr).toBe(true);
+
+    // And the result is inspected rather than assumed to have worked.
+    expect(
+      dockerRequest.mock.calls.some((args) => /\/exec\/[^/]+\/json/.test(String(args[2]))),
+    ).toBe(true);
+  });
+
+  it('fails loudly when the directory cannot be created', async () => {
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      const p = String(path);
+      if (p.includes('/exec/') && p.endsWith('/json')) {
+        return { status: 200, body: Buffer.from(JSON.stringify({ ExitCode: 1 })) };
+      }
+      return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
+    });
+
+    await expect(driver.create('sbx_1', DEFAULT_LIMITS)).rejects.toThrow(/mkdir/);
+  });
+
   it('caps memory, CPU and process count', async () => {
     await driver.create('sbx_1', { ...DEFAULT_LIMITS, memoryMb: 512 });
     const host = createdConfig().HostConfig;
