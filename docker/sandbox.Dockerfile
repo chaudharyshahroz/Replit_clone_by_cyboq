@@ -26,16 +26,26 @@ WORKDIR /home/node
 
 # Warm the cache by installing the stack a generated app actually uses, then
 # throw the installation away and keep what npm downloaded.
-RUN mkdir -p /home/node/.warm \
-  && cd /home/node/.warm \
+#
+# The directory is `warmcache`, not `.warm`: npm takes the package name from the
+# directory it is initialised in, and a name beginning with a dot is invalid — so
+# `npm init` failed, the install never ran, and the image built successfully with
+# an empty cache. Every step is chained with `&&` for the same reason: a step
+# that is skipped must fail the build rather than produce an image that looks
+# built and does nothing.
+RUN mkdir -p /home/node/warmcache \
+  && cd /home/node/warmcache \
   && npm init -y > /dev/null 2>&1 \
-  && npm install --no-audit --no-fund --silent \
+  && npm install --no-audit --no-fund --legacy-peer-deps \
        next react react-dom \
        tailwindcss postcss autoprefixer \
        typescript @types/node @types/react @types/react-dom \
        zod clsx \
   && cd /home/node \
-  && rm -rf /home/node/.warm
+  && rm -rf /home/node/warmcache \
+  # Proof the cache is actually warm. An image that built without downloading
+  # anything is the failure this replaces, and it is invisible from outside.
+  && test "$(du -sm /home/node/.npm | cut -f1)" -gt 20
 
 # Nothing runs by default. The sandbox driver decides what this container does.
 CMD ["sleep", "infinity"]
