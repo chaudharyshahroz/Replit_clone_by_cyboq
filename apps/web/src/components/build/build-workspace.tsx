@@ -234,7 +234,12 @@ export function BuildWorkspace({
    * code listing made the first thing anyone saw after a build a file tree,
    * which is the developer's view of an app, not the app.
    */
-  const [panel, setPanel] = useState<Panel>(files.length > 0 ? 'preview' : 'code');
+  /*
+   * The preview, from the first moment — including before there is anything to
+   * preview. Opening on a file listing means the answer to "is it working" is
+   * one click away during the only stretch when nobody knows yet.
+   */
+  const [panel, setPanel] = useState<Panel>('preview');
   const [selectedPath, setSelectedPath] = useState<string | undefined>(files[0]?.path);
   const [livePreview, setLivePreview] = useState<string | null>(previewUrl);
   const [previewError, setPreviewError] = useState<string | undefined>();
@@ -773,7 +778,8 @@ export function BuildWorkspace({
                       aria-hidden
                       className="h-8 w-8 animate-spin rounded-full border-2 border-border-strong border-t-accent motion-reduce:animate-none"
                     />
-                    <p role="status" className="text-sm text-text">
+                    <p className="text-sm text-text">Building your project</p>
+                    <p role="status" className="text-sm text-text-secondary">
                       {buildStage}
                     </p>
                     <p className="max-w-xs text-center text-xs leading-relaxed text-text-muted">

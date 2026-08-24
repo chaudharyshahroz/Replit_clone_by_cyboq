@@ -24,6 +24,7 @@ import {
   runDesignPass,
   previewLogs,
   addMadeWithBadge,
+  repairAliasPaths,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -382,7 +383,14 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
    * and travels with a GitHub export. A badge that existed only in the preview
    * would be a claim about the deployed site that was not true of it.
    */
-  const branded = addMadeWithBadge(merged);
+  /*
+   * Before anything runs it. A tree that imports `@/components/Header` with a
+   * tsconfig that maps `@/` nowhere is complete, plausible, and does not
+   * compile — and the reader meets that as a white frame rather than as a
+   * missing line in a config file.
+   */
+  const resolved = repairAliasPaths(merged);
+  const branded = addMadeWithBadge(resolved);
   const instrumented = instrumentForVisualSelection(branded);
 
   await createCheckpoint({

@@ -24,7 +24,13 @@ export function BuildLog({
   if (steps.length === 0) return null;
 
   return (
-    <ol className="mt-4 space-y-1.5">
+    /*
+      Files are set smaller and tighter than the prose deliberately. What the
+      build is doing is the thing worth reading; which file it reached is
+      supporting detail, and giving both the same weight turned the panel into a
+      wall of filenames with the explanation lost inside it.
+    */
+    <ol className="mt-4 space-y-1">
       {steps.map((step, index) => {
         const last = index === steps.length - 1;
         const active = running && last;
@@ -44,7 +50,10 @@ export function BuildLog({
         }
 
         return (
-          <li key={step.id} className="flex items-start gap-2.5 text-sm">
+          <li
+            key={step.id}
+            className={`flex items-start gap-2.5 text-sm ${step.kind === 'file' ? 'py-0' : ''}`}
+          >
             <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
               {active ? (
                 <Loader2
@@ -61,7 +70,7 @@ export function BuildLog({
             <span
               className={`min-w-0 flex-1 leading-relaxed ${
                 step.kind === 'file'
-                  ? 'truncate font-mono text-xs text-text-secondary'
+                  ? 'truncate font-mono text-[0.6875rem] text-text-muted'
                   : active
                     ? 'text-text'
                     : 'text-text-secondary'

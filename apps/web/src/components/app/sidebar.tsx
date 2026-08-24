@@ -345,6 +345,22 @@ export function Sidebar({
     setCollapsed(window.localStorage.getItem('reklu.sidebar') === 'collapsed');
   }, []);
 
+  /*
+   * A build wants the room. Opening one collapses this rail to icons; leaving
+   * restores whatever the person had chosen before, because a preference is
+   * theirs and a route is not a reason to overwrite it. Nothing is written to
+   * storage here for the same reason.
+   */
+  const onBuild = pathname.startsWith('/build/');
+
+  useEffect(() => {
+    if (onBuild) {
+      setCollapsed(true);
+      return;
+    }
+    setCollapsed(window.localStorage.getItem('reklu.sidebar') === 'collapsed');
+  }, [onBuild]);
+
   const toggle = () => {
     setCollapsed((previous) => {
       const next = !previous;
