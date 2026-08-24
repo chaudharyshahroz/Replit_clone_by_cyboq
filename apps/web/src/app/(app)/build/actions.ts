@@ -25,6 +25,7 @@ import {
   previewLogs,
   addMadeWithBadge,
   repairAliasPaths,
+  repairMissingDependencies,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -237,6 +238,18 @@ export async function generateBuildAction(
 async function runGeneration(buildId: string, prompt: string): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
 
+  /*
+   * Written before anything slow starts. The first model call takes a minute or
+   * more, and until it reports a stage there is nothing for the screen to show
+   * — which reads as a build that has not begun rather than one that has.
+   */
+  await recordStep({
+    buildId,
+    workspaceId: workspace.workspaceId,
+    kind: 'stage',
+    message: 'Reading the brief',
+  });
+
   const [project] = await db
     .select()
     .from(buildProjects)
@@ -389,7 +402,7 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = repairAliasPaths(merged);
+  const resolved = repairMissingDependencies(repairAliasPaths(merged));
   const branded = addMadeWithBadge(resolved);
   const instrumented = instrumentForVisualSelection(branded);
 

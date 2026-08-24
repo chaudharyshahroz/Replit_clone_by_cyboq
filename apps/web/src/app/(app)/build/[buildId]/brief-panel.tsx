@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { ArrowUp, ChevronDown, Loader2 } from 'lucide-react';
 import type { BuildBrief } from '@reklu/build';
-import { buildProgressAction, generateBuildAction, type BuildStep } from '../actions';
+import { generateBuildAction, type BuildStep } from '../actions';
+import { fetchBuildProgress } from '@/lib/build-progress';
 import { BuildLog } from './build-log';
 
 /**
@@ -64,11 +65,9 @@ export function BriefPanel({
   /* Whatever the build already did, so the log survives a reload. */
   useEffect(() => {
     let cancelled = false;
-    void buildProgressAction(buildId)
-      .then((progress) => {
-        if (!cancelled) setSteps(progress.steps);
-      })
-      .catch(() => undefined);
+    void fetchBuildProgress(buildId).then((progress) => {
+      if (!cancelled && progress) setSteps(progress.steps);
+    });
     return () => {
       cancelled = true;
     };
@@ -85,14 +84,14 @@ export function BriefPanel({
     let cancelled = false;
     const timer = setInterval(async () => {
       try {
-        const progress = await buildProgressAction(buildId);
-        if (cancelled) return;
+        const progress = await fetchBuildProgress(buildId);
+        if (cancelled || !progress) return;
         setStage(progress.detail);
         setSteps(progress.steps);
       } catch {
         // A failed poll is not worth reporting; the generation itself reports.
       }
-    }, 1500);
+    }, 1000);
 
     return () => {
       cancelled = true;

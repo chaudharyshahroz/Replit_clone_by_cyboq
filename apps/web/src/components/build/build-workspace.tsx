@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { buildProgressAction, previewLogsAction } from '@/app/(app)/build/actions';
+import { previewLogsAction } from '@/app/(app)/build/actions';
+import { fetchBuildProgress } from '@/lib/build-progress';
 import { ExportPanel } from './export-panel';
 import { fileLook, languageFor } from '@/lib/file-icon';
 import { siteRoutes } from '@/lib/site-routes';
@@ -342,8 +343,8 @@ export function BuildWorkspace({
     let cancelled = false;
     const timer = setInterval(async () => {
       try {
-        const progress = await buildProgressAction(buildId);
-        if (cancelled) return;
+        const progress = await fetchBuildProgress(buildId);
+        if (cancelled || !progress) return;
 
         setBuildStage(
           progress.status === 'planning' || progress.status === 'generating'
@@ -358,7 +359,7 @@ export function BuildWorkspace({
       } catch {
         // Not worth reporting from a poll; generation reports its own failure.
       }
-    }, 1500);
+    }, 1000);
 
     return () => {
       cancelled = true;

@@ -10,3 +10,4 @@ export * from './build-skills';
 export * from './design-pass';
 export * from './badge';
 export * from './repair-imports';
+export * from './repair-deps';
