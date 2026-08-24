@@ -324,6 +324,24 @@ export function BuildWorkspace({
 
   const routes = useMemo(() => siteRoutes(files.map((file) => file.path)), [files]);
 
+  /*
+   * Reload the frame when the application changes underneath it.
+   *
+   * A dev server hot-reloads a component, and does not reload a file in
+   * `public/` — so asking for a new hero image produced new bytes on disk, a
+   * frame still showing the old picture, and every reason to think the edit had
+   * not worked. A new checkpoint means new files, which is exactly when the
+   * page needs fetching again.
+   */
+  const latestCheckpoint = checkpoints[0]?.id;
+  const seenCheckpoint = useRef(latestCheckpoint);
+
+  useEffect(() => {
+    if (latestCheckpoint === seenCheckpoint.current) return;
+    seenCheckpoint.current = latestCheckpoint;
+    setReloadKey((value) => value + 1);
+  }, [latestCheckpoint]);
+
   /* A page that no longer exists after an edit should not stay selected. */
   useEffect(() => {
     if (!routes.some((entry) => entry.path === route)) setRoute(routes[0]?.path ?? '/');

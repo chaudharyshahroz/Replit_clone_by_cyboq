@@ -213,9 +213,17 @@ export interface GenerateResult {
 export async function generateBuildAction(
   buildId: string,
   prompt: string,
+  /**
+   * Whether a person typed this.
+   *
+   * The first generation is started by Reklu with an instruction nobody wrote
+   * — "build it as described in the brief" — and showing that back as though
+   * they had said it would be putting words in their mouth.
+   */
+  origin: 'user' | 'auto' = 'user',
 ): Promise<GenerateResult> {
   try {
-    return await runGeneration(buildId, prompt);
+    return await runGeneration(buildId, prompt, origin);
   } catch (error) {
     const message = isRekluError(error)
       ? error.userMessage
@@ -236,8 +244,22 @@ export async function generateBuildAction(
   }
 }
 
-async function runGeneration(buildId: string, prompt: string): Promise<GenerateResult> {
+async function runGeneration(
+  buildId: string,
+  prompt: string,
+  origin: 'user' | 'auto',
+): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
+
+  /* What was asked, kept where the answer will appear. */
+  if (origin === 'user') {
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'ask',
+      message: prompt.slice(0, 2_000),
+    });
+  }
 
   /*
    * Written before anything slow starts. The first model call takes a minute or

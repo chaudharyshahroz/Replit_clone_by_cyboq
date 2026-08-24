@@ -41,6 +41,21 @@ export function BuildLog({
           under the same heading as `tailwind.config.ts`, which is not what it
           is.
         */
+        /*
+          What was asked, set apart from what happened. A transcript where the
+          request and the work look the same reads as a log; separating them is
+          what makes it read as an exchange.
+        */
+        if (step.kind === 'ask') {
+          return (
+            <li key={step.id} className="flex justify-end py-1.5">
+              <p className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-raised px-3.5 py-2 text-sm leading-relaxed text-text">
+                {step.message}
+              </p>
+            </li>
+          );
+        }
+
         if (step.kind === 'say') {
           return (
             <li key={step.id} className="py-1.5">

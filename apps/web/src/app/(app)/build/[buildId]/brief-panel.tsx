@@ -34,13 +34,18 @@ export function BriefPanel({
   const [stage, setStage] = useState<string | null>(null);
   const [steps, setSteps] = useState<readonly BuildStep[]>([]);
 
-  const generate = (instruction: string) =>
+  const generate = (instruction: string, origin: 'user' | 'auto' = 'user') =>
     startTransition(async () => {
       setOutcome(null);
-      const result = await generateBuildAction(buildId, instruction);
+      /*
+       * Emptied on send, not on success. The instruction is in the transcript
+       * from this moment; leaving a copy in the box makes it look unsent for
+       * however long the build takes.
+       */
+      if (origin === 'user') setPrompt('');
+      const result = await generateBuildAction(buildId, instruction, origin);
       setStage(null);
       setOutcome({ ok: result.ok, message: result.message });
-      if (result.ok) setPrompt('');
     });
 
   /*
@@ -58,7 +63,7 @@ export function BriefPanel({
     if (autoStarted.current || hasFiles || pending) return;
     if (status !== 'briefing') return;
     autoStarted.current = true;
-    generate('Build it, exactly as described in the brief.');
+    generate('Build it, exactly as described in the brief.', 'auto');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasFiles, status]);
 
