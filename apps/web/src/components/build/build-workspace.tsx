@@ -6,6 +6,7 @@ import { buildProgressAction, previewLogsAction } from '@/app/(app)/build/action
 import { ExportPanel } from './export-panel';
 import { fileLook, languageFor } from '@/lib/file-icon';
 import { siteRoutes } from '@/lib/site-routes';
+import { Menu, MenuItem } from '@/components/ui/menu';
 import { TOKEN_CLASS, tokenize } from '@/lib/highlight';
 import {
   AlertTriangle,
@@ -18,6 +19,8 @@ import {
   Smartphone,
   RotateCw,
   ExternalLink,
+  ChevronDown,
+  Check,
   Monitor,
   Rocket,
   MousePointerClick,
@@ -555,22 +558,42 @@ export function BuildWorkspace({
                       cannot offer one that 404s — which would make the menu
                       worse than not having it.
                     */}
-                    <label className="sr-only" htmlFor="preview-route">
-                      Page
-                    </label>
-                    <select
-                      id="preview-route"
-                      value={route}
-                      onChange={(event) => setRoute(event.target.value)}
-                      disabled={!livePreview}
-                      className="max-w-[16rem] truncate bg-transparent px-1 py-0.5 text-sm text-text focus:outline-none disabled:opacity-40"
+                    {/*
+                      Reklu's own menu rather than a native select. A select
+                      renders as the operating system draws it — a grey list in
+                      a light popup on a dark toolbar — and it is the one control
+                      here that cannot be made to match anything around it.
+                    */}
+                    <Menu
+                      label="Page"
+                      panelClassName="w-56"
+                      triggerClassName="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-text transition-colors hover:bg-surface-hover disabled:opacity-40"
+                      trigger={
+                        <>
+                          <span className="max-w-[14rem] truncate">
+                            {routes.find((entry) => entry.path === route)?.label ?? 'Homepage'}
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} />
+                        </>
+                      }
                     >
-                      {routes.map((entry) => (
-                        <option key={entry.path} value={entry.path}>
-                          {entry.label}
-                        </option>
-                      ))}
-                    </select>
+                      {(close) =>
+                        routes.map((entry) => (
+                          <MenuItem
+                            key={entry.path}
+                            onSelect={() => {
+                              setRoute(entry.path);
+                              close();
+                            }}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+                            {entry.path === route ? (
+                              <Check className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.5} />
+                            ) : null}
+                          </MenuItem>
+                        ))
+                      }
+                    </Menu>
                   </div>
 
                   {/* ---- Out of Reklu, on the right ---- */}

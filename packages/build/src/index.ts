@@ -8,3 +8,4 @@ export * from './export';
 export * from './dev-command';
 export * from './build-skills';
 export * from './design-pass';
+export * from './badge';

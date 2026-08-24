@@ -23,6 +23,7 @@ import {
   type BuildBrief,
   runDesignPass,
   previewLogs,
+  addMadeWithBadge,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -375,7 +376,14 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
 
   // Spec §35: bake the mapping in at generation time. Retrofitting it later
   // would mean regenerating every existing project.
-  const instrumented = instrumentForVisualSelection(merged);
+  /*
+   * The mark goes into the tree, not into the serving of it: it belongs to the
+   * application the same way any other file does, so it shows in the code view
+   * and travels with a GitHub export. A badge that existed only in the preview
+   * would be a claim about the deployed site that was not true of it.
+   */
+  const branded = addMadeWithBadge(merged);
+  const instrumented = instrumentForVisualSelection(branded);
 
   await createCheckpoint({
     buildProjectId: buildId,

@@ -13,7 +13,13 @@
 import { createServer } from 'node:net';
 import { and, eq, isNull, ne } from 'drizzle-orm';
 import { buildProjects, db, sandboxes } from '@reklu/database';
-import { DEV_LOG_PATH, sandbox, sandboxStatus, type PreviewHandle } from '@reklu/sandbox';
+import {
+  DEV_LOG_PATH,
+  sandbox,
+  sandboxStatus,
+  type PreviewHandle,
+  type SandboxHandle,
+} from '@reklu/sandbox';
 import { errors, logger, newId } from '@reklu/shared';
 import { devCommandFor, parseManifest } from './dev-command';
 import { materialize, type BuildStageReporter } from './generate';
@@ -199,6 +205,62 @@ async function reuseRunningSandbox(params: {
   }
 }
 
+/** How long a dev server is given to compile before the preview opens anyway. */
+const READY_TIMEOUT_MS = 90_000;
+
+/**
+ * Block until the application answers on its port, or until it has had long
+ * enough.
+ *
+ * Returning anyway on timeout is deliberate. A server that is slow is still
+ * worth showing — the frame will fill in when it finishes — whereas refusing to
+ * open a preview because compilation took ninety seconds would turn a slow
+ * build into a failed one.
+ */
+async function waitForServer(
+  handle: SandboxHandle,
+  port: number,
+  report: BuildStageReporter,
+): Promise<boolean> {
+  const driver = sandbox();
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  let announced = false;
+
+  while (Date.now() < deadline) {
+    try {
+      const result = await driver.exec(handle, {
+        command: 'node',
+        args: [
+          '-e',
+          /*
+           * Any answer at all counts, including a 500. The question is whether
+           * something is listening and compiled enough to respond — a server
+           * returning an error page is one the frame can show, and showing it
+           * is how the error becomes visible.
+           */
+          `fetch('http://127.0.0.1:${port}/',{signal:AbortSignal.timeout(4000)})` +
+            `.then(()=>process.exit(0)).catch(()=>process.exit(1))`,
+        ],
+        timeoutMs: 8_000,
+      });
+
+      if (result.exitCode === 0) return true;
+    } catch {
+      // The container may still be starting; that is what the loop is for.
+    }
+
+    if (!announced) {
+      announced = true;
+      await report('starting_preview', 'Waiting for the dev server to compile');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+  }
+
+  logger.warn('Dev server did not answer before the preview opened', { port });
+  return false;
+}
+
 /** Find a free port by asking the OS, rather than guessing and colliding. */
 async function findFreePort(): Promise<number> {
   for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
@@ -351,6 +413,21 @@ export async function startPreview(params: {
 
     const handle = await sandbox().startPreview(materialized.handle, port, devCommand);
     running.set(params.buildProjectId, handle);
+
+    /*
+     * Wait until it can actually answer.
+     *
+     * Starting the process and calling that "started" is what produced a white
+     * frame that worked on reload: a dev server accepts the command instantly
+     * and then spends several seconds compiling, so the first request arrives
+     * before anything is listening. Opening the same URL by hand a moment later
+     * worked, which made it look like Reklu's frame was at fault rather than its
+     * timing.
+     *
+     * Asked from inside the container, so this is the server answering rather
+     * than a proxy or a DNS record that may not have caught up yet.
+     */
+    await waitForServer(materialized.handle, port, report);
 
     await db
       .update(sandboxes)
