@@ -26,6 +26,7 @@ import {
   addMadeWithBadge,
   repairAliasPaths,
   repairMissingDependencies,
+  repairFontWeights,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -402,7 +403,7 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = repairMissingDependencies(repairAliasPaths(merged));
+  const resolved = repairFontWeights(repairMissingDependencies(repairAliasPaths(merged)));
   const branded = addMadeWithBadge(resolved);
   const instrumented = instrumentForVisualSelection(branded);
 

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useRouter } from 'next/navigation';
 import { previewLogsAction } from '@/app/(app)/build/actions';
 import { fetchBuildProgress } from '@/lib/build-progress';
+import { compileErrorIn } from '@/lib/compile-error';
+import { generateBuildAction } from '@/app/(app)/build/actions';
 import { ExportPanel } from './export-panel';
 import { fileLook, languageFor } from '@/lib/file-icon';
 import { siteRoutes } from '@/lib/site-routes';
@@ -295,6 +297,17 @@ export function BuildWorkspace({
    * inside the container.
    */
   const [serverLog, setServerLog] = useState('');
+  const [fixing, setFixing] = useState(false);
+
+  /**
+   * A compile failure the reader can act on.
+   *
+   * The dev server keeps running when the application fails to compile — it
+   * serves an error page — so Reklu's own state says everything is fine while
+   * the frame shows a stack trace. Reading the log is how that becomes
+   * something to do rather than something to look at.
+   */
+  const compileError = useMemo(() => compileErrorIn(serverLog), [serverLog]);
 
   /**
    * How the preview is being looked at.
@@ -631,6 +644,38 @@ export function BuildWorkspace({
                     {livePreview ? 'Restart' : 'Start preview'}
                   </button>
                 </div>
+
+                {compileError && !previewError ? (
+                  <div className="flex flex-wrap items-center gap-3 border-b border-danger/40 bg-danger/10 px-4 py-2">
+                    <p className="min-w-0 flex-1 text-xs leading-relaxed text-text">
+                      The application does not compile. The Console tab has the full output.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={fixing}
+                      onClick={() => {
+                        setFixing(true);
+                        void generateBuildAction(
+                          buildId,
+                          /*
+                            The compiler's own words, not a paraphrase. It names
+                            the file and the line, which is most of the fix.
+                          */
+                          `The application fails to compile with the following error. ` +
+                            `Fix the cause and change nothing else.\n\n${compileError}`,
+                        )
+                          .then(() => router.refresh())
+                          .finally(() => setFixing(false));
+                      }}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-danger/40 px-2.5 py-1 text-xs text-text transition-colors hover:bg-danger/20 disabled:opacity-60"
+                    >
+                      {fixing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+                      ) : null}
+                      {fixing ? 'Fixing' : 'Fix this error'}
+                    </button>
+                  </div>
+                ) : null}
 
                 {previewError ? (
                   <p role="alert" className="border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-text">
