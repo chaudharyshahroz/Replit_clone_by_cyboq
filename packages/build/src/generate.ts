@@ -34,6 +34,12 @@ export type BuildFileReporter = (path: string) => void | Promise<void>;
 const GENERATION_PROMPT = [
   'You generate a complete, working application from a build brief.',
   '',
+  'Begin with two or three sentences, in plain prose, saying what you are about',
+  'to build and the decisions you have made about it — the kind of thing you',
+  'would say to a colleague before opening the editor. Write it as yourself,',
+  'in the present tense. No headings, no bullet list, no restating the brief',
+  'back. Then start emitting files and add no further commentary between them.',
+  '',
   'Output format — one block per file:',
   '',
   '// path/to/file.ext',
@@ -64,6 +70,13 @@ export interface GenerateBuildOptions {
   readonly existingFiles?: readonly GeneratedFile[];
   readonly signal?: AbortSignal;
   /**
+   * Told what the model said before it started writing.
+   *
+   * Its own words, streamed as soon as the first file begins — not a summary
+   * composed afterwards from what it happened to produce.
+   */
+  readonly onNarration?: ((text: string) => void | Promise<void>) | undefined;
+  /**
    * Told about each file as it completes.
    *
    * Generation was a single call that returned everything at once, so the only
@@ -78,6 +91,31 @@ export interface GenerationResult {
   readonly files: readonly GeneratedFile[];
   readonly rejected: readonly { path: string; reason: string }[];
   readonly commentary: string;
+}
+
+/**
+ * What the model said before it wrote anything.
+ *
+ * Everything up to the first file's path line. Taken from the response rather
+ * than composed from the result, so the log carries the model's own account of
+ * what it is doing rather than a description assembled afterwards from the
+ * files it happened to produce.
+ */
+export function leadingProse(response: string): string {
+  const fence = response.indexOf('```');
+  if (fence === -1) return '';
+
+  const before = response.slice(0, fence);
+  const lines = before.split('\n');
+
+  /* The last line before a fence is the file's path comment, not prose. */
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1]!.trim();
+    if (last === '' || /^(\/\/|#|<!--)/.test(last)) lines.pop();
+    else break;
+  }
+
+  return lines.join('\n').trim();
 }
 
 /** Generate or revise the file tree. Does not touch the sandbox. */
@@ -126,6 +164,7 @@ export async function generateFiles(
    */
   let text = '';
   const announced = new Set<string>();
+  let narrated = false;
 
   for await (const event of provider.stream({
     modelIdentifier: options.model.modelIdentifier,
@@ -145,7 +184,22 @@ export async function generateFiles(
      * line before it and is therefore already complete — so the report says
      * what is being written now rather than what was written a moment ago.
      */
-    if (!options.onFile || !event.text.includes('```')) continue;
+    if (!event.text.includes('```')) continue;
+
+    /*
+     * The plan, the moment the first file starts. Held until then because that
+     * is when the prose is known to be finished — while it is still arriving,
+     * anything shown would be a half sentence.
+     */
+    if (!narrated && options.onNarration) {
+      const prose = leadingProse(text);
+      if (prose) {
+        narrated = true;
+        await options.onNarration(prose);
+      }
+    }
+
+    if (!options.onFile) continue;
 
     for (const file of parseGeneratedFiles(text).files) {
       if (announced.has(file.path)) continue;

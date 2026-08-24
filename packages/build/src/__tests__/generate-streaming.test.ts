@@ -16,7 +16,7 @@ const getProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('@reklu/ai', () => ({ getProvider }));
 
-import { generateFiles } from '../generate';
+import { generateFiles, leadingProse } from '../generate';
 import type { BuildBrief } from '../brief';
 
 const brief = {
@@ -139,5 +139,65 @@ describe('reporting files as they arrive', () => {
     });
 
     expect(seen).toEqual([]);
+  });
+});
+
+/**
+ * The model's own account of what it is doing.
+ *
+ * The log used to be a list of filenames — accurate, and silent about intent.
+ * This is the model's prose, streamed the moment it stops writing prose and
+ * starts writing files, rather than a summary composed afterwards from whatever
+ * it happened to produce.
+ */
+describe('what the model says before it writes', () => {
+  it('takes the prose and leaves the path comment behind', () => {
+    const response = [
+      "I'm building a warm coffee-shop landing page with a real menu.",
+      '',
+      '// app/page.tsx',
+      '```tsx',
+      'export default function Page() { return null; }',
+      '```',
+    ].join('\n');
+
+    expect(leadingProse(response)).toBe(
+      "I'm building a warm coffee-shop landing page with a real menu.",
+    );
+  });
+
+  it('keeps a paragraph spanning several lines', () => {
+    const response = 'First sentence.\nSecond sentence.\n\n// a.ts\n```ts\nx\n```';
+    expect(leadingProse(response)).toBe('First sentence.\nSecond sentence.');
+  });
+
+  /* Nothing to say is not an error, and must not become a blank message. */
+  it('returns nothing when the model went straight to code', () => {
+    expect(leadingProse('// a.ts\n```ts\nx\n```')).toBe('');
+  });
+
+  it('returns nothing when no file has started yet', () => {
+    expect(leadingProse('I am thinking about it')).toBe('');
+  });
+
+  it('reports it once, as the first file begins', async () => {
+    emits([
+      "I'm building a landing page for a coffee shop.\n\n",
+      '// app/page.tsx\n```tsx\nconst a = 1;\n```\n',
+      '\n// lib/x.ts\n```ts\nexport const x = 1;\n```\n',
+    ]);
+
+    const said: string[] = [];
+    await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: () => undefined,
+      onNarration: (text) => {
+        said.push(text);
+      },
+    });
+
+    expect(said).toEqual(["I'm building a landing page for a coffee shop."]);
   });
 });

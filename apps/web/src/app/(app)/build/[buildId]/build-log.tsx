@@ -29,6 +29,20 @@ export function BuildLog({
         const last = index === steps.length - 1;
         const active = running && last;
 
+        /*
+          The model's own prose reads as a paragraph, not as a row in a list.
+          Giving it a tick and a monospace column would file an explanation
+          under the same heading as `tailwind.config.ts`, which is not what it
+          is.
+        */
+        if (step.kind === 'say') {
+          return (
+            <li key={step.id} className="py-1.5">
+              <p className="text-sm leading-relaxed text-text">{step.message}</p>
+            </li>
+          );
+        }
+
         return (
           <li key={step.id} className="flex items-start gap-2.5 text-sm">
             <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">

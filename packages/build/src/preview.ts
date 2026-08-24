@@ -87,6 +87,118 @@ async function destroyPreviousSandboxes(
   }
 }
 
+/**
+ * Write the new files into the container that is already serving this build.
+ *
+ * Returns undefined whenever anything is uncertain — no sandbox recorded, the
+ * container gone, the process handle lost across a restart — so the caller
+ * falls back to building a fresh one. Being wrong here would show someone a
+ * preview of an application that is no longer there.
+ */
+async function reuseRunningSandbox(params: {
+  readonly buildProjectId: string;
+  readonly workspaceId: string;
+  readonly report?: BuildStageReporter;
+}): Promise<StartPreviewResult | undefined> {
+  const handle = running.get(params.buildProjectId);
+  if (!handle) return undefined;
+
+  const [row] = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId, port: sandboxes.port })
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.buildProjectId, params.buildProjectId),
+        eq(sandboxes.workspaceId, params.workspaceId),
+        eq(sandboxes.status, 'running'),
+      ),
+    )
+    .limit(1);
+
+  if (!row?.externalId) return undefined;
+
+  const driver = sandbox();
+  const sandboxHandle = {
+    id: row.id,
+    driver: driver.name,
+    externalId: row.externalId,
+    limits: DEFAULT_PREVIEW_LIMITS,
+    isIsolated: driver.isIsolated,
+  };
+
+  const files = await loadTree(params.buildProjectId, params.workspaceId);
+  if (files.length === 0) return undefined;
+
+  try {
+    /*
+     * Asked of the container itself, not assumed from a database row. A row
+     * survives a restart that the container did not.
+     */
+    const alive = await driver.exec(sandboxHandle, {
+      command: 'sh',
+      args: ['-c', 'true'],
+      timeoutMs: 10_000,
+    });
+    if (alive.exitCode !== 0) return undefined;
+
+    /*
+     * Dependencies only when they changed. Comparing the manifest against the
+     * one in the container is a single read, and it is the difference between
+     * an edit that reloads in a second and one that reinstalls for a minute.
+     */
+    const manifest = files.find((file) => file.path === 'package.json');
+    let needsInstall = false;
+
+    if (manifest) {
+      const current = (await driver.readFile(sandboxHandle, 'package.json').catch(() => '')) ?? '';
+      needsInstall = current.trim() !== manifest.content.trim();
+    }
+
+    await params.report?.('generating_files', 'Updating the running preview');
+    await driver.writeFiles(
+      sandboxHandle,
+      files.map((file) => ({ path: file.path, content: file.content })),
+    );
+
+    if (needsInstall) {
+      await params.report?.('installing_dependencies');
+      const install = await driver.exec(sandboxHandle, {
+        command: 'npm',
+        args: ['install', '--no-audit', '--no-fund'],
+        timeoutMs: 600_000,
+      });
+
+      if (install.exitCode !== 0) {
+        logger.warn('Install failed in a reused sandbox; rebuilding it', {
+          buildProjectId: params.buildProjectId,
+        });
+        return undefined;
+      }
+    }
+
+    logger.info('Reused a running sandbox for an edit', {
+      buildProjectId: params.buildProjectId,
+      reinstalled: needsInstall,
+    });
+
+    return {
+      url: handle.url,
+      port: row.port ?? handle.port,
+      sandboxId: row.id,
+      installed: true,
+      checksPassed: null,
+      output: '',
+      isIsolated: driver.isIsolated,
+    };
+  } catch (error) {
+    logger.debug('Could not reuse the running sandbox; building a fresh one', {
+      buildProjectId: params.buildProjectId,
+      error,
+    });
+    return undefined;
+  }
+}
+
 /** Find a free port by asking the OS, rather than guessing and colliding. */
 async function findFreePort(): Promise<number> {
   for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
@@ -156,6 +268,19 @@ export async function startPreview(params: {
   await stopPreview(params.buildProjectId, params.workspaceId);
 
   const report: BuildStageReporter = params.report ?? (() => undefined);
+  /*
+   * Reuse what is already running, if anything is.
+   *
+   * Every preview used to tear the container down and install the dependency
+   * tree again from nothing — a minute or more of waiting to see a one-line
+   * change, on a machine that already had a working copy of the application a
+   * few seconds earlier. An edit now writes the changed files into the running
+   * container and lets the dev server reload them, which is what a dev server
+   * is for.
+   */
+  const reused = await reuseRunningSandbox(params);
+  if (reused) return reused;
+
   /*
    * Reclaim first. Otherwise each preview leaves its predecessor running, and
    * the second one fails to bind a port the first still holds — which surfaces

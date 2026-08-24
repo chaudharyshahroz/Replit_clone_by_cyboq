@@ -281,6 +281,15 @@ async function runGeneration(buildId: string, prompt: string): Promise<GenerateR
         message: STAGE_LABELS[stage] ?? stage,
       });
     },
+    /* The model's own words, as it starts writing rather than afterwards. */
+    onNarration: async (text) => {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'say',
+        message: text.slice(0, 2_000),
+      });
+    },
     /* Named as it is written, not listed afterwards. */
     onFile: async (path) => {
       await recordStep({
