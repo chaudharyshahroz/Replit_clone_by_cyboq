@@ -114,6 +114,13 @@ describe('workspace scoping', () => {
     // Catalogue rows shared by every workspace. Usage against them
     // (aiRequests) is scoped; the catalogue is not.
     'aiProviders', 'aiModels', 'plans', 'featureFlags',
+    /*
+     * Written before there is an account, let alone a workspace. Somebody on
+     * the waitlist has given an email address and nothing else — there is no
+     * tenant to scope them to, and inventing one to satisfy this rule would
+     * create a workspace for a person who has never signed in.
+     */
+    'waitlistSignups',
   ]);
 
   /**

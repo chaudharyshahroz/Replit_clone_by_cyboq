@@ -68,6 +68,7 @@ export const ID_PREFIXES = {
   webhookDelivery: 'whd',
   buildEvent: 'bev',
   publication: 'pub',
+  waitlistSignup: 'wls',
 } as const;
 
 export type IdPrefixKey = keyof typeof ID_PREFIXES;

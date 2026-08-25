@@ -78,6 +78,13 @@
       "when": 1787645517263,
       "tag": "0010_publications",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787648088204,
+      "tag": "0011_waitlist",
+      "breakpoints": true
     }
   ]
 }

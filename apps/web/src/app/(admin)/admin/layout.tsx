@@ -6,6 +6,7 @@ import {
   Cpu,
   CreditCard,
   ExternalLink,
+  Mailbox,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -23,6 +24,7 @@ const SECTIONS = [
   { href: '/admin', label: 'Overview', icon: BarChart3 },
   { href: '/admin/analytics', label: 'Analytics', icon: Activity },
   { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/waitlist', label: 'Waitlist', icon: Mailbox },
   { href: '/admin/billing', label: 'Billing', icon: CreditCard },
   { href: '/admin/ai', label: 'AI', icon: Cpu },
   { href: '/admin/system', label: 'System', icon: ShieldCheck },

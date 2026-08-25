@@ -183,3 +183,39 @@ export type Notification = typeof notifications.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type FeatureFlag = typeof featureFlags.$inferSelect;
+
+/**
+ * People waiting for Reklu to open.
+ *
+ * Deliberately thin. Somebody who has given an email address and nothing else
+ * has not consented to being profiled, and the only questions this table is
+ * meant to answer are how many are waiting, in what order they arrived, and who
+ * has been let in — so it holds what answers those and stops.
+ *
+ * There is no IP address, no user agent and no referrer. Each would be personal
+ * data collected before there is an account to attach it to, kept for a purpose
+ * nobody stated, and none of them is needed to send an invitation.
+ */
+export const waitlistSignups = pgTable(
+  'waitlist_signups',
+  {
+    id: primaryId('waitlistSignup'),
+    /** Stored lowercase and trimmed; the unique index is what makes that matter. */
+    email: text('email').notNull(),
+    /** Where they came from, when the link said so. Free text, never required. */
+    source: text('source'),
+    /** Set when an invitation goes out, so nobody is invited twice. */
+    invitedAt: tsColumn('invited_at'),
+    ...timestamps,
+  },
+  (table) => [
+    /*
+     * One row per address. Somebody signing up twice is not two people, and a
+     * duplicate would mean two invitations to the same inbox.
+     */
+    uniqueIndex('waitlist_signups_email_idx').on(table.email),
+    index('waitlist_signups_created_idx').on(table.createdAt),
+  ],
+);
+
+export type WaitlistSignup = typeof waitlistSignups.$inferSelect;

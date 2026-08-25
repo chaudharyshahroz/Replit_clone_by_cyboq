@@ -28,7 +28,20 @@ const COLUMNS = [
   },
 ] as const;
 
-export function Footer() {
+/**
+ * The same columns, with the two ways in replaced by the one that is open.
+ *
+ * Hidden rather than removed: `/login` and `/signup` still work for anybody
+ * with the address, which is how the person running this instance reaches the
+ * admin panel while the front door is shut.
+ */
+const WAITLIST_COLUMNS = COLUMNS.map((column) =>
+  column.heading === 'Get started'
+    ? { heading: 'Get started', links: [{ href: '#join', label: 'Join the waitlist' }] }
+    : column,
+);
+
+export function Footer({ waitlist = false }: { waitlist?: boolean }) {
   return (
     <footer className="border-t border-border bg-surface/30">
       <div className="mx-auto max-w-6xl px-6 py-16">
@@ -40,7 +53,7 @@ export function Footer() {
             </p>
           </div>
 
-          {COLUMNS.map((column) => (
+          {(waitlist ? WAITLIST_COLUMNS : COLUMNS).map((column) => (
             <nav key={column.heading} aria-labelledby={`footer-${column.heading}`}>
               <h2
                 id={`footer-${column.heading}`}

@@ -467,6 +467,51 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
+### Waitlist ✅ — 12 tests
+
+`WAITLIST_MODE=true` turns reklu.app into a waitlist: the landing page collects
+email addresses, and every route into signing in or creating an account is
+hidden from the nav, the footer and the closing call to action.
+
+**Hidden, not disabled.** `/login` and `/signup` keep working for anyone with
+the address. The person running the instance still has to reach the admin
+panel, and locking the door with themselves outside is not a launch strategy.
+
+The flag is read per request rather than through `loadServerEnv`, for two
+reasons. A statically rendered landing page would freeze it at build time, so
+turning the waitlist off would need a rebuild rather than a restart — a value
+baked into an image has caught this project once already. And full validation
+on that page would make a marketing site refuse to build because no AI provider
+key is configured, which is a coupling nobody would choose.
+
+This is the only endpoint in Reklu that anybody on the internet can write to
+without an account, so every protection is the only protection:
+
+- An address already on the list gets the same answer as a new one. The
+  alternative turns the form into a way to ask "is this person waiting for
+  Reklu?" about any address somebody types.
+- A hidden field no person can see, hidden from assistive technology too — a
+  trap described to a screen reader catches exactly the people it must not.
+  Anything that fills it in is told it succeeded, because a bot told it was
+  caught learns to stop filling it in.
+- Five signups per caller per hour, in memory. Honestly a speed bump: per
+  process, forgotten on restart, and keyed on a spoofable header. The unique
+  index is what bounds the damage — a flood of one address is one row.
+
+The table holds an email, an optional source, and when an invitation was sent.
+No IP address, no user agent, no referrer: each would be personal data
+collected before there is an account to attach it to, and none is needed to
+send an invitation. It is declared global in the workspace-scoping test, since
+somebody on a waitlist has no tenant to belong to.
+
+Admin → Waitlist lists everyone with counts, and exports CSV through a route
+that repeats the super-admin check — a route handler inherits nothing from the
+layout guarding the page beside it, and this one returns every address.
+
+**Sending the invitations is not built.** Reklu has no mail provider
+configured, so the addresses come out as a file rather than behind a Send
+button that would do nothing.
+
 ### Publishing ✅ (spec §40) — 22 tests
 
 A build goes live at `<slug>.<PUBLISH_DOMAIN>` on Reklu's own server, with no

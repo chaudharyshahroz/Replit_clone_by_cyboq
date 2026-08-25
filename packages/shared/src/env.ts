@@ -778,3 +778,26 @@ export const serverEnv = (): ServerEnv => loadServerEnv();
 export const features = (): FeatureAvailability => featuresFor(loadServerEnv());
 export const isProduction = (): boolean => loadServerEnv().NODE_ENV === 'production';
 export const isDevelopment = (): boolean => loadServerEnv().NODE_ENV === 'development';
+
+/**
+ * Whether the front door is a waitlist.
+ *
+ * Hides every route into signing in or signing up and puts an email capture on
+ * the landing page. It hides them and does not disable them: the person who
+ * owns the instance still has to reach the admin panel, and locking the door
+ * with themselves outside is not a launch strategy. `/login` keeps working for
+ * anybody who knows the address.
+ *
+ * Read straight from the environment rather than through `loadServerEnv`, and
+ * that is deliberate. The landing page is the one page that must render for
+ * somebody with no account and no interest in whether Reklu has an AI provider
+ * key — full validation there would make a marketing page refuse to build
+ * because Chat is not configured, which is a coupling nobody would choose.
+ *
+ * A flag with a safe default and no way to misbehave is exactly the case that
+ * does not need the validator.
+ */
+export function waitlistMode(): boolean {
+  const value = process.env['WAITLIST_MODE'];
+  return value === 'true' || value === '1';
+}

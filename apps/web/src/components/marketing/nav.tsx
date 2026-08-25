@@ -16,7 +16,7 @@ const LINKS = [
   { href: '#why', label: 'Why Reklu' },
 ] as const;
 
-export function Nav() {
+export function Nav({ waitlist = false }: { waitlist?: boolean }) {
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-canvas/80 backdrop-blur-xl">
       <nav
@@ -46,13 +46,27 @@ export function Nav() {
           ))}
         </ul>
 
+        {/*
+          Hidden, not removed. `/login` and `/signup` keep working for anybody
+          with the address — the person running this instance still has to reach
+          the admin panel, and locking the door with themselves outside is not a
+          launch strategy.
+        */}
         <div className="flex items-center gap-2">
-          <ButtonLink href="/login" variant="ghost" size="sm" className="hidden sm:inline-flex">
-            Sign in
-          </ButtonLink>
-          <ButtonLink href="/signup" variant="primary" size="sm">
-            Get started
-          </ButtonLink>
+          {waitlist ? (
+            <ButtonLink href="#join" variant="primary" size="sm">
+              Join the waitlist
+            </ButtonLink>
+          ) : (
+            <>
+              <ButtonLink href="/login" variant="ghost" size="sm" className="hidden sm:inline-flex">
+                Sign in
+              </ButtonLink>
+              <ButtonLink href="/signup" variant="primary" size="sm">
+                Get started
+              </ButtonLink>
+            </>
+          )}
         </div>
       </nav>
     </header>

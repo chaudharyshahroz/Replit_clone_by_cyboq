@@ -25,7 +25,8 @@ const UNIFIED = [
   'Ship to production',
 ] as const;
 
-export function Unify() {
+export function Unify({ waitlist = false }: { waitlist?: boolean }) {
+  void waitlist;
   return (
     <section id="why" className="scroll-mt-20 border-t border-border bg-surface/30 py-24">
       <div className="reveal mx-auto max-w-6xl px-6">
@@ -94,7 +95,7 @@ export function Unify() {
   );
 }
 
-export function FinalCta() {
+export function FinalCta({ waitlist = false }: { waitlist?: boolean }) {
   return (
     <section id="start" className="scroll-mt-20 border-t border-border py-28">
       <div className="reveal mx-auto max-w-2xl px-6 text-center">
@@ -105,8 +106,12 @@ export function FinalCta() {
           Reklu turns an idea into completed work.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <ButtonLink href="/signup" size="lg">
-            Start with Reklu
+          {/*
+            The way in, whichever one is open. Hidden rather than removed:
+            `/signup` keeps working for anybody with the address.
+          */}
+          <ButtonLink href={waitlist ? '#join' : '/signup'} size="lg">
+            {waitlist ? 'Join the waitlist' : 'Start with Reklu'}
             <ArrowRight className="h-4 w-4" strokeWidth={2} />
           </ButtonLink>
           {/*
