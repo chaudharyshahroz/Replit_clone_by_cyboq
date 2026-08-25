@@ -175,7 +175,12 @@ export default async function BuildDetailPage({
       <div className="min-h-[32rem] min-w-0 flex-1 lg:min-h-0">
         <BuildWorkspace
           buildId={buildId}
-          files={files}
+          files={files.map((file) => ({
+            path: file.path,
+            content: file.content,
+            language: file.language,
+            ...(file.binary ? { imageBytes: file.binary.bytes } : {}),
+          }))}
           checkpoints={checkpoints.map((checkpoint) => ({
             id: checkpoint.id,
             version: checkpoint.version,

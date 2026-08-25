@@ -47,6 +47,8 @@ export interface BuildFile {
   readonly path: string;
   readonly content: string;
   readonly language: string;
+  /** Set for a generated picture, whose bytes are not in the tree. */
+  readonly imageBytes?: number;
 }
 
 export interface BuildCheckpoint {
@@ -767,6 +769,24 @@ export function BuildWorkspace({
                       <p className="sticky top-0 z-10 border-b border-border bg-canvas px-4 py-2 font-mono text-[0.6875rem] text-text-muted">
                         {selected.path}
                       </p>
+                      {selected.imageBytes !== undefined ? (
+                        /*
+                          A photograph, not a file to read. Its bytes are in
+                          storage rather than in the tree — a code view that
+                          loaded a megabyte per image to render a file listing
+                          would get slower the better the site looked — so what
+                          is shown is what is true about it.
+                        */
+                        <div className="p-6">
+                          <p className="text-sm text-text">
+                            A generated image, {Math.max(1, Math.round(selected.imageBytes / 1024))} KB.
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-text-muted">
+                            Drawn from the alt text on the element that uses it. It appears in the
+                            preview and travels with the project on export.
+                          </p>
+                        </div>
+                      ) : (
                       <pre className="overflow-x-auto p-4">
                         <code className="font-mono text-[0.75rem] leading-relaxed">
                           {/*
@@ -783,6 +803,7 @@ export function BuildWorkspace({
                           )}
                         </code>
                       </pre>
+                      )}
                     </div>
                   ) : (
                     <p className="p-6 text-sm text-text-muted">Select a file to view it.</p>

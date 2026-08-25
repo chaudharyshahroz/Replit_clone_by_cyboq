@@ -16,6 +16,7 @@ import { logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
 import { skillGuidanceFor } from './build-skills';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
+import { withImageBytes } from './artwork';
 
 export type BuildStage =
   | 'interpreting_product'
@@ -300,7 +301,7 @@ export async function materialize(params: {
     limits,
     params.publishPort === undefined ? undefined : { publishPort: params.publishPort },
   );
-  await driver.writeFiles(handle, params.files);
+  await driver.writeFiles(handle, await withImageBytes(params.files));
 
   const hasPackageJson = params.files.some((file) => file.path === 'package.json');
   if (!hasPackageJson) {

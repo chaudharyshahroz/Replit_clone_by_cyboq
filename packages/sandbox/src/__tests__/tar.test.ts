@@ -124,3 +124,32 @@ describe('long paths', () => {
     expect(() => createTar([{ path, content: 'x' }])).toThrow(/too long/i);
   });
 });
+
+/*
+ * A generated image reaches the sandbox this way. Every layer between the model
+ * and the container speaks strings, and a PNG is not one — so the bytes travel
+ * as base64 and are decoded here, at the last point before the archive.
+ */
+describe('binary entries', () => {
+  it('decodes base64 content into the archive', () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const archive = createTar([
+      { path: 'public/hero.png', content: bytes.toString('base64'), encoding: 'base64' },
+    ]);
+
+    expect(extractTar(archive)[0]?.path).toBe('public/hero.png');
+    /*
+     * Asserted against the archive itself rather than through extractTar, which
+     * decodes as text and would mangle any byte above 0x7f — the archive is
+     * what Docker receives, and the bytes in it are what has to be right.
+     */
+    expect(archive.includes(bytes)).toBe(true);
+    // And not the base64 text that carried them.
+    expect(archive.includes(Buffer.from(bytes.toString('base64')))).toBe(false);
+  });
+
+  it('still treats content as text by default', () => {
+    const archive = createTar([{ path: 'a.txt', content: 'plain' }]);
+    expect(extractTar(archive)[0]?.content).toBe('plain');
+  });
+});

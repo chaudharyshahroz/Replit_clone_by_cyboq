@@ -26,6 +26,7 @@ import {
 } from '@reklu/integrations';
 import { errors, logger, newId } from '@reklu/shared';
 import { loadTree } from './versions';
+import { withImageBytes } from './artwork';
 
 export interface ExportInput {
   readonly buildProjectId: string;
@@ -81,12 +82,20 @@ async function treeToPush(
   versionId: string | undefined,
 ): Promise<readonly PushableFile[]> {
   const tree = await loadTree(buildProjectId, workspaceId, versionId);
-  const bytes = tree.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+  const bytes = tree.reduce(
+    (sum, file) => sum + (file.binary?.bytes ?? Buffer.byteLength(file.content)),
+    0,
+  );
 
   const rejection = exportRejection(tree.length, bytes);
   if (rejection) throw errors.validation(rejection);
 
-  return tree.map((file) => ({ path: file.path, content: file.content }));
+  /*
+   * The pictures are fetched here, so an exported repository is the whole site
+   * rather than a site with holes in it. It is also the only place they are
+   * read on this path — the size check above uses the recorded byte count.
+   */
+  return withImageBytes(tree);
 }
 
 /** Record the attempt before doing anything that can fail or hang. */

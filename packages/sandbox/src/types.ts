@@ -47,6 +47,8 @@ export interface WriteFile {
   /** Sandbox-relative path. Traversal is rejected before any write. */
   readonly path: string;
   readonly content: string;
+  /** Base64 for binary files — an image written into `public/`, typically. */
+  readonly encoding?: 'utf8' | 'base64';
 }
 
 export interface ExecOptions {

@@ -467,6 +467,48 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
+### Generated imagery ✅ — 11 tests
+
+Asked for a barber shop landing page, the model wrote an image URL from memory
+and the page rendered a photograph of someone deadlifting. It was not a bad
+guess so much as a guess: no model has a catalogue of real image URLs, so
+anything written into a `src` is misremembered or invented, and an invented URL
+is a broken image.
+
+So the model no longer chooses pictures. It references `/generated/<name>.png`
+and writes what the photograph shows in the `alt` it has to write anyway — the
+accessibility rule and the art direction turn out to be the same sentence — and
+Reklu draws each one with `gpt-image-1`. Proportions come from the `width` and
+`height` the page already declares.
+
+An image with no usable description is skipped rather than invented: drawing
+something arbitrary would put a confidently wrong picture on the page, which is
+the failure this removes rather than a smaller version of it. A picture that
+fails to draw is reported and the build ships without it — the application is
+written and working, and what is missing is a photograph.
+
+They are drawn one at a time. Image generation is the most expensive call in a
+build, and a page wanting six must not open six connections to a provider that
+rate-limits by the minute.
+
+The bytes live in object storage and the tree carries a key, because the tree is
+read on every page load of the code view and a photograph is a megabyte. They
+are fetched at exactly two points: writing a sandbox, and pushing an export —
+so a preview shows the real site and an exported repository is the whole of it.
+Binary files travel as base64 from the tree down to the tar header.
+
+Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
+still completes and each image is reported as not drawn, naming the variable.
+
+### Build skills — imagery and performance
+
+Two skills were added to the set appended to the system prompt. `IMAGERY` is the
+convention above. `PERFORMANCE` states what makes a page fast as things visible
+in the output — framework image component, `font-display: swap`, no library for
+what the platform does, nothing above the fold waiting on client data, animating
+only transform and opacity. Both follow the file's own rule: a standard, not a
+preference, and checkable in the generated files.
+
 ### Visual selection ✅ (spec §35) — 26 tests
 
 Stable `data-reklu-id` attributes are injected into generated JSX at

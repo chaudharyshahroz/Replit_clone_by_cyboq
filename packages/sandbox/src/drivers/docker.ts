@@ -651,7 +651,11 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
        * unwritable by it, which surfaces as npm failing on its own node_modules.
        */
       const archive = createTar(
-        files.map((file) => ({ path: file.path, content: file.content })),
+        files.map((file) => ({
+          path: file.path,
+          content: file.content,
+          ...(file.encoding ? { encoding: file.encoding } : {}),
+        })),
         { uid: UID, gid: GID },
       );
 

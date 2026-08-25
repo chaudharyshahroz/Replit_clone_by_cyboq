@@ -25,6 +25,7 @@ import {
   runDesignPass,
   previewLogs,
   addMadeWithBadge,
+  drawArtwork,
   repairAliasPaths,
   repairMissingDependencies,
   repairFontWeights,
@@ -33,6 +34,7 @@ import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
 import { errors, isRekluError, logger, newId, slugify } from '@reklu/shared';
+import { generateImage } from '@reklu/create';
 import { getAppContext } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { storage } from '@reklu/storage';
@@ -382,6 +384,41 @@ async function composePrompt(
   return { prompt: sections.join('\n\n'), images };
 }
 
+/**
+ * Draw one picture for a build.
+ *
+ * A thin wrapper on the image generator that already exists, with the shape
+ * mapped to a size the provider accepts. The bytes go to object storage and the
+ * tree keeps only a key: a tree is read on every page load of the code view,
+ * and a photograph is a megabyte.
+ */
+async function drawOne(
+  imagePrompt: string,
+  shape: 'landscape' | 'square' | 'portrait',
+  workspaceId: string,
+): Promise<GeneratedFile['binary']> {
+  const size =
+    shape === 'landscape' ? '1536x1024' : shape === 'portrait' ? '1024x1536' : '1024x1024';
+
+  const image = await generateImage({
+    workspaceId,
+    prompt: imagePrompt,
+    size,
+    /*
+     * Medium, not high. These are photographs behind headings on a page that
+     * has to load quickly, and the difference costs several times as much and
+     * roughly a minute more per picture on a build that already takes minutes.
+     */
+    quality: 'medium',
+  });
+
+  return {
+    storageKey: image.storageKey,
+    contentType: image.contentType,
+    bytes: image.bytes,
+  };
+}
+
 async function runGeneration(buildId: string, request: BuildRequest): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
 
@@ -574,7 +611,34 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * missing line in a config file.
    */
   const resolved = repairFontWeights(repairMissingDependencies(repairAliasPaths(merged)));
-  const branded = addMadeWithBadge(resolved);
+
+  /*
+   * The photographs, drawn from what the page says they show.
+   *
+   * After the repairs and before the badge, because a picture is content and
+   * the badge is a mark on top of finished content. A build whose images fail
+   * still ships: the application is written and working, and what is missing is
+   * a photograph.
+   */
+  const illustrated = await drawArtwork(
+    resolved,
+    `${brief.product} — ${brief.summary}`,
+    (imagePrompt, shape) =>
+      drawOne(imagePrompt, shape, workspace.workspaceId),
+    (message) =>
+      recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+  );
+
+  for (const failure of illustrated.failures) {
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'say',
+      message: `Could not draw ${failure.path.replace(/^public/, '')}: ${failure.reason.slice(0, 200)}`,
+    });
+  }
+
+  const branded = addMadeWithBadge(illustrated.files);
   const instrumented = instrumentForVisualSelection(branded);
 
   await createCheckpoint({

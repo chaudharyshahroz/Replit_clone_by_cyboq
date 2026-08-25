@@ -19,6 +19,12 @@ const PREFIX_MAX = 155;
 export interface TarEntry {
   readonly path: string;
   readonly content: string;
+  /**
+   * How to read `content`. Base64 is how a PNG reaches a sandbox: the tar
+   * carries bytes, and a generated image is bytes, but every layer between here
+   * and the model speaks strings.
+   */
+  readonly encoding?: 'utf8' | 'base64';
   /** Octal file mode. Defaults to 0644 — never executable unless asked. */
   readonly mode?: number;
 }
@@ -136,7 +142,7 @@ export function createTar(entries: readonly TarEntry[], options: TarOptions = {}
   }
 
   for (const entry of entries) {
-    const content = Buffer.from(entry.content, 'utf8');
+    const content = Buffer.from(entry.content, entry.encoding ?? 'utf8');
     blocks.push(
       header({
         path: entry.path,

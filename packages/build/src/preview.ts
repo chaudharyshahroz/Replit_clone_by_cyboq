@@ -24,6 +24,8 @@ import { errors, logger, newId } from '@reklu/shared';
 import { devCommandFor, parseManifest } from './dev-command';
 import { materialize, type BuildStageReporter } from './generate';
 import { loadTree } from './versions';
+import { withImageBytes } from './artwork';
+import type { GeneratedFile } from './parse';
 
 /** Previews live on a dedicated range, well away from Reklu's own port. */
 const PORT_RANGE_START = 43_000;
@@ -163,7 +165,7 @@ async function reuseRunningSandbox(params: {
     await params.report?.('generating_files', 'Updating the running preview');
     await driver.writeFiles(
       sandboxHandle,
-      files.map((file) => ({ path: file.path, content: file.content })),
+      await withImageBytes(files),
     );
 
     if (needsInstall) {

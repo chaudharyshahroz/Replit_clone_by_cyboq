@@ -111,10 +111,12 @@ export async function createCheckpoint(input: CheckpointInput): Promise<Checkpoi
         buildVersionId: versionId,
         workspaceId: input.workspaceId,
         path: file.path,
-        content: file.content,
-        sizeBytes: Buffer.byteLength(file.content),
+        /* A picture's bytes live in storage; the row keeps the key. */
+        content: file.binary ? null : file.content,
+        storageKey: file.binary?.storageKey ?? null,
+        sizeBytes: file.binary ? file.binary.bytes : Buffer.byteLength(file.content),
         language: file.language,
-        isBinary: false,
+        isBinary: Boolean(file.binary),
         isGenerated: true,
       })),
     );
@@ -146,6 +148,22 @@ export async function createCheckpoint(input: CheckpointInput): Promise<Checkpoi
 }
 
 /** The file tree at a given version. */
+/**
+ * The type of a stored file, from its name.
+ *
+ * Derived rather than stored: every picture Reklu draws is a PNG, and adding a
+ * column to record one constant would be a migration that says nothing the path
+ * does not already say.
+ */
+function contentTypeFor(path: string): string {
+  const extension = path.split('.').pop()?.toLowerCase();
+  if (extension === 'png') return 'image/png';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'svg') return 'image/svg+xml';
+  return 'application/octet-stream';
+}
+
 export async function loadTree(
   buildProjectId: string,
   workspaceId: string,
@@ -171,6 +189,9 @@ export async function loadTree(
       path: buildFiles.path,
       content: buildFiles.content,
       language: buildFiles.language,
+      storageKey: buildFiles.storageKey,
+      sizeBytes: buildFiles.sizeBytes,
+      isBinary: buildFiles.isBinary,
     })
     .from(buildFiles)
     .where(
@@ -181,10 +202,24 @@ export async function loadTree(
     )
     .orderBy(buildFiles.path);
 
+  /*
+   * The bytes of a picture are deliberately not read here. This runs on every
+   * page load of the code view, and loading a megabyte per image to render a
+   * file tree would make opening a build slower the better it looked.
+   */
   return rows.map((row) => ({
     path: row.path,
     content: row.content ?? '',
     language: row.language ?? 'text',
+    ...(row.isBinary && row.storageKey
+      ? {
+          binary: {
+            storageKey: row.storageKey,
+            contentType: contentTypeFor(row.path),
+            bytes: row.sizeBytes ?? 0,
+          },
+        }
+      : {}),
   }));
 }
 

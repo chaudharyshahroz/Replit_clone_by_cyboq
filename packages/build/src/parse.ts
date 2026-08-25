@@ -15,6 +15,19 @@ export interface GeneratedFile {
   readonly path: string;
   readonly content: string;
   readonly language: string;
+  /**
+   * Set for a file whose bytes are not text — a generated image.
+   *
+   * The bytes live in object storage rather than in the tree, because a tree is
+   * read on every page load of the code view and a photograph is a megabyte.
+   * `content` is empty for these; the preview fetches the bytes when it writes
+   * the file into the sandbox, and nothing else needs them at all.
+   */
+  readonly binary?: {
+    readonly storageKey: string;
+    readonly contentType: string;
+    readonly bytes: number;
+  };
 }
 
 export interface ParseResult {

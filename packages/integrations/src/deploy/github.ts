@@ -29,6 +29,8 @@ export interface RepositoryTarget {
 export interface PushableFile {
   readonly path: string;
   readonly content: string;
+  /** Base64 for a file whose bytes are not text — a generated image. */
+  readonly encoding?: 'utf8' | 'base64';
 }
 
 export interface PushResult {
@@ -154,7 +156,14 @@ export async function pushFiles(
         'POST',
         `${base}/git/blobs`,
         accessToken,
-        { content: Buffer.from(file.content, 'utf8').toString('base64'), encoding: 'base64' },
+        {
+          /* Already base64 for a binary file; re-encoding it would ship the text. */
+          content:
+            file.encoding === 'base64'
+              ? file.content
+              : Buffer.from(file.content, 'utf8').toString('base64'),
+          encoding: 'base64',
+        },
         ACCEPT,
       );
       return { path: file.path, mode: FILE_MODE, type: 'blob' as const, sha: blob.sha };

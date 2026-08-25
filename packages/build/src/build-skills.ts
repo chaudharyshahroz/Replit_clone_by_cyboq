@@ -51,6 +51,52 @@ export const CORE_ENGINEERING: BuildSkill = {
 };
 
 /**
+ * How pictures get onto the page.
+ *
+ * Applies everywhere, because the failure it prevents happens everywhere: asked
+ * for a barber shop, a model wrote an image URL from memory and the page showed
+ * a photograph of someone deadlifting. No model has a catalogue of real image
+ * URLs, so anything written there is remembered wrong or invented outright.
+ *
+ * The model therefore describes the picture instead of choosing it, in the alt
+ * text it has to write anyway — the accessibility rule and the art direction
+ * turn out to be the same sentence — and Reklu draws it.
+ */
+export const IMAGERY: BuildSkill = {
+  key: 'imagery',
+  name: 'Pictures',
+  summary: 'Describe the photograph; Reklu draws it.',
+  guidance: [
+    'Never link an image from an external URL, a stock photo site, or a CDN. You do not know which URLs exist, and a guessed one is a broken image.',
+    'Reference every photograph as /generated/<name>.png — for example /generated/hero.png or /generated/barber-chair.png. Reklu generates each one and puts it there.',
+    'The alt text is the art direction. Write what the photograph actually shows, specifically enough to be drawn from: "a barber trimming a beard with clippers in a warm wood-panelled shop", not "barber shop image".',
+    'Every image carries explicit width and height, which also decide its proportions — wide for a hero, square for a portrait or a tile.',
+    'Ask for the pictures the page genuinely needs. Each one is drawn, so eight decorative photographs cost eight of them.',
+    'An icon is not a photograph. Draw icons as inline SVG, never as a generated picture.',
+  ],
+};
+
+/**
+ * What makes a page fast, stated as things that can be checked in the output.
+ *
+ * "Optimise performance" is not guidance — nobody can tell from a file whether
+ * it was followed. Each of these is visible in the code it produces.
+ */
+export const PERFORMANCE: BuildSkill = {
+  key: 'performance',
+  name: 'Performance',
+  summary: 'Fast because of what it does not do.',
+  guidance: [
+    'Use the framework image component where the stack has one, so images are sized and lazily loaded. The image visible on arrival gets priority; everything below the fold does not.',
+    'Fonts load with font-display: swap and are preloaded when the framework offers it. Never block first paint on a font.',
+    'No animation library, UI kit or date library for something the platform already does. Every dependency is weight on a page someone waits for.',
+    'Nothing above the fold waits on client-side data. Render it on the server or ship it as static content.',
+    'Defer anything that is not needed to paint — analytics, chat widgets, carousels — and never let one block rendering.',
+    'Animate transform and opacity only. Animating layout properties forces the browser to re-lay-out the page on every frame.',
+  ],
+};
+
+/**
  * Per-target standards.
  *
  * Written for the stack `stackFor` actually chooses, so the advice matches the
@@ -132,7 +178,11 @@ export const BUILD_SKILLS: Readonly<Record<BuildTarget, BuildSkill>> = {
 
 /** The skills that apply to a build, most general first. */
 export function skillsFor(target: BuildTarget): readonly BuildSkill[] {
-  return [CORE_ENGINEERING, BUILD_SKILLS[target]];
+  /* An API has no pages, so it has nothing to put a photograph on. */
+  const visual = target !== 'api';
+  return visual
+    ? [CORE_ENGINEERING, IMAGERY, PERFORMANCE, BUILD_SKILLS[target]]
+    : [CORE_ENGINEERING, BUILD_SKILLS[target]];
 }
 
 /**
