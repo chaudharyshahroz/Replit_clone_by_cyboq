@@ -1,10 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#FF4A0D">
-  <g stroke="#FF4A0D" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M32 28 L50 7.2 L68 28 Q50 19.2 32 28 Z"/>
-    <path d="M32 28 L50 7.2 L68 28 Q50 19.2 32 28 Z" transform="rotate(90 50 50)"/>
-    <path d="M32 28 L50 7.2 L68 28 Q50 19.2 32 28 Z" transform="rotate(180 50 50)"/>
-    <path d="M32 28 L50 7.2 L68 28 Q50 19.2 32 28 Z" transform="rotate(270 50 50)"/>
-  </g>
+  <path d="M34.34 21.89 L50 7.93 L65.66 21.89 A5.5 5.5 0 0 1 58.34 30.11 Q50 15.23 41.66 30.11 A5.5 5.5 0 0 1 34.34 21.89 Z"/>
+  <path d="M34.34 21.89 L50 7.93 L65.66 21.89 A5.5 5.5 0 0 1 58.34 30.11 Q50 15.23 41.66 30.11 A5.5 5.5 0 0 1 34.34 21.89 Z" transform="rotate(90 50 50)"/>
+  <path d="M34.34 21.89 L50 7.93 L65.66 21.89 A5.5 5.5 0 0 1 58.34 30.11 Q50 15.23 41.66 30.11 A5.5 5.5 0 0 1 34.34 21.89 Z" transform="rotate(180 50 50)"/>
+  <path d="M34.34 21.89 L50 7.93 L65.66 21.89 A5.5 5.5 0 0 1 58.34 30.11 Q50 15.23 41.66 30.11 A5.5 5.5 0 0 1 34.34 21.89 Z" transform="rotate(270 50 50)"/>
   <circle cx="50" cy="50" r="13.8"/>
   <circle cx="22.5" cy="22.5" r="5.4"/><circle cx="77.5" cy="22.5" r="5.4"/>
   <circle cx="22.5" cy="77.5" r="5.4"/><circle cx="77.5" cy="77.5" r="5.4"/>
