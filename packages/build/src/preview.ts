@@ -295,6 +295,38 @@ export interface StartPreviewResult {
  * files but failed to compile is still something the user should see and can
  * ask Reklu to fix (spec §88).
  */
+/**
+ * Push the current files into a preview that is already running.
+ *
+ * Called when a generation finishes. Without it, an edit wrote new files to the
+ * database, the page refreshed, the frame reloaded — and the container went on
+ * serving what it was given the last time somebody pressed a button. The change
+ * was real, was visible in the code, and was nowhere on the screen.
+ *
+ * Does nothing when no preview is running, because there is nothing to update
+ * and starting one uninvited would install a dependency tree nobody asked for.
+ */
+export async function syncPreview(params: {
+  readonly buildProjectId: string;
+  readonly workspaceId: string;
+  readonly report?: BuildStageReporter;
+}): Promise<boolean> {
+  try {
+    return Boolean(await reuseRunningSandbox(params));
+  } catch (error) {
+    /*
+     * Never fatal. The generation succeeded and the files are saved; a preview
+     * that could not be updated is worth a line in the log, not the loss of the
+     * work that produced it.
+     */
+    logger.warn('The running preview could not be updated', {
+      buildProjectId: params.buildProjectId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 export async function startPreview(params: {
   readonly buildProjectId: string;
   readonly workspaceId: string;
@@ -328,22 +360,25 @@ export async function startPreview(params: {
     throw errors.validation('There is nothing to preview yet. Generate the application first.');
   }
 
-  // Replace any previous preview for this project rather than accumulating.
-  await stopPreview(params.buildProjectId, params.workspaceId);
-
   const report: BuildStageReporter = params.report ?? (() => undefined);
+
   /*
-   * Reuse what is already running, if anything is.
+   * Reuse what is already running, before anything is torn down.
    *
-   * Every preview used to tear the container down and install the dependency
-   * tree again from nothing — a minute or more of waiting to see a one-line
-   * change, on a machine that already had a working copy of the application a
-   * few seconds earlier. An edit now writes the changed files into the running
-   * container and lets the dev server reload them, which is what a dev server
-   * is for.
+   * This used to sit *after* the call that stops the previous preview, which
+   * destroys the container and empties the map this reads — so it never found
+   * anything, and every preview reinstalled the dependency tree from nothing.
+   * A minute of waiting to see a one-line change, on a machine that had a
+   * working copy of the application a few seconds earlier.
+   *
+   * Writing the changed files into the running container and letting the dev
+   * server reload them is what a dev server is for.
    */
   const reused = await reuseRunningSandbox(params);
   if (reused) return reused;
+
+  // Nothing to reuse. Replace any previous preview rather than accumulating.
+  await stopPreview(params.buildProjectId, params.workspaceId);
 
   /*
    * Reclaim first. Otherwise each preview leaves its predecessor running, and

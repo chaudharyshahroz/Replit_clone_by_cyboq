@@ -17,6 +17,7 @@ import {
   mergeTree,
   resolveElement,
   startPreview,
+  syncPreview,
   stopPreview,
   type GeneratedFile,
   type SourceMap,
@@ -672,6 +673,35 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       codebaseAnalysis: { sourceMap: instrumented.sourceMap },
     })
     .where(eq(buildProjects.id, buildId));
+
+  /*
+   * Into the running container, not just into the database.
+   *
+   * This is what makes an edit appear. Reloading the frame was never enough:
+   * the frame was reloading a server that had never been told anything changed,
+   * so it re-served exactly what it had. The change was real, was in the code
+   * view, and was nowhere on the screen.
+   */
+  const running = await syncPreview({
+    buildProjectId: buildId,
+    workspaceId: workspace.workspaceId,
+    report: (_stage, message) =>
+      recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message: message ?? 'Updating the preview',
+      }),
+  });
+
+  if (running) {
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'stage',
+      message: 'Preview updated',
+    });
+  }
 
   /*
    * Without this the files exist in the database and not on the screen. The

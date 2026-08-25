@@ -51,33 +51,44 @@ export function BriefPanel({
   const edits = usePreviewEdits();
   const picked = hasPreviewEdits(edits);
 
-  const generate = (instruction: string, origin: 'user' | 'auto' = 'user') =>
+  const generate = (instruction: string, origin: 'user' | 'auto' = 'user') => {
+    const sent = {
+      instruction,
+      origin,
+      ...(edits.selection ? { selection: edits.selection } : {}),
+      ...(edits.annotation ? { annotation: edits.annotation } : {}),
+      ...(edits.textChanges.length ? { textChanges: edits.textChanges } : {}),
+      ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}),
+      ...(modelKey === 'auto' ? {} : { modelKey }),
+    };
+
+    /*
+     * Emptied here, outside the transition, and that placement is the whole
+     * point.
+     *
+     * React holds the updates inside an async transition until the transition
+     * settles, so that nobody sees a half-applied state. Clearing the box in
+     * there meant it stayed full for the entire build — the instruction sat in
+     * the composer, word for word, beside its own copy in the transcript, and
+     * looked unsent for two minutes. Outside, it is an ordinary update and
+     * commits at once.
+     *
+     * The selection and the files go with it: all three belong to the turn that
+     * was just sent, not to the next one.
+     */
+    if (origin === 'user') {
+      setPrompt('');
+      setAttachments([]);
+      clearPreviewEdits();
+    }
+
     startTransition(async () => {
       setOutcome(null);
-      const sent = {
-        instruction,
-        origin,
-        ...(edits.selection ? { selection: edits.selection } : {}),
-        ...(edits.annotation ? { annotation: edits.annotation } : {}),
-        ...(edits.textChanges.length ? { textChanges: edits.textChanges } : {}),
-        ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}),
-        ...(modelKey === 'auto' ? {} : { modelKey }),
-      };
-      /*
-       * Emptied on send, not on success. What was asked is in the transcript
-       * from this moment; leaving a copy in the box makes it look unsent for
-       * however long the build takes. The selection and the files go with it —
-       * both belong to the turn that sent them, not to the next one.
-       */
-      if (origin === 'user') {
-        setPrompt('');
-        setAttachments([]);
-        clearPreviewEdits();
-      }
       const result = await generateBuildAction(buildId, sent);
       setStage(null);
       setOutcome({ ok: result.ok, message: result.message });
     });
+  };
 
   const attach = async (list: FileList | null) => {
     if (!list?.length) return;

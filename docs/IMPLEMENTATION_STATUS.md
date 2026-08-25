@@ -582,6 +582,37 @@ than publishing silently from a screen with no room to report anything.
 Only real things are listed. A row for a feature Reklu does not have would be a
 promise the tab cannot keep.
 
+### Preview freshness ✅ — 3 tests
+
+An edit produced new files, a new checkpoint, a reloaded frame — and the old
+page. Two separate faults, both invisible because each looked like the other's
+excuse.
+
+`startPreview` stopped the previous preview, which destroys the container and
+empties the map it tracks, and *then* tried to reuse what was running. It never
+found anything. The reuse path — the whole reason an edit does not reinstall a
+dependency tree — was unreachable code, and the only symptom was that previews
+were slow, which reads as the machine being slow. The two calls are now in the
+other order, and a test asserts it: the state involved is a module-private map
+and a database row, so the order is checked directly rather than through enough
+mocking to test the mocking.
+
+And nothing pushed new files into a running preview at all. Generation wrote to
+the database, revalidated the page and returned; the container went on serving
+what it was last given. Reloading the frame — added earlier for exactly this
+complaint — was reloading a server that had never been told anything changed.
+`syncPreview` now runs at the end of a generation, and never fails the build:
+the files are saved, and a preview that could not be updated is worth a line in
+the log rather than the loss of the work that produced it.
+
+### The composer clearing
+
+The instruction stayed in the box for the whole build, word for word beside its
+own copy in the transcript. React holds the updates inside an async transition
+until the transition settles, so clearing the box in there cleared it two
+minutes later. It happens outside the transition now, where it is an ordinary
+update and commits at once.
+
 ### Generated imagery ✅ — 11 tests
 
 Asked for a barber shop landing page, the model wrote an image URL from memory
