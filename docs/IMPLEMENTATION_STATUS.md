@@ -467,7 +467,7 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
-### Visual selection ✅ (spec §35) — 16 tests
+### Visual selection ✅ (spec §35) — 19 tests
 
 Stable `data-reklu-id` attributes are injected into generated JSX at
 **generation time**, with a source map from id → file + line persisted alongside
@@ -479,6 +479,34 @@ Reklu's own source map server-side before it can influence an edit, so a
 generated app cannot steer the editor. The resolved selection becomes a prompt
 naming the file, line and surrounding code — "make this card smaller" reaches a
 specific place rather than a search.
+
+Three tools sit above the preview and drive the same channel:
+
+| Tool | What it does | What crosses the frame |
+| ---- | ------------ | ---------------------- |
+| Select | Hover outlines an element; clicking it selects | the element id |
+| Edit text | Click text, retype it in place, Enter saves | the id, and the person's own replacement text |
+| Draw | Drag a box; the frame reports what sits beneath it | the box (out), the id (back) |
+
+A tool is put down as soon as it is used, and `off` is the resting state — with
+no tool held the framed application behaves exactly as it will in production,
+which is what keeps the preview a preview. The drag for the draw tool is taken
+by an overlay on Reklu's side, because a drag that starts over an iframe stops
+producing events the moment the pointer crosses into it.
+
+The selection appears as a chip above the composer, with its own dismissal, so
+the instruction typed under it has a subject. Attachments and a model choice
+ride along the same request: an attached image is passed to the model as a
+picture rather than described in words, and a file whose text could not be read
+says so in the prompt rather than being silently dropped.
+
+The one-way property is preserved throughout — the bridge sends element ids, not
+page content. The single exception is the text tool, where the replacement text
+*is* the instruction and the person typed it themselves.
+
+The bridge ships as a string inside every generated application, where nothing
+type-checks it, so a test parses it: a syntax error there would break selection
+in every generated app at once, with no symptom beyond a tool that does nothing.
 
 Instrumentation is deliberately conservative: ambiguous lines are skipped. A
 missed element costs a click-to-edit opportunity; a corrupted generated file

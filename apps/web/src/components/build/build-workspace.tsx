@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { setPreviewSelection } from '@/lib/preview-selection';
 import { useRouter } from 'next/navigation';
 import { previewLogsAction } from '@/app/(app)/build/actions';
 import { fetchBuildProgress } from '@/lib/build-progress';
@@ -26,7 +27,9 @@ import {
   Check,
   Monitor,
   Rocket,
-  MousePointerClick,
+  MousePointer2,
+  Pencil,
+  Type,
   Play,
   ShieldAlert,
   Terminal,
@@ -57,6 +60,28 @@ type DeviceName = 'desktop' | 'tablet' | 'mobile';
  * Real device widths rather than round numbers: 390 is an iPhone and 820 an
  * iPad, and a layout that holds at 400 but breaks at 390 is broken.
  */
+/**
+ * The editing tools, in the order they are reached for: point at a thing, fix
+ * its words, circle an area whose parts have no single element.
+ */
+export type EditTool = 'off' | 'select' | 'text' | 'draw';
+
+const TOOLS: readonly {
+  id: Exclude<EditTool, 'off'>;
+  label: string;
+  hint: string;
+  icon: typeof Monitor;
+}[] = [
+  {
+    id: 'select',
+    label: 'Select',
+    hint: 'Click any part of the page to talk to Reklu about it',
+    icon: MousePointer2,
+  },
+  { id: 'text', label: 'Edit text', hint: 'Click text to rewrite it in place', icon: Type },
+  { id: 'draw', label: 'Draw', hint: 'Drag a box around the area you want changed', icon: Pencil },
+];
+
 const DEVICES: readonly { id: DeviceName; label: string; width: number | null; icon: typeof Monitor }[] = [
   { id: 'desktop', label: 'Desktop', width: null, icon: Monitor },
   { id: 'tablet', label: 'Tablet', width: 820, icon: Tablet },
@@ -208,7 +233,6 @@ export function BuildWorkspace({
   sandboxDetail,
   framingProblem,
   onStartPreview,
-  onEditSelection,
 }: {
   buildId: string;
   files: readonly BuildFile[];
@@ -226,11 +250,6 @@ export function BuildWorkspace({
    */
   framingProblem?: string | null;
   onStartPreview: (buildId: string) => Promise<{ url: string | null; output: string; error?: string }>;
-  onEditSelection: (
-    buildId: string,
-    elementId: string,
-    instruction: string,
-  ) => Promise<{ error?: string }>;
 }) {
   /*
    * The preview is the point once there is something to preview. Landing on the
@@ -248,9 +267,26 @@ export function BuildWorkspace({
   const [previewError, setPreviewError] = useState<string | undefined>();
   const [previewOutput, setPreviewOutput] = useState('');
   const [starting, setStarting] = useState(false);
-  const [selection, setSelection] = useState<string | undefined>();
-  const [instruction, setInstruction] = useState('');
-  const [editing, startEditing] = useTransition();
+  /**
+   * The tool being held, if any.
+   *
+   * `off` is the resting state and matters as much as the others: with no tool
+   * held the framed app behaves as it will in production — links navigate,
+   * buttons fire — so the preview stays a preview. A tool is picked up to make
+   * one change and puts itself down again once the selection is made.
+   */
+  const [tool, setTool] = useState<EditTool>('off');
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  /**
+   * The box being dragged, while it is being dragged.
+   *
+   * Drawn on this side of the frame rather than inside it. A drag that starts
+   * over an iframe stops producing events the moment the pointer crosses into
+   * it, so a box drawn by the framed document would break as soon as it grew
+   * past its own starting element. The parent keeps the pointer.
+   */
+  const [box, setBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
   /**
    * Spec §35: the preview posts only the clicked element's id. The origin is
@@ -259,10 +295,25 @@ export function BuildWorkspace({
    */
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const data = event.data as { source?: string; elementId?: string } | null;
+      const data = event.data as {
+        source?: string;
+        elementId?: string;
+        tag?: string;
+        text?: string;
+      } | null;
       if (data?.source !== 'reklu-preview' || typeof data.elementId !== 'string') return;
       if (!/^[A-Za-z0-9_-]{1,32}$/.test(data.elementId)) return;
-      setSelection(data.elementId);
+      setPreviewSelection({
+        elementId: data.elementId,
+        tag: typeof data.tag === 'string' ? data.tag.slice(0, 20) : 'element',
+        text: typeof data.text === 'string' ? data.text : undefined,
+      });
+      /*
+       * The tool is put down as soon as it has been used. Holding it would mean
+       * the next click somewhere in the page silently replaces the selection
+       * that is already sitting in the composer, waiting to be typed against.
+       */
+      setTool('off');
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -321,6 +372,24 @@ export function BuildWorkspace({
   const [route, setRoute] = useState('/');
   /** Bumped to remount the frame, which is what reloading it means. */
   const [reloadKey, setReloadKey] = useState(0);
+
+  /*
+   * The frame is told, rather than asked. The bridge inside the generated app
+   * owns hovering and clicking; this side owns which tool is held, and posts it
+   * across on every change and again whenever the frame reloads — a fresh
+   * document starts at `off` and would otherwise ignore a tool already picked.
+   */
+  const postTool = useCallback((next: EditTool) => {
+    frameRef.current?.contentWindow?.postMessage(
+      { source: 'reklu-editor', mode: next === 'draw' ? 'off' : next },
+      '*',
+    );
+  }, []);
+
+  useEffect(() => {
+    postTool(tool);
+  }, [tool, postTool, reloadKey, route]);
+
 
   const routes = useMemo(() => siteRoutes(files.map((file) => file.path)), [files]);
 
@@ -551,7 +620,40 @@ export function BuildWorkspace({
             {panel === 'preview' ? (
               <div className="flex h-full flex-col">
                 <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-                  {/* ---- Width, on the left ---- */}
+                  {/*
+                    ---- Tools, first ----
+
+                    Ahead of the width control because they act on the page
+                    itself; width only changes how it is being looked at. Held
+                    one at a time, and released once used.
+                  */}
+                  <div
+                    role="radiogroup"
+                    aria-label="Editing tool"
+                    className="inline-flex items-center gap-0.5 rounded-lg border border-border p-0.5"
+                  >
+                    {TOOLS.map(({ id, label, hint, icon: Icon }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={tool === id}
+                        aria-label={label}
+                        title={hint}
+                        disabled={!livePreview}
+                        onClick={() => setTool(tool === id ? 'off' : id)}
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:opacity-30 ${
+                          tool === id
+                            ? 'bg-accent text-on-accent'
+                            : 'text-text-muted hover:bg-surface-raised hover:text-text'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ---- Width ---- */}
                   <div
                     role="radiogroup"
                     aria-label="Preview width"
@@ -673,15 +775,21 @@ export function BuildWorkspace({
                       disabled={fixing}
                       onClick={() => {
                         setFixing(true);
-                        void generateBuildAction(
-                          buildId,
+                        void generateBuildAction(buildId, {
                           /*
                             The compiler's own words, not a paraphrase. It names
                             the file and the line, which is most of the fix.
                           */
-                          `The application fails to compile with the following error. ` +
+                          instruction:
+                            `The application fails to compile with the following error. ` +
                             `Fix the cause and change nothing else.\n\n${compileError}`,
-                        )
+                          /*
+                            Nobody typed this: it is Reklu quoting a compiler
+                            back at itself, and it belongs in the log as work
+                            done, not in the transcript as something said.
+                          */
+                          origin: 'auto',
+                        })
                           .then(() => router.refresh())
                           .finally(() => setFixing(false));
                       }}
@@ -695,6 +803,13 @@ export function BuildWorkspace({
                   </div>
                 ) : null}
 
+                {tool !== 'off' ? (
+                  <p className="border-b border-accent-border bg-accent-subtle px-4 py-1.5 text-[0.6875rem] text-accent">
+                    {TOOLS.find((entry) => entry.id === tool)?.hint}
+                    {tool === 'text' ? '. Enter saves, Escape cancels.' : '.'}
+                  </p>
+                ) : null}
+
                 {previewError ? (
                   <p role="alert" className="border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-text">
                     {previewError}
@@ -702,47 +817,6 @@ export function BuildWorkspace({
                   </p>
                 ) : null}
 
-                {selection ? (
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const text = instruction.trim();
-                      if (!text) return;
-                      startEditing(async () => {
-                        await onEditSelection(buildId, selection, text);
-                        setInstruction('');
-                        setSelection(undefined);
-                      });
-                    }}
-                    className="flex items-center gap-2 border-b border-accent-border bg-accent-subtle px-4 py-2"
-                  >
-                    <MousePointerClick className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
-                    <label htmlFor="selection-instruction" className="sr-only">
-                      Change the selected element
-                    </label>
-                    <input
-                      id="selection-instruction"
-                      value={instruction}
-                      onChange={(event) => setInstruction(event.target.value)}
-                      placeholder="Make this smaller and change the spacing…"
-                      className="min-w-0 flex-1 bg-transparent text-xs text-text placeholder:text-text-muted focus:outline-none"
-                    />
-                    <button
-                      type="submit"
-                      disabled={editing || !instruction.trim()}
-                      className="shrink-0 rounded-md bg-accent px-2 py-1 text-[0.6875rem] font-medium text-on-accent disabled:opacity-40"
-                    >
-                      {editing ? 'Applying…' : 'Apply'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelection(undefined)}
-                      className="shrink-0 rounded text-[0.6875rem] text-text-muted hover:text-text"
-                    >
-                      Cancel
-                    </button>
-                  </form>
-                ) : null}
 
                 {livePreview && framingProblem ? (
                   <div className="p-6">
@@ -798,11 +872,87 @@ export function BuildWorkspace({
                     which is the only version worth checking.
                   */
                   <div
-                    className={`min-h-0 flex-1 overflow-auto ${
+                    className={`relative min-h-0 flex-1 overflow-auto ${
                       device === 'desktop' ? '' : 'flex justify-center bg-surface/40 p-4'
                     }`}
                   >
+                    {/*
+                      A lid over the frame while the pencil is held: it takes the
+                      drag, and then asks the document underneath what was
+                      circled — the parent can see where the box is but not what
+                      is beneath it, and the bridge can see the page but never
+                      received the drag.
+                    */}
+                    {tool === 'draw' ? (
+                      <div
+                        role="presentation"
+                        className="absolute inset-0 z-10 cursor-crosshair"
+                        onPointerDown={(event) => {
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const x = event.clientX - rect.left;
+                          const y = event.clientY - rect.top;
+                          setBox({ x1: x, y1: y, x2: x, y2: y });
+                        }}
+                        onPointerMove={(event) => {
+                          if (!box) return;
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setBox({
+                            ...box,
+                            x2: event.clientX - rect.left,
+                            y2: event.clientY - rect.top,
+                          });
+                        }}
+                        onPointerUp={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setBox(null);
+                          if (!box) return;
+                          const left = Math.min(box.x1, box.x2);
+                          const top = Math.min(box.y1, box.y2);
+                          const width = Math.abs(box.x2 - box.x1);
+                          const height = Math.abs(box.y2 - box.y1);
+                          /* A click that never moved is not a box. */
+                          if (width < 8 || height < 8) {
+                            setTool('off');
+                            return;
+                          }
+                          /*
+                            Sent as fractions of the frame, because the frame and
+                            the document inside it are different sizes — a mobile
+                            width is 390px of layout inside however much room the
+                            panel happens to have.
+                          */
+                          frameRef.current?.contentWindow?.postMessage(
+                            {
+                              source: 'reklu-editor',
+                              region: {
+                                x: left / rect.width,
+                                y: top / rect.height,
+                                width: width / rect.width,
+                                height: height / rect.height,
+                              },
+                            },
+                            '*',
+                          );
+                        }}
+                      >
+                        {box ? (
+                          <div
+                            className="absolute rounded border-2 border-accent bg-accent/10"
+                            style={{
+                              left: Math.min(box.x1, box.x2),
+                              top: Math.min(box.y1, box.y2),
+                              width: Math.abs(box.x2 - box.x1),
+                              height: Math.abs(box.y2 - box.y1),
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     <iframe
+                      ref={frameRef}
+                      onLoad={() => postTool(tool)}
                       key={`${route}-${reloadKey}`}
                       src={`${livePreview}${route === '/' ? '' : route}`}
                       title="Application preview"

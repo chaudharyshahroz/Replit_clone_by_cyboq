@@ -64,6 +64,14 @@ const GENERATION_PROMPT = [
 export interface GenerateBuildOptions {
   readonly brief: BuildBrief;
   readonly prompt: string;
+  /**
+   * Images attached to the request.
+   *
+   * Passed as picture rather than described in words: someone attaching a
+   * screenshot of a layout they want is asking for that layout, and a sentence
+   * naming the file tells the model nothing it can build from.
+   */
+  readonly images?: readonly { readonly image: string; readonly mimeType?: string }[];
   readonly model: RegisteredModel;
   readonly report: BuildStageReporter;
   /** Existing tree, for an edit rather than a first generation. */
@@ -146,7 +154,20 @@ export async function generateFiles(
   await options.report('generating_files');
 
   const messages: ModelMessage[] = [
-    { role: 'user', content: [{ type: 'text', text: context.join('\n') }] },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: context.join('\n') },
+        ...(options.images ?? []).map(
+          (attachment) =>
+            ({
+              type: 'image',
+              image: attachment.image,
+              ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+            }) as const,
+        ),
+      ],
+    },
   ];
 
   /*

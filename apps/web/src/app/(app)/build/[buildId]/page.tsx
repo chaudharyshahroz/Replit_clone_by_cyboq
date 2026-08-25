@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
+import type { SelectableModel } from '@/components/chat/chat-view';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { and, eq, isNull } from 'drizzle-orm';
 import { currentPreview, listCheckpoints, loadTree, type BuildBrief } from '@reklu/build';
-import { buildProjects, db } from '@reklu/database';
+import { loadRegistry, selectableModels } from '@reklu/ai';
+import { buildProjects, db, plans, subscriptions, type PlanLimits } from '@reklu/database';
 import { sandboxStatus } from '@reklu/sandbox';
 import { BuildWorkspace } from '@/components/build/build-workspace';
 import { getAppContext } from '@/lib/auth-context';
-import { editSelectionAction, startPreviewAction } from '../actions';
+import { startPreviewAction } from '../actions';
 import { BriefPanel } from './brief-panel';
 import { previewFramingProblem } from '@/lib/preview-framing';
 
@@ -51,6 +53,34 @@ export default async function BuildDetailPage({
     .limit(1);
 
   if (!project) notFound();
+
+  /*
+   * The composer offers what this plan may actually use. A picker listing a
+   * model the workspace cannot reach is a control that fails after it is used,
+   * which is worse than one that was never offered.
+   */
+  const [registry, planRow] = await Promise.all([
+    loadRegistry(),
+    db
+      .select({ limits: plans.limits })
+      .from(subscriptions)
+      .innerJoin(plans, eq(subscriptions.planId, plans.id))
+      .where(eq(subscriptions.workspaceId, workspace.workspaceId))
+      .limit(1),
+  ]);
+
+  const models: SelectableModel[] = selectableModels(
+    registry,
+    planRow[0]?.limits as PlanLimits | undefined,
+  ).map((model) => ({
+    key: model.key,
+    displayName: model.displayName,
+    providerName: model.providerName,
+    description: model.description,
+    speed: model.speed,
+    costTier: model.costTier,
+    isDevelopmentMock: model.isDevelopmentMock,
+  }));
 
   const [files, checkpoints, preview] = await Promise.all([
     loadTree(buildId, workspace.workspaceId),
@@ -126,6 +156,7 @@ export default async function BuildDetailPage({
             <BriefPanel
               brief={project.brief as unknown as BuildBrief}
               buildId={buildId}
+              models={models}
               hasFiles={files.length > 0}
               status={project.status}
             />
@@ -156,7 +187,6 @@ export default async function BuildDetailPage({
           consoleOutput={latest?.checkOutput ?? ''}
           previewUrl={preview?.url ?? null}
           onStartPreview={startPreviewAction}
-          onEditSelection={editSelectionAction}
           sandboxIsolated={status.isolated && status.available}
           sandboxDetail={status.detail}
           framingProblem={framingProblem}

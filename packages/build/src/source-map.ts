@@ -102,30 +102,175 @@ export function instrumentForVisualSelection(
 /**
  * The bridge script injected into a generated app.
  *
- * Posts the clicked element's id to the parent frame. Kept tiny and
- * dependency-free, and it only ever sends an id — never page content — so a
- * generated app cannot use it to exfiltrate anything to Reklu's origin.
+ * Reports which element was picked, and nothing else. It sends an id — never
+ * text, never markup — so a generated app cannot use the channel to hand page
+ * content to Reklu's origin. The one exception is the text tool, where the
+ * replacement text *is* the instruction and the person typed it themselves.
+ *
+ * The parent drives it by posting `{ source: 'reklu-editor', mode }`. Modes are
+ * exclusive, and `off` is the default: with no tool held, the generated app
+ * behaves exactly as it will in production — links follow, buttons fire — which
+ * is what makes the preview a preview rather than an editor that happens to
+ * render.
  */
 export const VISUAL_SELECTION_BRIDGE = `
-// Reklu visual selection bridge. Sends only the clicked element's id.
+// Reklu visual selection bridge. Sends element ids, never page content.
 (function () {
   if (window.__rekluBridge) return;
   window.__rekluBridge = true;
 
-  document.addEventListener('click', function (event) {
-    if (!event.altKey) return; // Alt+click selects, so normal clicks still work
-    var node = event.target;
-    while (node && node !== document.body) {
-      var id = node.getAttribute && node.getAttribute('data-reklu-id');
-      if (id) {
-        event.preventDefault();
-        event.stopPropagation();
-        parent.postMessage({ source: 'reklu-preview', elementId: id }, '*');
-        return;
-      }
+  var mode = 'off';
+  var editing = null;
+
+  // Drawn by us rather than by outlining the element itself: a real outline
+  // changes layout on anything sized to its border box, so hovering would nudge
+  // the page it is meant to be inspecting.
+  var halo = document.createElement('div');
+  halo.style.cssText = 'position:fixed;z-index:2147483646;pointer-events:none;' +
+    'border:2px solid #6366f1;border-radius:3px;display:none;' +
+    'box-shadow:0 0 0 9999px rgba(15,23,42,.10);transition:all .06s ease-out';
+  var tip = document.createElement('div');
+  tip.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;display:none;' +
+    'background:#6366f1;color:#fff;font:500 11px/1.4 ui-sans-serif,system-ui,sans-serif;' +
+    'padding:2px 6px;border-radius:4px;white-space:nowrap';
+
+  function mount() {
+    if (!halo.parentNode && document.body) {
+      document.body.appendChild(halo);
+      document.body.appendChild(tip);
+    }
+  }
+
+  function owner(node) {
+    while (node && node !== document.documentElement) {
+      if (node.getAttribute && node.getAttribute('data-reklu-id')) return node;
       node = node.parentElement;
     }
+    return null;
+  }
+
+  function frame(node) {
+    if (!node) { halo.style.display = 'none'; tip.style.display = 'none'; return; }
+    mount();
+    var box = node.getBoundingClientRect();
+    halo.style.display = 'block';
+    halo.style.left = box.left + 'px';
+    halo.style.top = box.top + 'px';
+    halo.style.width = box.width + 'px';
+    halo.style.height = box.height + 'px';
+    tip.style.display = 'block';
+    tip.textContent = node.tagName.toLowerCase();
+    // Flipped below the element when it is against the top of the viewport,
+    // where a label above it would be off-screen.
+    tip.style.top = (box.top > 22 ? box.top - 20 : box.bottom + 4) + 'px';
+    tip.style.left = Math.max(4, box.left) + 'px';
+  }
+
+  function send(payload) {
+    payload.source = 'reklu-preview';
+    parent.postMessage(payload, '*');
+  }
+
+  document.addEventListener('mousemove', function (event) {
+    if (mode !== 'select' && mode !== 'text') return;
+    frame(owner(event.target));
   }, true);
+
+  document.addEventListener('mouseleave', function () { frame(null); }, true);
+
+  // Capture phase, so a tool takes the click before the app's own handler does.
+  document.addEventListener('click', function (event) {
+    if (mode === 'off' && !event.altKey) return;
+    var node = owner(event.target);
+    if (!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (mode === 'text') {
+      startEditing(node);
+      return;
+    }
+    send({ elementId: node.getAttribute('data-reklu-id'), tag: node.tagName.toLowerCase() });
+  }, true);
+
+  function startEditing(node) {
+    finishEditing(false);
+    editing = { node: node, original: node.innerHTML };
+    node.setAttribute('contenteditable', 'plaintext-only');
+    node.focus();
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    frame(null);
+  }
+
+  function finishEditing(keep) {
+    if (!editing) return;
+    var node = editing.node;
+    var original = editing.original;
+    editing = null;
+    node.removeAttribute('contenteditable');
+    var text = (node.textContent || '').trim();
+    node.innerHTML = original;
+    if (!keep) return;
+    // The only case where typed text crosses the frame — and it is the person's
+    // own words, which is the whole instruction.
+    send({
+      elementId: node.getAttribute('data-reklu-id'),
+      tag: node.tagName.toLowerCase(),
+      text: text.slice(0, 500),
+    });
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (!editing) return;
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      finishEditing(true);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      finishEditing(false);
+    }
+  }, true);
+
+  document.addEventListener('focusout', function () {
+    if (editing) finishEditing(true);
+  }, true);
+
+  // What sits under a drawn box. The parent draws over the frame — it cannot
+  // see into the document — so it sends the box and asks what is beneath it.
+  function underRegion(box) {
+    var x = (box.x + box.width / 2) * window.innerWidth;
+    var y = (box.y + box.height / 2) * window.innerHeight;
+    var node = owner(document.elementFromPoint(x, y));
+    // Climb until the element is at least as large as what was circled: the
+    // point at the centre may land on one word of a section that was drawn
+    // around whole.
+    var wanted = box.width * window.innerWidth * box.height * window.innerHeight * 0.5;
+    while (node) {
+      var rect = node.getBoundingClientRect();
+      if (rect.width * rect.height >= wanted) break;
+      var next = owner(node.parentElement);
+      if (!next) break;
+      node = next;
+    }
+    if (!node) return;
+    send({ elementId: node.getAttribute('data-reklu-id'), tag: node.tagName.toLowerCase() });
+  }
+
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.source !== 'reklu-editor') return;
+    if (data.region) { underRegion(data.region); return; }
+    if (typeof data.mode !== 'string') return;
+    finishEditing(false);
+    mode = data.mode;
+    frame(null);
+    document.documentElement.style.cursor =
+      mode === 'select' ? 'crosshair' : mode === 'text' ? 'text' : '';
+  });
 })();
 `.trim();
 

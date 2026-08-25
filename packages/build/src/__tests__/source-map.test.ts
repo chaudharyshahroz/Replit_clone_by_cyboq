@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import vm from 'node:vm';
 import {
   describeSelection,
   elementId,
   instrumentForVisualSelection,
   resolveElement,
+  VISUAL_SELECTION_BRIDGE,
 } from '../source-map';
 import type { GeneratedFile } from '../parse';
 
@@ -145,5 +147,30 @@ describe('describeSelection', () => {
     expect(() =>
       describeSelection({ file: 'src/app/page.tsx', line: 1, tag: 'div' }, [page]),
     ).not.toThrow();
+  });
+});
+
+/*
+ * The bridge is a string until it reaches a browser, where nothing type-checks
+ * it and a syntax error is invisible from here — it would ship inside every
+ * generated application and break selection in all of them at once, with the
+ * only symptom being a tool that does nothing when clicked.
+ */
+describe('the visual selection bridge', () => {
+  it('is valid JavaScript', () => {
+    expect(() => new vm.Script(VISUAL_SELECTION_BRIDGE)).not.toThrow();
+  });
+
+  it('ignores messages that are not from the editor', () => {
+    /*
+     * The frame is addressable by anything that can reach it, so an unrecognised
+     * sender must not be able to put it into a mode the person did not pick.
+     */
+    expect(VISUAL_SELECTION_BRIDGE).toContain("data.source !== 'reklu-editor'");
+  });
+
+  it('leaves the page alone when no tool is held', () => {
+    // Without this the framed app stops behaving like the app it is previewing.
+    expect(VISUAL_SELECTION_BRIDGE).toContain("if (mode === 'off' && !event.altKey) return;");
   });
 });

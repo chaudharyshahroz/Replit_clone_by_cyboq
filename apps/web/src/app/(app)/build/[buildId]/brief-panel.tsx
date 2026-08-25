@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { ArrowUp, ChevronDown, Loader2 } from 'lucide-react';
+import { ArrowUp, ChevronDown, Loader2, Paperclip, Sparkles, X } from 'lucide-react';
 import type { BuildBrief } from '@reklu/build';
 import { generateBuildAction, type BuildStep } from '../actions';
 import { fetchBuildProgress } from '@/lib/build-progress';
+import { setPreviewSelection, usePreviewSelection } from '@/lib/preview-selection';
+import type { SelectableModel, UploadedFile } from '@/components/chat/chat-view';
 import { BuildLog } from './build-log';
 
 /**
@@ -19,9 +21,12 @@ export function BriefPanel({
   buildId,
   hasFiles,
   status,
+  models,
 }: {
   brief: BuildBrief;
   buildId: string;
+  /** What this workspace's plan may use, for the composer's model picker. */
+  models: readonly SelectableModel[];
   /** False before the first generation, when there is nothing to change yet. */
   hasFiles: boolean;
   /** The project's stored status, which says whether a build has been tried. */
@@ -33,20 +38,70 @@ export function BriefPanel({
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
   const [stage, setStage] = useState<string | null>(null);
   const [steps, setSteps] = useState<readonly BuildStep[]>([]);
+  const [attachments, setAttachments] = useState<readonly UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [modelKey, setModelKey] = useState('auto');
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  /*
+   * Picked in the preview, typed against here. The chip is the whole point of
+   * the arrow: it makes "make this bigger" a sentence with a subject, and it
+   * shows what that subject is before the request goes anywhere.
+   */
+  const selection = usePreviewSelection();
 
   const generate = (instruction: string, origin: 'user' | 'auto' = 'user') =>
     startTransition(async () => {
       setOutcome(null);
+      const sent = {
+        instruction,
+        origin,
+        ...(selection ? { selection } : {}),
+        ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}),
+        ...(modelKey === 'auto' ? {} : { modelKey }),
+      };
       /*
-       * Emptied on send, not on success. The instruction is in the transcript
+       * Emptied on send, not on success. What was asked is in the transcript
        * from this moment; leaving a copy in the box makes it look unsent for
-       * however long the build takes.
+       * however long the build takes. The selection and the files go with it —
+       * both belong to the turn that sent them, not to the next one.
        */
-      if (origin === 'user') setPrompt('');
-      const result = await generateBuildAction(buildId, instruction, origin);
+      if (origin === 'user') {
+        setPrompt('');
+        setAttachments([]);
+        setPreviewSelection(null);
+      }
+      const result = await generateBuildAction(buildId, sent);
       setStage(null);
       setOutcome({ ok: result.ok, message: result.message });
     });
+
+  const attach = async (list: FileList | null) => {
+    if (!list?.length) return;
+    setUploading(true);
+    for (const file of Array.from(list)) {
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const response = await fetch('/api/files/upload', { method: 'POST', body: form });
+        const payload = (await response.json()) as
+          | { file: UploadedFile }
+          | { error: { message: string } };
+        if (!response.ok || !('file' in payload)) {
+          /* Named, not swallowed: an upload that failed silently looks attached. */
+          setOutcome({
+            ok: false,
+            message: 'error' in payload ? payload.error.message : `Could not attach ${file.name}.`,
+          });
+          continue;
+        }
+        setAttachments((current) => [...current, payload.file]);
+      } catch {
+        setOutcome({ ok: false, message: `Could not attach ${file.name}.` });
+      }
+    }
+    setUploading(false);
+  };
 
   /*
    * Start on arrival. Asking for an application and then being shown a button
@@ -238,8 +293,52 @@ export function BriefPanel({
               if (!text) return;
               generate(text);
             }}
-            className="mt-4 flex items-end gap-2 rounded-lg border border-border-strong bg-surface p-2"
+            className="mt-4 rounded-lg border border-border-strong bg-surface p-2"
           >
+            {/*
+              What this message is about, before what it says. Chips sit above
+              the box because they qualify the sentence being typed under them —
+              and each carries its own dismissal, since the way to unselect a
+              thing is to put back the state you were in before you picked it.
+            */}
+            {selection || attachments.length > 0 ? (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {selection ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-accent-border bg-accent-subtle py-1 pl-2 pr-1 text-[0.6875rem] text-accent">
+                    {selection.text ? `${selection.tag} text` : `${selection.tag} selected`}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewSelection(null)}
+                      aria-label="Clear the selection"
+                      className="rounded p-0.5 hover:bg-accent/20"
+                    >
+                      <X className="h-3 w-3" strokeWidth={2.5} />
+                    </button>
+                  </span>
+                ) : null}
+                {attachments.map((file) => (
+                  <span
+                    key={file.id}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-raised py-1 pl-2 pr-1 text-[0.6875rem] text-text-secondary"
+                  >
+                    {file.filename}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAttachments((current) =>
+                          current.filter((entry) => entry.id !== file.id),
+                        )
+                      }
+                      aria-label={`Remove ${file.filename}`}
+                      className="rounded p-0.5 hover:bg-surface"
+                    >
+                      <X className="h-3 w-3" strokeWidth={2.5} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
             <label htmlFor="build-instruction" className="sr-only">
               What should Reklu build or change?
             </label>
@@ -248,25 +347,91 @@ export function BriefPanel({
               rows={2}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                /* Enter sends, as it does everywhere else a message is typed. */
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  if (prompt.trim() && !pending) generate(prompt.trim());
+                }
+              }}
               placeholder={
-                hasFiles
-                  ? "Describe a change, e.g. 'add a settings screen'"
-                  : "Or correct the brief, e.g. 'it should also take online orders'"
+                selection
+                  ? 'Say what to change about it…'
+                  : hasFiles
+                    ? "Describe a change, e.g. 'add a settings screen'"
+                    : "Or correct the brief, e.g. 'it should also take online orders'"
               }
-              className="flex-1 resize-none bg-transparent px-2 py-1 text-sm text-text placeholder:text-text-muted focus:outline-none"
+              className="w-full resize-none bg-transparent px-2 py-1 text-sm text-text placeholder:text-text-muted focus:outline-none"
             />
-            <button
-              type="submit"
-              disabled={pending || !prompt.trim()}
-              aria-label="Generate"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-30"
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
-              ) : (
-                <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
-              )}
-            </button>
+
+            <div className="mt-1 flex items-center gap-1.5">
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  void attach(event.target.files);
+                  /* Cleared, so attaching the same file twice still fires. */
+                  event.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                disabled={uploading}
+                aria-label="Attach a file"
+                title="Attach a file — a screenshot to match, or a document to build from"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-raised hover:text-text disabled:opacity-40"
+              >
+                {uploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <Paperclip className="h-4 w-4" strokeWidth={2} />
+                )}
+              </button>
+
+              <label htmlFor="build-model" className="sr-only">
+                Model
+              </label>
+              <div className="relative inline-flex items-center">
+                <Sparkles
+                  className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-text-muted"
+                  strokeWidth={2}
+                />
+                <select
+                  id="build-model"
+                  value={modelKey}
+                  onChange={(event) => setModelKey(event.target.value)}
+                  disabled={pending}
+                  className="h-7 appearance-none rounded-md bg-transparent py-0 pl-7 pr-6 text-[0.6875rem] text-text-secondary transition-colors hover:bg-surface-raised focus:outline-none"
+                >
+                  <option value="auto">Reklu Auto</option>
+                  {models.map((model) => (
+                    <option key={model.key} value={model.key}>
+                      {model.displayName}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  className="pointer-events-none absolute right-1.5 h-3 w-3 text-text-muted"
+                  strokeWidth={2}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={pending || !prompt.trim()}
+                aria-label="Send"
+                className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-30"
+              >
+                {pending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
+                ) : (
+                  <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
+                )}
+              </button>
+            </div>
           </form>
       </div>
     </div>

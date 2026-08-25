@@ -18,6 +18,7 @@ import {
   resolveElement,
   startPreview,
   stopPreview,
+  type GeneratedFile,
   type SourceMap,
   needsDesignPass,
   type BuildBrief,
@@ -33,12 +34,14 @@ import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
 import { errors, isRekluError, logger, newId, slugify } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
+import { loadAttachments } from '@/lib/files';
+import { storage } from '@reklu/storage';
 
 export interface BuildFormState {
   readonly error?: string;
 }
 
-async function pickModel(): Promise<RegisteredModel> {
+async function pickModel(requested?: string): Promise<RegisteredModel> {
   const registry = await loadRegistry();
   const allowed = selectableModels(registry, undefined);
   if (allowed.length === 0) {
@@ -48,11 +51,35 @@ async function pickModel(): Promise<RegisteredModel> {
       docsPath: '/settings',
     });
   }
+  /*
+   * A chosen model is honoured, and an unavailable one falls back rather than
+   * failing: the key names a model that may since have been disabled, and a
+   * build is not the place to refuse work over a stale selection.
+   */
   return (
+    (requested ? allowed.find((m) => m.key === requested) : undefined) ??
     allowed.find((m) => m.bestFor.includes('coding')) ??
     allowed.find((m) => m.bestFor.includes('reasoning')) ??
     allowed[0]!
   );
+}
+
+/** What a person asked for, and everything they pointed at while asking. */
+export interface BuildRequest {
+  readonly instruction: string;
+  /**
+   * Whether a person typed this. The first generation is started by Reklu with
+   * an instruction nobody wrote — "build it as described in the brief" — and
+   * showing that back as though they had said it would be putting words in
+   * their mouth.
+   */
+  readonly origin?: 'user' | 'auto';
+  /** An element picked in the preview, resolved here through the source map. */
+  readonly selection?: { readonly elementId: string; readonly text?: string };
+  /** Files attached to the message, already uploaded. */
+  readonly fileIds?: readonly string[];
+  /** A model chosen in the composer; absent means Reklu picks. */
+  readonly modelKey?: string;
 }
 
 /**
@@ -212,18 +239,10 @@ export interface GenerateResult {
  */
 export async function generateBuildAction(
   buildId: string,
-  prompt: string,
-  /**
-   * Whether a person typed this.
-   *
-   * The first generation is started by Reklu with an instruction nobody wrote
-   * — "build it as described in the brief" — and showing that back as though
-   * they had said it would be putting words in their mouth.
-   */
-  origin: 'user' | 'auto' = 'user',
+  request: BuildRequest,
 ): Promise<GenerateResult> {
   try {
-    return await runGeneration(buildId, prompt, origin);
+    return await runGeneration(buildId, request);
   } catch (error) {
     const message = isRekluError(error)
       ? error.userMessage
@@ -244,20 +263,104 @@ export async function generateBuildAction(
   }
 }
 
-async function runGeneration(
-  buildId: string,
-  prompt: string,
-  origin: 'user' | 'auto',
-): Promise<GenerateResult> {
+/**
+ * Turn what a person did into what the model reads.
+ *
+ * Three things arrive separately and have to become one request: a sentence, an
+ * element they pointed at, and files they attached. The element is the reason
+ * this exists — "make this bigger" is not a request until "this" has a file and
+ * a line number, and resolving it here rather than in the browser means the id
+ * is checked against our own source map before it can steer an edit.
+ */
+async function composePrompt(
+  request: BuildRequest,
+  project: { readonly codebaseAnalysis: unknown },
+  existing: readonly GeneratedFile[],
+  workspaceId: string,
+  userId: string,
+): Promise<{ prompt: string; images: { image: string; mimeType: string }[] }> {
+  const sections: string[] = [];
+  const images: { image: string; mimeType: string }[] = [];
+
+  if (request.selection) {
+    const analysis = (project.codebaseAnalysis ?? {}) as { sourceMap?: SourceMap };
+    const location = analysis.sourceMap
+      ? resolveElement(analysis.sourceMap, request.selection.elementId)
+      : undefined;
+
+    if (location) {
+      sections.push(describeSelection(location, existing));
+      /*
+       * Text typed straight into the page. It is both the target and the
+       * answer, so it is given as the exact replacement rather than as a
+       * description of one — the person already wrote what they wanted.
+       */
+      if (request.selection.text) {
+        sections.push(
+          `Replace that element's text with exactly: ${JSON.stringify(request.selection.text)}`,
+        );
+      }
+    }
+    /*
+     * A selection that no longer resolves is dropped rather than refused. The
+     * files have been rewritten since it was made, and the sentence beneath it
+     * is usually still a perfectly good instruction on its own.
+     */
+  }
+
+  if (request.fileIds?.length) {
+    const attachments = await loadAttachments(workspaceId, request.fileIds);
+    for (const record of attachments) {
+      if (record.contentType.startsWith('image/')) {
+        const object = await storage().get(record.storageKey);
+        if (object) {
+          images.push({
+            image: `data:${record.contentType};base64,${object.body.toString('base64')}`,
+            mimeType: record.contentType,
+          });
+          sections.push(`An image was attached: ${record.filename}. Build to match it.`);
+        }
+        continue;
+      }
+      if (record.extractedText) {
+        sections.push(
+          [`Attached file ${record.filename}:`, '```', record.extractedText.slice(0, 20_000), '```'].join(
+            '\n',
+          ),
+        );
+        continue;
+      }
+      /*
+       * Said rather than swallowed. A file that was attached and then silently
+       * ignored is worse than one that was refused: the request goes out
+       * missing the thing it was built around, and nothing says so.
+       */
+      sections.push(
+        `A file was attached (${record.filename}, ${record.contentType}) but its contents could not be read.`,
+      );
+    }
+  }
+
+  sections.push(request.instruction);
+  void userId;
+  return { prompt: sections.join('\n\n'), images };
+}
+
+async function runGeneration(buildId: string, request: BuildRequest): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
 
-  /* What was asked, kept where the answer will appear. */
-  if (origin === 'user') {
+  /*
+   * What was asked, kept where the answer will appear — and it is the person's
+   * own sentence, not the prompt assembled around it. A transcript that showed
+   * the resolved source location and twelve lines of surrounding code back as
+   * the user's message would be unreadable, and would not be true either.
+   */
+  if (request.origin !== 'auto') {
     await recordStep({
       buildId,
       workspaceId: workspace.workspaceId,
       kind: 'ask',
-      message: prompt.slice(0, 2_000),
+      message: request.instruction.slice(0, 2_000),
     });
   }
 
@@ -283,18 +386,27 @@ async function runGeneration(
     throw errors.notFound('Build project', buildId);
   }
 
-  const model = await pickModel();
+  const model = await pickModel(request.modelKey);
   /*
    * Typed, not `never`. The cast used to erase the brief entirely, so the
    * target — which decides the stack, the standards and whether a design pass
    * runs — could not be read from it at all.
    */
-  const brief = (project.brief as BuildBrief | null) ?? fallbackBrief(prompt);
+  const brief = (project.brief as BuildBrief | null) ?? fallbackBrief(request.instruction);
   const existing = await loadTree(buildId, workspace.workspaceId);
+
+  const { prompt, images } = await composePrompt(
+    request,
+    project,
+    existing,
+    workspace.workspaceId,
+    user.id,
+  );
 
   const generated = await generateFiles({
     brief,
     prompt,
+    images,
     model,
     existingFiles: existing,
     /*
@@ -520,47 +632,6 @@ export async function startPreviewAction(
 export async function stopPreviewAction(buildId: string): Promise<void> {
   const { workspace } = await getAppContext();
   await stopPreview(buildId, workspace.workspaceId);
-}
-
-/**
- * Revise the build from a visually selected element (spec §35).
- *
- * The selection is resolved to a file and line through the source map, so
- * "make this card smaller" reaches a specific place rather than a search.
- */
-export async function editSelectionAction(
-  buildId: string,
-  elementIdentifier: string,
-  instruction: string,
-): Promise<{ error?: string }> {
-  const { workspace } = await getAppContext();
-
-  const [project] = await db
-    .select({ id: buildProjects.id, sourceMap: buildProjects.codebaseAnalysis })
-    .from(buildProjects)
-    .where(
-      and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
-    )
-    .limit(1);
-
-  if (!project) return { error: 'Build not found.' };
-
-  const analysis = (project.sourceMap ?? {}) as { sourceMap?: SourceMap };
-  const location = analysis.sourceMap
-    ? resolveElement(analysis.sourceMap, elementIdentifier)
-    : undefined;
-
-  if (!location) {
-    return { error: 'That element could not be traced back to a source file.' };
-  }
-
-  const files = await loadTree(buildId, workspace.workspaceId);
-  const prompt = [describeSelection(location, files), '', `Change requested: ${instruction}`].join(
-    '\n',
-  );
-
-  await generateBuildAction(buildId, prompt);
-  return {};
 }
 
 export interface ExportState {
