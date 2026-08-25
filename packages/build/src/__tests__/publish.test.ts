@@ -7,6 +7,7 @@
  * and enough of those failures rate-limits certificate renewal for every name
  * on the account — including the ones that were working.
  */
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@reklu/shared', async () => {
@@ -182,5 +183,35 @@ describe('what a publish builds', () => {
     expect(built.find((file) => file.path === 'app/api/menu/route.ts')?.content).toBe(
       tree[0]!.content,
     );
+  });
+});
+
+/**
+ * The environment each step runs in.
+ *
+ * A sandbox runs everything as `development`, which is right for a preview and
+ * wrong for a build. The two steps of a publish want opposite values, and
+ * getting either wrong fails in a way that points somewhere else: a build in
+ * `development` makes Next warn that the value is non-standard, at the top of
+ * the log above whatever actually broke; an install in `production` omits the
+ * devDependencies — TypeScript, Tailwind, the type packages — and the build
+ * that follows has no compiler to run.
+ */
+describe('publishing steps', () => {
+  const source = readFileSync(new URL('../publish.ts', import.meta.url), 'utf8');
+
+  it('builds as production', () => {
+    const build = source.slice(source.indexOf("'Building for production'"));
+    expect(build).toContain("env: { NODE_ENV: 'production' }");
+  });
+
+  it('installs the dev dependencies the build needs', () => {
+    const install = source.slice(
+      source.indexOf("'Installing dependencies'"),
+      source.indexOf("'Building for production'"),
+    );
+    expect(install).toContain("'--include=dev'");
+    /* And sets no environment of its own, so it stays out of production mode. */
+    expect(install).not.toContain('env: {');
   });
 });

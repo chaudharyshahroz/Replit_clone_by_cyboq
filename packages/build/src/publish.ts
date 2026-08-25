@@ -228,7 +228,14 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
     await input.report?.('Installing dependencies');
     const install = await driver.exec(handle, {
       command: 'npm',
-      args: ['install', '--no-audit', '--no-fund'],
+      /*
+       * `--include=dev` because the build needs them. TypeScript, Tailwind and
+       * the type packages are devDependencies in every generated app, and npm
+       * omits devDependencies whenever NODE_ENV is production — so an install
+       * that quietly did the production thing would leave the build with no
+       * compiler to run.
+       */
+      args: ['install', '--no-audit', '--no-fund', '--include=dev'],
       timeoutMs: 900_000,
     });
     if (install.exitCode !== 0) {
@@ -250,6 +257,13 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
     const built = await driver.exec(handle, {
       command: 'npm',
       args: ['run', 'build'],
+      /*
+       * The sandbox runs everything as `development`, which is right for a
+       * preview and wrong here. Next expects `production` for a build and warns
+       * that the value is non-standard when it is not — a warning printed on
+       * every publish, at the top of the log, above whatever actually failed.
+       */
+      env: { NODE_ENV: 'production' },
       timeoutMs: 900_000,
     });
     if (built.exitCode !== 0) {
