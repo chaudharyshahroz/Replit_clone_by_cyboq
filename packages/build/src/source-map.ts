@@ -96,7 +96,59 @@ export function instrumentForVisualSelection(
     return { ...file, content: rewritten.join('\n') };
   });
 
-  return { files: instrumented, sourceMap, instrumentedCount };
+  return { files: attachBridge(instrumented), sourceMap, instrumentedCount };
+}
+
+/** Layout files the bridge can be attached to, in the order they are preferred. */
+const LAYOUTS = ['app/layout.tsx', 'src/app/layout.tsx', 'app/layout.jsx', 'src/app/layout.jsx'];
+
+/** Where the bridge is served from, and the attribute that marks its tag. */
+const BRIDGE_PATH = 'public/reklu-bridge.js';
+const BRIDGE_MARKER = 'data-reklu-bridge';
+
+/**
+ * Put the bridge into the application, so the ids just injected can be clicked.
+ *
+ * The ids and the script that reports them are one feature and ship together.
+ * Kept apart, they drifted in the worst possible way: every element carried an
+ * id, the source map resolved every one of them, and nothing ever sent one —
+ * the script was written, exported, and injected into nothing. Every tool
+ * pointed at a page that was not listening, which looks exactly like a tool
+ * that does nothing.
+ *
+ * Served as a file rather than inlined into the layout, so updating it is
+ * overwriting a file. Inlined, an application generated last week would keep
+ * whatever the bridge said last week, and a fix here would never reach it.
+ */
+function attachBridge(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
+  const layoutPath = LAYOUTS.find((candidate) => files.some((file) => file.path === candidate));
+  if (!layoutPath) return files;
+
+  const withScript = files.map((file) => {
+    if (file.path !== layoutPath) return file;
+    /* Already linked — an edit must not stack a second tag on every pass. */
+    if (file.content.includes(BRIDGE_MARKER)) return file;
+
+    const closing = file.content.lastIndexOf('</body>');
+    if (closing === -1) return file;
+
+    const tag = `        <script ${BRIDGE_MARKER}="true" src="/reklu-bridge.js" async />`;
+    return {
+      ...file,
+      content: `${file.content.slice(0, closing)}${tag}\n      ${file.content.slice(closing)}`,
+    };
+  });
+
+  const script: GeneratedFile = {
+    path: BRIDGE_PATH,
+    content: VISUAL_SELECTION_BRIDGE,
+    language: 'javascript',
+  };
+
+  /* Overwritten, not skipped: this file is Reklu's, and the current one wins. */
+  return withScript.some((file) => file.path === BRIDGE_PATH)
+    ? withScript.map((file) => (file.path === BRIDGE_PATH ? script : file))
+    : [...withScript, script];
 }
 
 /**

@@ -467,7 +467,7 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
-### Visual selection ✅ (spec §35) — 21 tests
+### Visual selection ✅ (spec §35) — 26 tests
 
 Stable `data-reklu-id` attributes are injected into generated JSX at
 **generation time**, with a source map from id → file + line persisted alongside
@@ -517,6 +517,17 @@ says so in the prompt rather than being silently dropped.
 The one-way property is preserved throughout — the bridge sends element ids, not
 page content. The single exception is the text tool, where the replacement text
 *is* the instruction and the person typed it themselves.
+
+The bridge is served from `public/reklu-bridge.js` and linked from the layout,
+so updating it is overwriting a file — inlined, an application generated before
+a fix would keep the old bridge for ever and the fix would never reach it.
+
+It reaches a generated app from `instrumentForVisualSelection`, with the ids,
+because they are one feature. Kept apart they drifted in the worst possible way:
+every element carried an id, the source map resolved all of them, and nothing
+ever sent one, because the script was written, exported, and injected into
+nothing. Every tool pointed at a page that was not listening — which is
+indistinguishable from a tool that does nothing, and is what shipped.
 
 The bridge ships as a string inside every generated application, where nothing
 type-checks it, so a test parses it: a syntax error there would break selection

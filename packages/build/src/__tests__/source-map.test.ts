@@ -156,6 +156,86 @@ describe('describeSelection', () => {
  * generated application and break selection in all of them at once, with the
  * only symptom being a tool that does nothing when clicked.
  */
+describe('attaching the bridge to a generated app', () => {
+  const layout: GeneratedFile = {
+    path: 'src/app/layout.tsx',
+    language: 'tsx',
+    content: [
+      'export default function RootLayout({ children }) {',
+      '  return (',
+      '    <html lang="en">',
+      '      <body>{children}</body>',
+      '    </html>',
+      '  );',
+      '}',
+    ].join('\n'),
+  };
+
+  /*
+   * The ids and the script that reports them are one feature. Kept apart they
+   * drifted in the worst possible way: every element carried an id, the source
+   * map resolved all of them, and nothing ever sent one — because the script
+   * was exported and injected into nothing. Every tool then pointed at a page
+   * that was not listening, which is indistinguishable from a tool that does
+   * nothing.
+   */
+  it('ships the script alongside the ids', () => {
+    const result = instrumentForVisualSelection([layout]);
+
+    const script = result.files.find((file) => file.path === 'public/reklu-bridge.js');
+    expect(script?.content).toBe(VISUAL_SELECTION_BRIDGE);
+  });
+
+  it('links it from the layout', () => {
+    const result = instrumentForVisualSelection([layout]);
+    const written = result.files.find((file) => file.path === 'src/app/layout.tsx');
+
+    expect(written?.content).toContain('src="/reklu-bridge.js"');
+    expect(written?.content.indexOf('reklu-bridge.js')).toBeLessThan(
+      written!.content.lastIndexOf('</body>'),
+    );
+  });
+
+  it('does not add a second tag when run again', () => {
+    const once = instrumentForVisualSelection([layout]).files;
+    const twice = instrumentForVisualSelection(once).files;
+
+    const written = twice.find((file) => file.path === 'src/app/layout.tsx')!;
+    expect(written.content.split('reklu-bridge.js').length - 1).toBe(1);
+    expect(twice.filter((file) => file.path === 'public/reklu-bridge.js')).toHaveLength(1);
+  });
+
+  it('replaces an older copy of the script', () => {
+    /*
+     * The reason it is a file and not an inline tag. An application generated
+     * before a fix must pick the fix up on its next edit, rather than keeping
+     * whatever the bridge said the week it was made.
+     */
+    const stale: GeneratedFile = {
+      path: 'public/reklu-bridge.js',
+      language: 'javascript',
+      content: '/* an older bridge */',
+    };
+
+    const result = instrumentForVisualSelection([layout, stale]);
+    const script = result.files.find((file) => file.path === 'public/reklu-bridge.js');
+
+    expect(script?.content).toBe(VISUAL_SELECTION_BRIDGE);
+    expect(result.files.filter((file) => file.path === 'public/reklu-bridge.js')).toHaveLength(1);
+  });
+
+  it('leaves an app it does not understand alone', () => {
+    // A layout with no closing body tag is one this cannot place a tag inside,
+    // and damaging a working application to add a script to it is not a trade.
+    const odd: GeneratedFile = { path: 'src/app/layout.tsx', language: 'tsx', content: 'export {};' };
+    const result = instrumentForVisualSelection([odd]);
+
+    expect(result.files.find((file) => file.path === 'src/app/layout.tsx')?.content).toBe(
+      'export {};',
+    );
+  });
+});
+
 describe('the visual selection bridge', () => {
   it('is valid JavaScript', () => {
     expect(() => new vm.Script(VISUAL_SELECTION_BRIDGE)).not.toThrow();
