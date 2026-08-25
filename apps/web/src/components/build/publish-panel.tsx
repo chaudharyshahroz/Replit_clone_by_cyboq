@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { CheckCircle2, ExternalLink, Globe, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Globe, Loader2, RefreshCw, Trash2, Wrench } from 'lucide-react';
 import {
   checkDomainAction,
+  fixPublishFailureAction,
   publicationStateAction,
   publishAction,
   removeDomainAction,
@@ -136,13 +137,48 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
         </div>
       ) : null}
 
-      {state?.status === 'failed' && state.detail ? (
-        <p
-          role="alert"
-          className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 font-mono text-[0.6875rem] leading-relaxed text-text"
-        >
-          {state.detail}
-        </p>
+      {state?.status === 'failed' ? (
+        <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 p-3">
+          <p role="alert" className="text-xs leading-relaxed text-text">
+            The production build failed. It compiled well enough to preview, so this is
+            something that only shows up when every page is rendered ahead of time.
+          </p>
+
+          {/*
+            The build's own output, not a summary of it. Next prints its
+            conclusion last and the cause well above — so a tail of the log
+            reliably captured "Export encountered errors" and dropped the line
+            that said why.
+          */}
+          {state.buildLog ? (
+            <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-canvas/60 p-2 font-mono text-[0.6875rem] leading-relaxed text-text-secondary">
+              {state.buildLog}
+            </pre>
+          ) : state.detail ? (
+            <p className="mt-2 font-mono text-[0.6875rem] leading-relaxed text-text-secondary">
+              {state.detail}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() =>
+              run('fix', async () => {
+                await fixPublishFailureAction(buildId);
+                return publicationStateAction(buildId);
+              })
+            }
+            disabled={working}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-danger/40 px-2.5 py-1.5 text-[0.6875rem] font-medium text-text transition-colors hover:bg-danger/20 disabled:opacity-50"
+          >
+            {busy === 'fix' ? (
+              <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
+            ) : (
+              <Wrench className="h-3 w-3" strokeWidth={2} />
+            )}
+            {busy === 'fix' ? 'Fixing…' : 'Fix this and try again'}
+          </button>
+        </div>
       ) : null}
 
       {/* ---- The custom domain ---- */}

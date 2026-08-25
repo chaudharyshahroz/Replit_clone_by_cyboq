@@ -200,7 +200,12 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
       timeoutMs: 900_000,
     });
     if (install.exitCode !== 0) {
-      throw new Error(`Dependencies failed to install: ${tail(install.stderr || install.stdout)}`);
+      const log = install.stderr || install.stdout;
+      await db
+        .update(publications)
+        .set({ buildLog: log.slice(0, 60_000), updatedAt: new Date() })
+        .where(eq(publications.id, record.id));
+      throw new Error(`Dependencies failed to install: ${tail(log)}`);
     }
 
     /*
@@ -216,7 +221,12 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
       timeoutMs: 900_000,
     });
     if (built.exitCode !== 0) {
-      throw new Error(`The production build failed: ${tail(built.stderr || built.stdout)}`);
+      const log = built.stderr || built.stdout;
+      await db
+        .update(publications)
+        .set({ buildLog: log.slice(0, 60_000), updatedAt: new Date() })
+        .where(eq(publications.id, record.id));
+      throw new Error(`The production build failed: ${tail(log)}`);
     }
 
     await input.report?.('Starting the site');
@@ -238,6 +248,7 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
         buildVersionId: project.versionId,
         status: 'live',
         statusDetail: null,
+        buildLog: null,
         publishedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -304,9 +315,32 @@ export async function unpublishSite(
   return { detail: 'The site is no longer reachable. Its address is kept for when you publish again.' };
 }
 
-/** The last few lines of a failure, which is where the reason lives. */
+/**
+ * The part of a build log that says what went wrong.
+ *
+ * Not simply the last few lines. Next prints its summary last — "Export
+ * encountered errors on following paths", followed by a list of every page —
+ * and the actual cause is above it, sometimes well above. Tailing the output
+ * reliably captured the summary and dropped the reason, which is how a failure
+ * with a specific, fixable cause arrived looking like a mystery.
+ */
+export function buildFailureDetail(output: string): string {
+  const lines = output.trim().split('\n');
+
+  /* The first real error, which is the one that caused everything after it. */
+  const first = lines.findIndex((line) =>
+    /^\s*(Error:|TypeError:|ReferenceError:|SyntaxError:|Failed to compile|Module not found)/.test(
+      line,
+    ),
+  );
+
+  const start = first === -1 ? Math.max(0, lines.length - 30) : Math.max(0, first - 2);
+  return lines.slice(start).join('\n').slice(0, 4_000);
+}
+
+/** A short form for a status line, where a whole log will not fit. */
 function tail(output: string): string {
-  return output.trim().split('\n').slice(-6).join('\n').slice(0, 600);
+  return buildFailureDetail(output).split('\n').slice(0, 6).join('\n').slice(0, 600);
 }
 
 /**

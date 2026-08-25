@@ -366,6 +366,15 @@ export const publications = pgTable(
     /** publishing | live | failed | stopped */
     status: text('status').notNull().default('publishing'),
     statusDetail: text('status_detail'),
+    /**
+     * The build's own output when it failed.
+     *
+     * Kept whole rather than summarised. A production build fails for reasons
+     * that are specific and fixable, and the line that says which is often well
+     * above the summary Next prints at the end — so the log is what gets shown,
+     * and what gets handed back to the model to fix.
+     */
+    buildLog: text('build_log'),
 
     publishedAt: tsColumn('published_at'),
     ...timestamps,

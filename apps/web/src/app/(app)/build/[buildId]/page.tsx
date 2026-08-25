@@ -192,6 +192,7 @@ export default async function BuildDetailPage({
           consoleOutput={latest?.checkOutput ?? ''}
           previewUrl={preview?.url ?? null}
           onStartPreview={startPreviewAction}
+          target={project.target}
           sandboxIsolated={status.isolated && status.available}
           sandboxDetail={status.detail}
           framingProblem={framingProblem}

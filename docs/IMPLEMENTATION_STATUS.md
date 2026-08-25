@@ -467,7 +467,7 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
-### Publishing ✅ (spec §40) — 13 tests
+### Publishing ✅ (spec §40) — 22 tests
 
 A build goes live at `<slug>.<PUBLISH_DOMAIN>` on Reklu's own server, with no
 account anywhere else, and takes a custom domain when its owner has one.
@@ -505,8 +505,37 @@ Routing a new domain means recreating the container, since Docker labels are
 fixed at creation — so it costs a rebuild, and is done only when the DNS has
 actually arrived rather than on every check.
 
+**Static export.** The first real publish failed with "Export encountered
+errors on following paths", listing `/404`, `/500` and `/`. The cause was
+`output: 'export'` in a generated `next.config.js` on an app with route
+handlers: a static export has no server, and the model had written both. It
+reads as the whole site being broken rather than as one line in a config file.
+`repairStaticExport` removes the setting when the tree contains a route handler,
+a pages API route, middleware, or headers/redirects/rewrites — and leaves a
+genuinely static site alone, since removing it there would turn a site needing
+no server into one that does.
+
+This is a class of failure publishing exposes and previewing never did: a dev
+server renders on request, so nothing is prerendered and nothing can fail at
+prerender. A failed publish therefore keeps its whole build log, shown in the
+panel and offered to the model as a fix. The log is trimmed from the first
+error rather than tailed — Next prints its conclusion last and the cause well
+above it, so tailing reliably captured the summary and dropped the reason.
+
 Needs `PUBLISH_DOMAIN` with wildcard DNS, and `PUBLISH_SERVER_IP` to verify a
 custom domain against. Without them the panel says which is missing.
+
+### Tools tab
+
+The Deploy tab held two export buttons, which made everything else a project
+has look like it did not exist. It is now Tools: publishing and its domain,
+export, the standards each generation was held to, where the code actually runs
+(including when the answer is "not isolated"), and what is in the project.
+Publishing also has a button in the workspace bar, which opens the panel rather
+than publishing silently from a screen with no room to report anything.
+
+Only real things are listed. A row for a feature Reklu does not have would be a
+promise the tab cannot keep.
 
 ### Generated imagery ✅ — 11 tests
 

@@ -10,6 +10,7 @@ CREATE TABLE "publications" (
 	"container_id" text,
 	"status" text DEFAULT 'publishing' NOT NULL,
 	"status_detail" text,
+	"build_log" text,
 	"published_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL

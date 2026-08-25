@@ -13,8 +13,7 @@ import { previewLogsAction } from '@/app/(app)/build/actions';
 import { fetchBuildProgress } from '@/lib/build-progress';
 import { compileErrorIn } from '@/lib/compile-error';
 import { generateBuildAction } from '@/app/(app)/build/actions';
-import { ExportPanel } from './export-panel';
-import { PublishPanel } from './publish-panel';
+import { ToolsPanel } from './tools-panel';
 import { fileLook, languageFor } from '@/lib/file-icon';
 import { siteRoutes } from '@/lib/site-routes';
 import { Menu, MenuItem } from '@/components/ui/menu';
@@ -33,7 +32,8 @@ import {
   ChevronDown,
   Check,
   Monitor,
-  Rocket,
+  Globe,
+  Wrench,
   MousePointer2,
   Redo2,
   Undo2,
@@ -61,7 +61,7 @@ export interface BuildCheckpoint {
   readonly createdAt: string;
 }
 
-type Panel = 'code' | 'console' | 'preview' | 'history' | 'deploy';
+type Panel = 'code' | 'console' | 'preview' | 'history' | 'tools';
 
 type DeviceName = 'desktop' | 'tablet' | 'mobile';
 
@@ -245,6 +245,7 @@ export function BuildWorkspace({
   previewUrl,
   sandboxIsolated,
   sandboxDetail,
+  target,
   framingProblem,
   onStartPreview,
 }: {
@@ -255,6 +256,8 @@ export function BuildWorkspace({
   previewUrl: string | null;
   sandboxIsolated: boolean;
   sandboxDetail: string;
+  /** What kind of application this is, for the standards Reklu applied to it. */
+  target: string;
   /**
    * Why the browser will refuse to frame the preview, when it will.
    *
@@ -682,11 +685,12 @@ export function BuildWorkspace({
     { id: 'console', label: 'Console', icon: Terminal },
     { id: 'history', label: 'History', icon: History },
     /*
-      Shipping is a step, not a sidebar ornament. It sat in the pane where the
-      conversation happens, competing with the brief and the log for the space
-      those actually need.
+      Everything about the project that is not its code: where it is served
+      from, the domain in front of it, what it is allowed to use. It was called
+      Deploy and held only the two export buttons, which made the rest of it
+      look like it did not exist.
     */
-    { id: 'deploy', label: 'Deploy', icon: Rocket },
+    { id: 'tools', label: 'Tools', icon: Wrench },
   ];
 
   return (
@@ -738,6 +742,24 @@ export function BuildWorkspace({
                 {label}
               </button>
             ))}
+
+            {/*
+              Publishing, reachable from wherever you are.
+
+              It is the last thing anybody does and it lived four clicks inside
+              a tab — so the button sits in the bar, and opens the panel that
+              explains what it is about to do rather than doing it silently from
+              a screen with no room to report anything.
+            */}
+            <button
+              type="button"
+              onClick={() => setPanel('tools')}
+              disabled={files.length === 0}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-30"
+            >
+              <Globe className="h-3.5 w-3.5" strokeWidth={2} />
+              Publish
+            </button>
           </nav>
 
           <div className="min-h-0 flex-1 overflow-auto">
@@ -1222,17 +1244,16 @@ export function BuildWorkspace({
               )
             ) : null}
 
-            {panel === 'deploy' ? (
-              <div className="mx-auto max-w-xl p-6">
-                {/*
-                  Publishing first. It is the thing most people came to this tab
-                  for — a live address for what they just built — and it needs
-                  nothing connected. Exporting to somebody else's account is the
-                  more specialised choice, so it sits below.
-                */}
-                <PublishPanel buildId={buildId} hasFiles={files.length > 0} />
-                <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
-              </div>
+            {panel === 'tools' ? (
+              <ToolsPanel
+                buildId={buildId}
+                hasFiles={files.length > 0}
+                target={target}
+                sandboxIsolated={sandboxIsolated}
+                sandboxDetail={sandboxDetail}
+                fileCount={files.length}
+                checkpointCount={checkpoints.length}
+              />
             ) : null}
 
             {panel === 'history' ? (

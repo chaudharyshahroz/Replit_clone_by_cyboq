@@ -12,5 +12,6 @@ export * from './badge';
 export * from './repair-imports';
 export * from './repair-deps';
 export * from './repair-fonts';
+export * from './repair-export';
 export * from './artwork';
 export * from './publish';

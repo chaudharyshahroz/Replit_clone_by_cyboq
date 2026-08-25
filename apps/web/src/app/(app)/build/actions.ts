@@ -26,6 +26,7 @@ import {
   previewLogs,
   activateCustomDomain,
   addMadeWithBadge,
+  buildFailureDetail,
   currentPublication,
   dnsInstructions,
   drawArtwork,
@@ -38,6 +39,7 @@ import {
   repairAliasPaths,
   repairMissingDependencies,
   repairFontWeights,
+  repairStaticExport,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -619,7 +621,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = repairFontWeights(repairMissingDependencies(repairAliasPaths(merged)));
+  const resolved = repairStaticExport(
+    repairFontWeights(repairMissingDependencies(repairAliasPaths(merged))),
+  );
 
   /*
    * The photographs, drawn from what the page says they show.
@@ -843,6 +847,8 @@ export interface PublishState {
   readonly domainStatus?: string;
   readonly domainDetail?: string;
   readonly dns?: { type: string; name: string; value: string };
+  /** The build's own output when it failed, so the reason is readable. */
+  readonly buildLog?: string;
 }
 
 /** What is live for this build right now, and what its domain is doing. */
@@ -859,6 +865,7 @@ export async function publicationStateAction(buildId: string): Promise<PublishSt
     url: publicUrl(record),
     status: record.status,
     detail: record.statusDetail ?? undefined,
+    buildLog: record.buildLog ? buildFailureDetail(record.buildLog) : undefined,
     slug: record.slug,
     customDomain: record.customDomain ?? undefined,
     domainStatus: record.domainStatus,
@@ -951,4 +958,28 @@ export async function removeDomainAction(buildId: string): Promise<PublishState>
   } catch (error) {
     return { error: toRekluError(error).message };
   }
+}
+
+/**
+ * Hand a failed publish back to the model.
+ *
+ * The build log names a file and a line, which is most of the fix. Reaching it
+ * required opening a panel, reading a stack trace and describing it in a
+ * sentence — work the log has already done.
+ */
+export async function fixPublishFailureAction(buildId: string): Promise<GenerateResult> {
+  const { workspace } = await getAppContext();
+
+  const record = await currentPublication(buildId, workspace.workspaceId);
+  if (!record?.buildLog) {
+    return { ok: false, message: 'There is no build failure to fix.', fileCount: 0 };
+  }
+
+  return generateBuildAction(buildId, {
+    instruction:
+      'The production build fails with the following output. Fix the cause and change ' +
+      `nothing else.\n\n${buildFailureDetail(record.buildLog)}`,
+    /* Reklu quoting a build log back at itself is not something a person said. */
+    origin: 'auto',
+  });
 }
