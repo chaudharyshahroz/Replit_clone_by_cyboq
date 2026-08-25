@@ -18,6 +18,7 @@ import {
   resolveElement,
   startPreview,
   syncPreview,
+  typecheckPreview,
   stopPreview,
   type GeneratedFile,
   type SourceMap,
@@ -98,6 +99,14 @@ export interface BuildRequest {
   readonly fileIds?: readonly string[];
   /** A model chosen in the composer; absent means Reklu picks. */
   readonly modelKey?: string;
+  /**
+   * True for the pass that fixes what the compiler found.
+   *
+   * The guard against a loop. A repair is itself a generation, and a generation
+   * typechecks — so without this, code the model cannot fix would be sent back
+   * to it for as long as anybody was willing to pay for it.
+   */
+  readonly repairPass?: boolean;
 }
 
 /**
@@ -701,6 +710,51 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       kind: 'stage',
       message: 'Preview updated',
     });
+
+    /*
+     * Asked before anybody else has to find out.
+     *
+     * `next dev` reports type errors and keeps serving; `next build` refuses.
+     * So a type error is invisible for as long as somebody is looking at the
+     * preview and fatal the moment they publish — and the person meets it as a
+     * failed publish naming a file they never opened. Better to ask the
+     * compiler now, while the container is up and the model still has the
+     * context that produced the code.
+     *
+     * Once. A second failure is reported rather than retried: the same
+     * correction attempted repeatedly is how a build spends real money going
+     * nowhere.
+     */
+    if (!request.repairPass) {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message: 'Checking the types',
+      });
+
+      const problems = await typecheckPreview({
+        buildProjectId: buildId,
+        workspaceId: workspace.workspaceId,
+      });
+
+      if (problems) {
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'say',
+          message: 'The compiler found type errors. Fixing them before you see them.',
+        });
+
+        return runGeneration(buildId, {
+          instruction:
+            'The TypeScript compiler reports these errors. Fix every one of them and ' +
+            `change nothing else.\n\n${problems}`,
+          origin: 'auto',
+          repairPass: true,
+        });
+      }
+    }
   }
 
   /*
@@ -879,6 +933,15 @@ export interface PublishState {
   readonly dns?: { type: string; name: string; value: string };
   /** The build's own output when it failed, so the reason is readable. */
   readonly buildLog?: string;
+  /**
+   * False only when this instance cannot publish at all.
+   *
+   * A failed publish and an unconfigured server both used to arrive as an
+   * `error` with no status, and the panel could not tell them apart — so one
+   * failed build collapsed the whole panel to a single message, taking the
+   * Publish button and the domain field with it.
+   */
+  readonly configured?: boolean;
 }
 
 /**
@@ -960,7 +1023,7 @@ export async function publicationStateAction(buildId: string): Promise<PublishSt
   const { workspace } = await getAppContext();
 
   const availability = publishAvailability();
-  if (!availability.available) return { error: availability.detail };
+  if (!availability.available) return { configured: false, error: availability.detail };
 
   let record;
   try {

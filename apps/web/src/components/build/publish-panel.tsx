@@ -35,7 +35,14 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
   const run = (label: string, action: () => Promise<PublishState>) => {
     setBusy(label);
     startTransition(async () => {
-      setState(await action());
+      const result = await action();
+      /*
+       * Merged, not replaced. A failed publish answers with an error and
+       * nothing else, and replacing the state with it threw away the slug, the
+       * domain and the status — so one failure emptied the panel of every
+       * control, including the one that would retry.
+       */
+      setState((previous) => ({ ...previous, ...result }));
       setBusy(null);
     });
   };
@@ -44,8 +51,13 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
   const domainLive = state?.domainStatus === 'live';
   const working = pending || busy !== null;
 
-  /* Publishing is unavailable on this instance; say which variable is missing. */
-  if (state?.error && !state.status) {
+  /*
+   * Unavailable on this instance, which is the one case where there is nothing
+   * to show but the reason. Keyed on an explicit flag rather than on the
+   * absence of a status, because a failed publish also has no status and is not
+   * the same thing at all.
+   */
+  if (state?.configured === false) {
     return (
       <section className="rounded-xl border border-border bg-surface/40 p-4">
         <h2 className="flex items-center gap-2 text-sm font-medium text-text">

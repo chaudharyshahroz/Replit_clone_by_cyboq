@@ -436,6 +436,81 @@ export async function syncPreview(params: {
   }
 }
 
+/**
+ * Ask the compiler what is wrong, in the container that already has the code.
+ *
+ * `next dev` reports type errors and keeps serving; `next build` refuses. So a
+ * type error is invisible for as long as anybody is looking at the preview and
+ * fatal the moment they publish — which is how the same project failed to
+ * publish three times running, each time on a different line nobody had been
+ * shown.
+ *
+ * Run where the dependencies already are. A typecheck needs the whole tree
+ * resolved, and installing one somewhere else to ask a question the running
+ * container can answer would cost more than the check.
+ */
+export async function typecheckPreview(params: {
+  readonly buildProjectId: string;
+  readonly workspaceId: string;
+}): Promise<string | undefined> {
+  const [row] = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId })
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.buildProjectId, params.buildProjectId),
+        eq(sandboxes.workspaceId, params.workspaceId),
+        eq(sandboxes.status, 'running'),
+      ),
+    )
+    .limit(1);
+
+  if (!row?.externalId) return undefined;
+
+  const driver = sandbox();
+
+  try {
+    const result = await driver.exec(
+      {
+        id: row.id,
+        driver: driver.name,
+        externalId: row.externalId,
+        limits: DEFAULT_PREVIEW_LIMITS,
+        isIsolated: driver.isIsolated,
+      },
+      {
+        command: 'npx',
+        args: ['--no-install', 'tsc', '--noEmit', '--pretty', 'false'],
+        timeoutMs: 240_000,
+      },
+    );
+
+    if (result.exitCode === 0) return undefined;
+
+    const output = `${result.stdout}\n${result.stderr}`.trim();
+
+    /*
+     * A project with no TypeScript, or no compiler installed, is not a project
+     * with type errors. Reporting "tsc: not found" as something for a model to
+     * fix would send it editing code that was never wrong.
+     */
+    if (!/error TS\d+/.test(output)) return undefined;
+
+    /* The first errors only: the rest are usually the same mistake repeating. */
+    return output
+      .split('\n')
+      .filter((line) => /error TS\d+/.test(line))
+      .slice(0, 20)
+      .join('\n');
+  } catch (error) {
+    logger.debug('Could not typecheck the preview', {
+      buildProjectId: params.buildProjectId,
+      error,
+    });
+    return undefined;
+  }
+}
+
 export async function startPreview(params: {
   readonly buildProjectId: string;
   readonly workspaceId: string;

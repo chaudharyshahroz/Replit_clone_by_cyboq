@@ -512,6 +512,26 @@ layout guarding the page beside it, and this one returns every address.
 configured, so the addresses come out as a file rather than behind a Send
 button that would do nothing.
 
+### Types are checked before publishing ✅ — 7 tests
+
+`next dev` reports a type error and keeps serving; `next build` refuses. So a
+type error is invisible for as long as anybody is looking at the preview and
+fatal the moment they publish — one project failed three publishes running,
+each on a different line nobody had been shown, in a file they had never
+opened.
+
+A generation now asks the compiler, in the container that already has the
+dependency tree, and hands what it finds straight back to the model. Once: a
+second failure is reported rather than retried, because the same correction
+attempted repeatedly is how a build spends real money going nowhere. The repair
+carries a flag that stops it typechecking again, since a repair is itself a
+generation.
+
+Output is only treated as type errors when it contains `error TS####`. A project
+with no TypeScript, or no compiler installed, is not a project with type errors,
+and handing "tsc: not found" to a model sends it editing code that was never
+wrong.
+
 ### Publishing ✅ (spec §40) — 22 tests
 
 A build goes live at `<slug>.<PUBLISH_DOMAIN>` on Reklu's own server, with no
