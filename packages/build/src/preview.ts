@@ -11,7 +11,7 @@
  * already looks for them.
  */
 import { createServer } from 'node:net';
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lt, ne } from 'drizzle-orm';
 import { buildProjects, db, sandboxes } from '@reklu/database';
 import {
   DEV_LOG_PATH,
@@ -42,6 +42,17 @@ const DEFAULT_PREVIEW_LIMITS = {
 /** Previews are reaped after this long idle. */
 const PREVIEW_TTL_MS = 30 * 60 * 1000;
 
+/**
+ * How many preview containers may run at once, across every project.
+ *
+ * A preview is a Node process holding a compiler, and the host is one machine.
+ * Without a ceiling, the number running is however many builds anybody has
+ * opened since the last restart — and each one that does not fit takes memory
+ * from the ones that do, until the box stops answering and the whole
+ * deployment looks down rather than busy.
+ */
+const MAX_RUNNING_PREVIEWS = 4;
+
 /** In-process handles, so a preview can be stopped without re-spawning. */
 const running = new Map<string, PreviewHandle>();
 
@@ -55,6 +66,72 @@ const running = new Map<string, PreviewHandle>();
  * on an explicit stop, because the case that leaks is the one where nobody
  * pressed stop.
  */
+/**
+ * Destroy previews that nobody is watching any more.
+ *
+ * `expiresAt` was written on every sandbox from the beginning and read by
+ * nothing: the column existed, the index existed, the TTL constant existed, and
+ * no query ever selected on it. So a preview container lived until that same
+ * project was previewed again — meaning the number of Node processes on the
+ * host was the number of builds anyone had opened, for ever.
+ *
+ * That is the shape of a host that works fine and then stops answering: nothing
+ * fails, memory is simply consumed by containers serving pages nobody is
+ * looking at, and the first visible symptom is the proxy timing out on requests
+ * that used to be instant.
+ */
+export async function reapIdleSandboxes(): Promise<number> {
+  const driver = sandbox();
+  const now = new Date();
+
+  const expired = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId })
+    .from(sandboxes)
+    .where(and(ne(sandboxes.status, 'stopped'), lt(sandboxes.expiresAt, now)));
+
+  /*
+   * Over the ceiling as well as over the deadline. A run of previews inside the
+   * TTL can still exhaust the host, so the least recently used go first — they
+   * are the ones nobody is looking at.
+   */
+  const live = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId })
+    .from(sandboxes)
+    .where(and(ne(sandboxes.status, 'stopped'), gte(sandboxes.expiresAt, now)))
+    .orderBy(desc(sandboxes.lastActiveAt));
+
+  const surplus = live.slice(MAX_RUNNING_PREVIEWS);
+  const doomed = [...expired, ...surplus];
+  if (doomed.length === 0) return 0;
+
+  for (const row of doomed) {
+    if (row.externalId) {
+      await driver
+        .destroy({
+          id: row.id,
+          driver: driver.name,
+          externalId: row.externalId,
+          limits: DEFAULT_PREVIEW_LIMITS,
+          isIsolated: driver.isIsolated,
+        })
+        .catch((error) => logger.warn('Could not reap a sandbox', { id: row.id, error }));
+    }
+
+    await db
+      .update(sandboxes)
+      .set({ status: 'stopped', stoppedAt: new Date() })
+      .where(eq(sandboxes.id, row.id));
+
+    running.delete(row.id);
+  }
+
+  logger.info('Reaped idle preview sandboxes', {
+    expired: expired.length,
+    surplus: surplus.length,
+  });
+  return doomed.length;
+}
+
 async function destroyPreviousSandboxes(
   buildProjectId: string,
   workspaceId: string,
@@ -205,6 +282,16 @@ async function reuseRunningSandbox(params: {
         return undefined;
       }
     }
+
+    /*
+     * Touched, so using a preview keeps it. Without this the deadline is set
+     * once at creation and a preview somebody is actively editing is reaped
+     * half an hour later in the middle of their work.
+     */
+    await db
+      .update(sandboxes)
+      .set({ lastActiveAt: new Date(), expiresAt: new Date(Date.now() + PREVIEW_TTL_MS) })
+      .where(eq(sandboxes.id, row.id));
 
     logger.info('Reused a running sandbox for an edit', {
       buildProjectId: params.buildProjectId,
@@ -385,6 +472,14 @@ export async function startPreview(params: {
   const report: BuildStageReporter = params.report ?? (() => undefined);
 
   /*
+   * Before adding another. A host that is already at its ceiling should shed
+   * the previews nobody is watching rather than refuse the one somebody is.
+   */
+  await reapIdleSandboxes().catch((error) =>
+    logger.warn('Could not reap idle sandboxes', { error }),
+  );
+
+  /*
    * Reuse what is already running, before anything is torn down.
    *
    * This used to sit *after* the call that stops the previous preview, which
@@ -495,6 +590,7 @@ export async function startPreview(params: {
         externalId: materialized.handle.externalId,
         previewUrl: handle.url,
         lastActiveAt: new Date(),
+        expiresAt: new Date(Date.now() + PREVIEW_TTL_MS),
       })
       .where(eq(sandboxes.id, row!.id));
 

@@ -237,6 +237,31 @@ builds and serves previews exactly like one that has it.
   makes a missing working directory owned by root, which locks an unprivileged
   container out of its own files
 
+## What runs, and for how long
+
+A preview is a Node process holding a compiler. Two limits keep them from
+taking the machine:
+
+| Limit | Value | What it does |
+| ----- | ----- | ------------ |
+| Idle TTL | 30 minutes | A preview nobody has touched is destroyed |
+| Ceiling | 4 at once | Over that, the least recently used go first |
+
+Both are enforced when a preview starts, so no scheduler is involved. Using a
+preview pushes its deadline out, so an active one is never taken mid-edit.
+
+Published sites are exempt: they are not previews, they have no idle deadline,
+and they are meant to be answering when nobody is watching.
+
+**This did not exist at first**, and the effect is worth knowing because it is
+the shape of a host that works and then stops answering. `expiresAt` was
+written on every sandbox and read by nothing, so a preview container lived
+until the same project was previewed again — the number of Node processes on
+the machine was the number of builds anybody had opened. Nothing errors;
+memory is simply consumed by containers serving pages nobody is looking at,
+and the first visible symptom is the proxy timing out on requests that used to
+be instant.
+
 ## Costs you should expect
 
 Disk fills up. Each build pulls its own `node_modules`. Run a weekly clean:
