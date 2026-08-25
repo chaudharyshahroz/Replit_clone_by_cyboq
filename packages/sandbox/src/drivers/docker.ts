@@ -167,15 +167,21 @@ export function previewUrl(host: string, port: number): string {
 }
 
 /**
- * Create the container, pulling the image if the host does not have it.
+ * Create the container, restoring the image if the host does not have it.
  *
  * The image was treated as something an operator installs once and keeps. They
- * do not: `docker system prune` removes any image no container is currently
+ * do not: `docker system prune -a` removes any image no container is currently
  * using, and a sandbox image is unused by definition between builds. So the
- * first build after a routine cleanup failed with "No such image", which reads
- * as a broken deployment rather than as a missing download.
+ * first build after a routine cleanup failed, and the failure reads as a broken
+ * deployment rather than as a missing download.
  *
- * Pulled on demand instead, once, and only when the daemon says it is missing.
+ * How it is restored depends on where it came from, and that distinction is the
+ * whole of this code. A registry image is pulled. Reklu's own sandbox image is
+ * *built here*, on the host, and exists in no registry — so pulling it asks
+ * Docker Hub for a repository that was never published, and the daemon answers
+ * "pull access denied ... may require 'docker login'". That message sent
+ * everyone who read it looking for credentials to a registry that has nothing
+ * to do with the problem. Nothing is missing but a local build.
  */
 async function createContainer(
   target: DockerTarget,
@@ -199,8 +205,7 @@ async function createContainer(
 
     if (!missingImage) throw error;
 
-    logger.info('Sandbox image is missing; pulling it', { image });
-    await pullImage(target, image);
+    await restoreImage(target, image);
 
     const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
@@ -305,6 +310,143 @@ async function runToCompletion(
   }
 }
 
+/**
+ * Reklu's own sandbox image, which is built rather than downloaded.
+ *
+ * Matched on the repository name, ignoring the tag: `reklu-sandbox`,
+ * `reklu-sandbox:latest` and `reklu-sandbox:v3` are all the image this module
+ * knows how to build.
+ */
+const BUILT_LOCALLY = 'reklu-sandbox';
+
+/**
+ * The sandbox image's definition, kept here so it can be rebuilt without one.
+ *
+ * Duplicated from `docker/sandbox.Dockerfile` on purpose: the app runs in its
+ * own container and has no copy of the repository, so the file that documents
+ * the image for a person cannot be the file used to rebuild it. Both are short,
+ * and a test holds them to the same base image and the same warm-cache check.
+ */
+const SANDBOX_DOCKERFILE = `
+FROM node:22-bookworm-slim
+LABEL com.reklu.keep="true"
+ENV NPM_CONFIG_CACHE=/home/node/.npm
+USER node
+WORKDIR /home/node
+RUN mkdir -p /home/node/warmcache \\
+  && cd /home/node/warmcache \\
+  && npm init -y > /dev/null 2>&1 \\
+  && npm install --no-audit --no-fund --legacy-peer-deps \\
+       next react react-dom \\
+       tailwindcss postcss autoprefixer \\
+       typescript @types/node @types/react @types/react-dom \\
+       zod clsx \\
+  && cd /home/node \\
+  && rm -rf /home/node/warmcache \\
+  && test "$(du -sm /home/node/.npm | cut -f1)" -gt 20
+CMD ["sleep", "infinity"]
+`.trim();
+
+function repositoryOf(image: string): string {
+  const slash = image.lastIndexOf('/');
+  const colon = image.lastIndexOf(':');
+  /* A colon before the last slash is a registry port, not a tag. */
+  return colon > slash ? image.slice(0, colon) : image;
+}
+
+/**
+ * Put the image back, by whichever route can actually work.
+ *
+ * A prune takes the image and the person who ran it has no idea a build
+ * depended on it. Recovering without them is the difference between a build
+ * that pauses for a few minutes and a deployment that looks broken until
+ * someone SSHes in.
+ */
+async function restoreImage(target: DockerTarget, image: string): Promise<void> {
+  if (repositoryOf(image) === BUILT_LOCALLY) {
+    logger.info('The sandbox image is missing; rebuilding it on the host', { image });
+    await buildSandboxImage(target, image);
+    return;
+  }
+
+  logger.info('Sandbox image is missing; pulling it', { image });
+  await pullImage(target, image);
+}
+
+/**
+ * Rebuild the sandbox image on the host, through the daemon.
+ *
+ * The build context is a tar holding one file. That is the whole of it — the
+ * Dockerfile has no `COPY`, everything it needs it downloads — which is what
+ * makes rebuilding possible from a process that has no checkout of the
+ * repository and no shell on the host.
+ */
+async function buildSandboxImage(target: DockerTarget, image: string): Promise<void> {
+  const context = createTar([{ path: 'Dockerfile', content: SANDBOX_DOCKERFILE }]);
+
+  const response = await dockerRequest(
+    target,
+    'POST',
+    `/build?t=${encodeURIComponent(image)}&dockerfile=Dockerfile&rm=1&forcerm=1`,
+    {
+      body: context,
+      contentType: 'application/x-tar',
+      /*
+       * Long, because this warms an npm cache by installing the whole stack
+       * once. It is the same wait as the original build of the image, and it
+       * happens at most once per prune.
+       */
+      timeoutMs: 900_000,
+    },
+  );
+
+  /*
+   * `/build` answers 200 and then streams its result, so a failed build arrives
+   * as a successful request. The failure is a JSON line in the body, and not
+   * reading it would leave a missing image looking like a completed rebuild —
+   * with the real error surfacing later as something unrelated.
+   */
+  const output = response.body.toString('utf8');
+  const failure = output
+    .split('\n')
+    .map((line) => {
+      try {
+        return JSON.parse(line) as { error?: string };
+      } catch {
+        return null;
+      }
+    })
+    .find((entry) => entry?.error);
+
+  if (failure?.error) {
+    throw new Error(`The sandbox image could not be rebuilt: ${failure.error.slice(0, 300)}`);
+  }
+
+  logger.info('Rebuilt the sandbox image', { image });
+}
+
+/**
+ * Say what a daemon message actually means, where its own wording misleads.
+ *
+ * Docker reports a missing local image as a registry problem, because a pull is
+ * the only way it knows to get one: "pull access denied for reklu-sandbox,
+ * repository does not exist or may require 'docker login'". Every word of that
+ * is true and the conclusion it invites is wrong — there are no credentials to
+ * find, because the image is built on the host and was never published. Left
+ * unexplained it sends whoever reads it to a registry login page.
+ */
+function explain(message: string): string {
+  if (/pull access denied/i.test(message) && message.includes(BUILT_LOCALLY)) {
+    return (
+      `the sandbox image ${BUILT_LOCALLY} is not on this host and could not be rebuilt. ` +
+      'It is built on the server and published to no registry, so no login will find it — ' +
+      'a `docker system prune -a` removes it. Rebuild it with: ' +
+      'docker build -f docker/sandbox.Dockerfile -t reklu-sandbox:latest .'
+    );
+  }
+  return message;
+}
+
 /** Pull an image and wait for it to finish. */
 async function pullImage(target: DockerTarget, image: string): Promise<void> {
   const [name, tag = 'latest'] = image.includes(':')
@@ -328,10 +470,7 @@ async function pullImage(target: DockerTarget, image: string): Promise<void> {
 
 function wrap(stage: string, error: unknown): never {
   if (error instanceof DockerError) {
-    throw new SandboxError(
-      'DRIVER_ERROR',
-      `Docker refused ${stage}: ${error.message}`,
-    );
+    throw new SandboxError('DRIVER_ERROR', `Docker refused ${stage}: ${explain(error.message)}`);
   }
   throw new SandboxError(
     'DRIVER_ERROR',

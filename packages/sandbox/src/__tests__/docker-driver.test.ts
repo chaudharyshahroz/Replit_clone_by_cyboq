@@ -18,6 +18,7 @@ vi.mock('../docker-api', async (importOriginal) => {
   return { ...actual, dockerRequest };
 });
 
+import { readFile } from 'node:fs/promises';
 import { createDockerSandboxDriver } from '../drivers/docker';
 import { demultiplex, parseDockerHost } from '../docker-api';
 import { createDockerSandboxDriver as makeDriver, previewSubdomain, previewUrl, proxyLabels } from '../drivers/docker';
@@ -637,5 +638,148 @@ describe('when the host does not have the image', () => {
     expect(
       dockerRequest.mock.calls.some((args) => String(args[2]).includes('/images/create')),
     ).toBe(false);
+  });
+});
+
+/**
+ * The image Reklu builds itself.
+ *
+ * Pulling is the wrong recovery for it and always was: it exists only on the
+ * host that built it, so asking a registry for it produces "pull access denied
+ * ... may require 'docker login'" — a message that is true, unhelpful, and
+ * points at credentials that do not exist. A `docker system prune -a` is enough
+ * to trigger it, which is why this arrives on a working deployment out of
+ * nowhere.
+ */
+describe('when the locally built sandbox image is missing', () => {
+  const local = createDockerSandboxDriver({
+    host: 'tcp://10.0.0.5:2375',
+    image: 'reklu-sandbox:latest',
+    network: 'reklu-sandbox',
+  });
+
+  function failFirstCreate() {
+    let attempts = 0;
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      if (String(path).includes('/containers/create')) {
+        attempts += 1;
+        if (attempts === 1) throw new DockerError(404, 'No such image: reklu-sandbox:latest');
+      }
+      return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
+    });
+    return () => attempts;
+  }
+
+  it('rebuilds it on the host rather than trying to pull it', async () => {
+    const attempts = failFirstCreate();
+
+    const handle = await local.create('sbx_1', DEFAULT_LIMITS);
+
+    const pull = dockerRequest.mock.calls.find((args) => String(args[2]).includes('/images/create'));
+    expect(pull).toBeUndefined();
+
+    const build = dockerRequest.mock.calls.find((args) => String(args[2]).startsWith('/build'));
+    expect(build).toBeDefined();
+    expect(String(build?.[2])).toContain('t=reklu-sandbox%3Alatest');
+    // A tar context, not JSON — the daemon rejects anything else.
+    expect((build?.[3] as { contentType: string }).contentType).toBe('application/x-tar');
+
+    expect(attempts()).toBe(2);
+    expect(handle.externalId).toBe('container-1');
+  });
+
+  it('sends a context containing the Dockerfile', async () => {
+    failFirstCreate();
+    await local.create('sbx_1', DEFAULT_LIMITS);
+
+    const build = dockerRequest.mock.calls.find((args) => String(args[2]).startsWith('/build'));
+    const context = (build?.[3] as { body: Buffer }).body.toString('utf8');
+
+    expect(context).toContain('Dockerfile');
+    expect(context).toContain('FROM node:22-bookworm-slim');
+    // The warm npm cache is the reason the image exists at all.
+    expect(context).toContain('npm install');
+    /*
+     * The label is what keeps a weekly `docker system prune` from deleting the
+     * image again. Rebuilding without it would fix this build and leave the
+     * next cleanup free to undo the fix.
+     */
+    expect(context).toContain('com.reklu.keep');
+  });
+
+  /*
+   * Two copies of the same Dockerfile exist and have to agree: the one in the
+   * repository, which is what a person reads and runs by hand, and the one
+   * embedded here, which is what actually rebuilds — the app runs in its own
+   * container with no checkout to read. Drift between them means the rebuilt
+   * image is quietly not the documented one.
+   */
+  it('matches the Dockerfile in the repository', async () => {
+    const documented = await readFile(
+      new URL('../../../../docker/sandbox.Dockerfile', import.meta.url),
+      'utf8',
+    );
+
+    failFirstCreate();
+    await local.create('sbx_1', DEFAULT_LIMITS);
+    const build = dockerRequest.mock.calls.find((args) => String(args[2]).startsWith('/build'));
+    const context = (build?.[3] as { body: Buffer }).body.toString('utf8');
+
+    /* Every instruction, ignoring comments and the blank lines between them. */
+    const instructions = (text: string) =>
+      text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#'))
+        .join('\n');
+
+    for (const line of instructions(documented).split('\n')) {
+      expect(context).toContain(line);
+    }
+  });
+
+  it('fails loudly when the rebuild fails', async () => {
+    /*
+     * `/build` answers 200 and streams its outcome, so a failed build arrives as
+     * a successful request. Not reading the body would leave a missing image
+     * looking like a completed rebuild.
+     */
+    let attempts = 0;
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      if (String(path).startsWith('/build')) {
+        return {
+          status: 200,
+          body: Buffer.from('{"stream":"Step 1/6"}\n{"error":"no space left on device"}\n'),
+        };
+      }
+      if (String(path).includes('/containers/create')) {
+        attempts += 1;
+        if (attempts === 1) throw new DockerError(404, 'No such image: reklu-sandbox:latest');
+      }
+      return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
+    });
+
+    await expect(local.create('sbx_1', DEFAULT_LIMITS)).rejects.toThrow(/no space left on device/);
+  });
+
+  it('explains the registry error instead of repeating it', async () => {
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      if (String(path).includes('/containers/create')) {
+        throw new DockerError(
+          404,
+          "pull access denied for reklu-sandbox, repository does not exist or may require 'docker login'",
+        );
+      }
+      return { status: 200, body: Buffer.from('{}') };
+    });
+
+    // The daemon's own wording sends people looking for credentials that do not
+    // exist. The message has to say what is actually missing, and how to make it.
+    await expect(local.create('sbx_1', DEFAULT_LIMITS)).rejects.toThrow(
+      /published to no registry/,
+    );
+    await expect(local.create('sbx_1', DEFAULT_LIMITS)).rejects.toThrow(
+      /docker build -f docker\/sandbox\.Dockerfile/,
+    );
   });
 });

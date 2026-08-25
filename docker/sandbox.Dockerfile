@@ -18,6 +18,12 @@
 # stale cache is not wrong, only less useful — npm fetches whatever is missing.
 FROM node:22-bookworm-slim
 
+# A prune's exemption. `docker system prune -a` removes every image no container
+# is using, and this one is unused by definition between builds — so the weekly
+# cleanup that keeps the disk from filling was also deleting the sandbox. The
+# label is what `--filter "label!=com.reklu.keep=true"` matches on.
+LABEL com.reklu.keep="true"
+
 # npm reads its cache from here, and this path is owned by the build user.
 ENV NPM_CONFIG_CACHE=/home/node/.npm
 

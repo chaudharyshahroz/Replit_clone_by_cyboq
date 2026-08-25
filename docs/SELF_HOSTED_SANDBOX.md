@@ -242,8 +242,16 @@ builds and serves previews exactly like one that has it.
 Disk fills up. Each build pulls its own `node_modules`. Run a weekly clean:
 
 ```bash
-docker system prune -af --filter "until=168h"
+docker system prune -f --filter "until=168h" --filter "label!=com.reklu.keep=true"
 ```
+
+**Not `-a`.** The sandbox image is unused by definition between builds, so `-a`
+deletes it — and because it is built here and published to no registry, Docker
+cannot get it back. What it reports instead is `pull access denied for
+reklu-sandbox ... may require 'docker login'`, which sends you looking for
+credentials that do not exist. The label filter is the belt; Reklu rebuilding
+the image on the host when it finds it missing is the braces. Either alone is
+enough, and the rebuild costs a few minutes on the next build.
 
 ## Going back
 
