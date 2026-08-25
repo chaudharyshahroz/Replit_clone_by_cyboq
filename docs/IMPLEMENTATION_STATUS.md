@@ -467,7 +467,7 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
-### Visual selection ✅ (spec §35) — 19 tests
+### Visual selection ✅ (spec §35) — 21 tests
 
 Stable `data-reklu-id` attributes are injected into generated JSX at
 **generation time**, with a source map from id → file + line persisted alongside
@@ -484,9 +484,23 @@ Three tools sit above the preview and drive the same channel:
 
 | Tool | What it does | What crosses the frame |
 | ---- | ------------ | ---------------------- |
-| Select | Hover outlines an element; clicking it selects | the element id |
-| Edit text | Click text, retype it in place, Enter saves | the id, and the person's own replacement text |
-| Draw | Drag a box; the frame reports what sits beneath it | the box (out), the id (back) |
+| Select | Hover outlines an element and names its tag; clicking selects | the element id |
+| Edit text | Click text, retype it in place; edits gather until sent | the ids, and the person's own replacement text |
+| Draw | Draw freehand over the page; the frame reports what was circled | the stroke's bounds (out), the id (back) |
+
+Retyped text stays on the page rather than reverting when the caret leaves —
+the point of typing in place is seeing it in place — and gathers into one
+request, because fixing a heading and the paragraph under it is one thought.
+Clearing tells the frame to put the original words back, which is the only undo
+there is: nothing has been written, so the page is the only place the edit
+exists. The changes reach the model as exact strings with a file and a line
+each, not as a description of them; inferring the wording from a sentence about
+the wording is how "change the heading" comes back as a different heading.
+
+A bar floats over the preview naming what is picked — `2 text changes`,
+`h1 selected`, `Annotation` — with Clear, and undo and redo for drawing. The
+composer says the same thing, but while a tool is in your hand your eyes are on
+the page, and a count that appears only in the sidebar is a count nobody reads.
 
 A tool is put down as soon as it is used, and `off` is the resting state — with
 no tool held the framed application behaves exactly as it will in production,

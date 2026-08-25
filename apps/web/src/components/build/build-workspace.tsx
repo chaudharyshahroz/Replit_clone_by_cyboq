@@ -1,7 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { setPreviewSelection } from '@/lib/preview-selection';
+import {
+  clearPreviewEdits,
+  setPreviewAnnotation,
+  setPreviewSelection,
+  setPreviewTextChanges,
+  usePreviewEdits,
+} from '@/lib/preview-selection';
 import { useRouter } from 'next/navigation';
 import { previewLogsAction } from '@/app/(app)/build/actions';
 import { fetchBuildProgress } from '@/lib/build-progress';
@@ -28,6 +34,8 @@ import {
   Monitor,
   Rocket,
   MousePointer2,
+  Redo2,
+  Undo2,
   Pencil,
   Type,
   Play,
@@ -65,6 +73,9 @@ type DeviceName = 'desktop' | 'tablet' | 'mobile';
  * its words, circle an area whose parts have no single element.
  */
 export type EditTool = 'off' | 'select' | 'text' | 'draw';
+
+/** One unbroken line, as points in the frame's own pixels. */
+type Stroke = readonly (readonly [number, number])[];
 
 const TOOLS: readonly {
   id: Exclude<EditTool, 'off'>;
@@ -279,14 +290,18 @@ export function BuildWorkspace({
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   /**
-   * The box being dragged, while it is being dragged.
+   * The strokes drawn over the preview, and the ones taken back.
    *
    * Drawn on this side of the frame rather than inside it. A drag that starts
    * over an iframe stops producing events the moment the pointer crosses into
-   * it, so a box drawn by the framed document would break as soon as it grew
-   * past its own starting element. The parent keeps the pointer.
+   * it, so a line drawn by the framed document would break as soon as it left
+   * the element it started on. The parent keeps the pointer.
    */
-  const [box, setBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [strokes, setStrokes] = useState<readonly Stroke[]>([]);
+  const [undone, setUndone] = useState<readonly Stroke[]>([]);
+  const drawing = useRef(false);
+
+  const edits = usePreviewEdits();
 
   /**
    * Spec §35: the preview posts only the clicked element's id. The origin is
@@ -299,15 +314,45 @@ export function BuildWorkspace({
         source?: string;
         elementId?: string;
         tag?: string;
-        text?: string;
+        textChanges?: { elementId?: unknown; tag?: unknown; text?: unknown }[];
       } | null;
-      if (data?.source !== 'reklu-preview' || typeof data.elementId !== 'string') return;
-      if (!/^[A-Za-z0-9_-]{1,32}$/.test(data.elementId)) return;
-      setPreviewSelection({
-        elementId: data.elementId,
-        tag: typeof data.tag === 'string' ? data.tag.slice(0, 20) : 'element',
-        text: typeof data.text === 'string' ? data.text : undefined,
-      });
+      if (data?.source !== 'reklu-preview') return;
+
+      /*
+       * Every id is checked here, before it reaches anything. The frame serves
+       * a generated application from another origin, so what arrives is input
+       * — the shape it claims to have is not evidence that it has it.
+       */
+      const validId = (value: unknown): value is string =>
+        typeof value === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(value);
+      const label = (value: unknown) =>
+        typeof value === 'string' ? value.slice(0, 20) : 'element';
+
+      if (Array.isArray(data.textChanges)) {
+        setPreviewTextChanges(
+          data.textChanges
+            .filter(
+              (change) => validId(change.elementId) && typeof change.text === 'string',
+            )
+            .map((change) => ({
+              elementId: change.elementId as string,
+              tag: label(change.tag),
+              text: (change.text as string).slice(0, 500),
+            })),
+        );
+        /* The text tool stays in hand: fixing one line usually means fixing two. */
+        return;
+      }
+
+      if (!validId(data.elementId)) return;
+      const picked = { elementId: data.elementId, tag: label(data.tag) };
+
+      if (tool === 'draw') {
+        setPreviewAnnotation(picked);
+      } else {
+        setPreviewSelection(picked);
+      }
+
       /*
        * The tool is put down as soon as it has been used. Holding it would mean
        * the next click somewhere in the page silently replaces the selection
@@ -317,7 +362,7 @@ export function BuildWorkspace({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [tool]);
 
   /*
    * Started without being asked. Generation ends with an application that is not
@@ -372,6 +417,135 @@ export function BuildWorkspace({
   const [route, setRoute] = useState('/');
   /** Bumped to remount the frame, which is what reloading it means. */
   const [reloadKey, setReloadKey] = useState(0);
+
+  /**
+   * Ask the page what the drawing enclosed.
+   *
+   * The stroke's own bounds, sent as fractions of the frame — the frame and the
+   * document inside it are different sizes, since a mobile width is 390px of
+   * layout inside however much room the panel happens to have.
+   */
+  const askWhatWasCircled = useCallback(
+    (rect: { width: number; height: number }) => {
+      const points = strokes.flat();
+      if (points.length < 2) return;
+
+      const xs = points.map(([x]) => x);
+      const ys = points.map(([, y]) => y);
+      const left = Math.min(...xs);
+      const top = Math.min(...ys);
+      const width = Math.max(...xs) - left;
+      const height = Math.max(...ys) - top;
+
+      /* A dot is not a circle around anything. */
+      if (width < 8 || height < 8) return;
+
+      frameRef.current?.contentWindow?.postMessage(
+        {
+          source: 'reklu-editor',
+          region: {
+            x: left / rect.width,
+            y: top / rect.height,
+            width: width / rect.width,
+            height: height / rect.height,
+          },
+        },
+        '*',
+      );
+    },
+    [strokes],
+  );
+
+  /** Put every tool down and forget what it picked. */
+  const clearEdits = useCallback(() => {
+    setStrokes([]);
+    setUndone([]);
+    /* The retyped words live in the page until the frame is told to drop them. */
+    frameRef.current?.contentWindow?.postMessage({ source: 'reklu-editor', revert: true }, '*');
+    clearPreviewEdits();
+  }, []);
+
+  /*
+   * Cleared when the build that consumed them finishes. The edits belong to the
+   * request that was sent; leaving them attached would silently add them to the
+   * next one as well.
+   */
+  useEffect(() => {
+    clearEdits();
+  }, [reloadKey, clearEdits]);
+
+  /**
+   * The bar that floats over the preview while something is picked.
+   *
+   * It says the same thing as the chip in the composer, in the place a person
+   * is actually looking: while a tool is in your hand your eyes are on the
+   * page, and a count that only appears in the sidebar is a count nobody reads.
+   */
+  const statusBar = useMemo(() => {
+    const quiet =
+      'inline-flex h-6 items-center rounded-full px-2 text-[0.6875rem] text-text-secondary transition-colors hover:bg-surface hover:text-text disabled:opacity-30';
+
+    if (tool === 'draw' || strokes.length > 0) {
+      return {
+        label: edits.annotation ? `Drawn over the ${edits.annotation.tag}` : 'Annotation',
+        actions: (
+          <>
+            <button
+              type="button"
+              className={quiet}
+              disabled={strokes.length === 0}
+              onClick={() => {
+                setStrokes((current) => current.slice(0, -1));
+                setUndone((current) => [...current, strokes[strokes.length - 1]!]);
+              }}
+            >
+              <Undo2 className="h-3.5 w-3.5" strokeWidth={2} />
+              <span className="sr-only">Undo the last line</span>
+            </button>
+            <button
+              type="button"
+              className={quiet}
+              disabled={undone.length === 0}
+              onClick={() => {
+                setStrokes((current) => [...current, undone[undone.length - 1]!]);
+                setUndone((current) => current.slice(0, -1));
+              }}
+            >
+              <Redo2 className="h-3.5 w-3.5" strokeWidth={2} />
+              <span className="sr-only">Put the last line back</span>
+            </button>
+            <button type="button" className={quiet} onClick={clearEdits}>
+              Clear
+            </button>
+          </>
+        ),
+      };
+    }
+
+    if (edits.textChanges.length > 0) {
+      return {
+        label: `${edits.textChanges.length} text change${edits.textChanges.length === 1 ? '' : 's'}`,
+        actions: (
+          <button type="button" className={quiet} onClick={clearEdits}>
+            Clear
+          </button>
+        ),
+      };
+    }
+
+    if (edits.selection) {
+      return {
+        label: `${edits.selection.tag} selected`,
+        actions: (
+          <button type="button" className={quiet} onClick={clearEdits}>
+            Clear
+          </button>
+        ),
+      };
+    }
+
+    return null;
+  }, [tool, strokes, undone, edits, clearEdits]);
 
   /*
    * The frame is told, rather than asked. The bridge inside the generated app
@@ -877,76 +1051,74 @@ export function BuildWorkspace({
                     }`}
                   >
                     {/*
-                      A lid over the frame while the pencil is held: it takes the
-                      drag, and then asks the document underneath what was
-                      circled — the parent can see where the box is but not what
-                      is beneath it, and the bridge can see the page but never
-                      received the drag.
+                      A lid over the frame while the pencil is held: it takes
+                      the drawing, and then asks the document underneath what
+                      was circled — the parent can see where the line is but not
+                      what is beneath it, and the bridge can see the page but
+                      never received the pointer.
                     */}
                     {tool === 'draw' ? (
                       <div
                         role="presentation"
-                        className="absolute inset-0 z-10 cursor-crosshair"
+                        className="absolute inset-0 z-10 cursor-crosshair touch-none"
                         onPointerDown={(event) => {
                           event.currentTarget.setPointerCapture(event.pointerId);
+                          drawing.current = true;
                           const rect = event.currentTarget.getBoundingClientRect();
-                          const x = event.clientX - rect.left;
-                          const y = event.clientY - rect.top;
-                          setBox({ x1: x, y1: y, x2: x, y2: y });
+                          setStrokes((current) => [
+                            ...current,
+                            [[event.clientX - rect.left, event.clientY - rect.top]],
+                          ]);
+                          /* A new mark ends the line that redo would restore. */
+                          setUndone([]);
                         }}
                         onPointerMove={(event) => {
-                          if (!box) return;
+                          if (!drawing.current) return;
                           const rect = event.currentTarget.getBoundingClientRect();
-                          setBox({
-                            ...box,
-                            x2: event.clientX - rect.left,
-                            y2: event.clientY - rect.top,
-                          });
-                        }}
-                        onPointerUp={(event) => {
-                          const rect = event.currentTarget.getBoundingClientRect();
-                          setBox(null);
-                          if (!box) return;
-                          const left = Math.min(box.x1, box.x2);
-                          const top = Math.min(box.y1, box.y2);
-                          const width = Math.abs(box.x2 - box.x1);
-                          const height = Math.abs(box.y2 - box.y1);
-                          /* A click that never moved is not a box. */
-                          if (width < 8 || height < 8) {
-                            setTool('off');
-                            return;
-                          }
-                          /*
-                            Sent as fractions of the frame, because the frame and
-                            the document inside it are different sizes — a mobile
-                            width is 390px of layout inside however much room the
-                            panel happens to have.
-                          */
-                          frameRef.current?.contentWindow?.postMessage(
-                            {
-                              source: 'reklu-editor',
-                              region: {
-                                x: left / rect.width,
-                                y: top / rect.height,
-                                width: width / rect.width,
-                                height: height / rect.height,
-                              },
-                            },
-                            '*',
+                          const point = [
+                            event.clientX - rect.left,
+                            event.clientY - rect.top,
+                          ] as const;
+                          setStrokes((current) =>
+                            current.map((stroke, index) =>
+                              index === current.length - 1 ? [...stroke, point] : stroke,
+                            ),
                           );
                         }}
+                        onPointerUp={(event) => {
+                          drawing.current = false;
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          askWhatWasCircled(rect);
+                        }}
                       >
-                        {box ? (
-                          <div
-                            className="absolute rounded border-2 border-accent bg-accent/10"
-                            style={{
-                              left: Math.min(box.x1, box.x2),
-                              top: Math.min(box.y1, box.y2),
-                              width: Math.abs(box.x2 - box.x1),
-                              height: Math.abs(box.y2 - box.y1),
-                            }}
-                          />
-                        ) : null}
+                        <svg className="pointer-events-none h-full w-full" aria-hidden>
+                          {strokes.map((stroke, index) => (
+                            <polyline
+                              key={index}
+                              points={stroke.map(([x, y]) => `${x},${y}`).join(' ')}
+                              fill="none"
+                              stroke="#ef4444"
+                              strokeWidth={3}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          ))}
+                        </svg>
+                      </div>
+                    ) : null}
+
+                    {/*
+                      What is currently picked, over the thing it is picked from.
+                      A count and a way out, in the corner of the preview — the
+                      composer says the same thing, but while a tool is in your
+                      hand your eyes are on the page, not on the sidebar.
+                    */}
+                    {statusBar ? (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
+                        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border-strong bg-surface-raised/95 py-1 pl-3 pr-1 text-xs text-text shadow-2xl shadow-black/40 backdrop-blur">
+                          <span className="mr-1">{statusBar.label}</span>
+                          {statusBar.actions}
+                        </div>
                       </div>
                     ) : null}
 

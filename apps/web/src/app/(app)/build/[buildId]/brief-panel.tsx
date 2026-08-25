@@ -5,7 +5,7 @@ import { ArrowUp, ChevronDown, Loader2, Paperclip, Sparkles, X } from 'lucide-re
 import type { BuildBrief } from '@reklu/build';
 import { generateBuildAction, type BuildStep } from '../actions';
 import { fetchBuildProgress } from '@/lib/build-progress';
-import { setPreviewSelection, usePreviewSelection } from '@/lib/preview-selection';
+import { clearPreviewEdits, hasPreviewEdits, usePreviewEdits } from '@/lib/preview-selection';
 import type { SelectableModel, UploadedFile } from '@/components/chat/chat-view';
 import { BuildLog } from './build-log';
 
@@ -48,7 +48,8 @@ export function BriefPanel({
    * the arrow: it makes "make this bigger" a sentence with a subject, and it
    * shows what that subject is before the request goes anywhere.
    */
-  const selection = usePreviewSelection();
+  const edits = usePreviewEdits();
+  const picked = hasPreviewEdits(edits);
 
   const generate = (instruction: string, origin: 'user' | 'auto' = 'user') =>
     startTransition(async () => {
@@ -56,7 +57,9 @@ export function BriefPanel({
       const sent = {
         instruction,
         origin,
-        ...(selection ? { selection } : {}),
+        ...(edits.selection ? { selection: edits.selection } : {}),
+        ...(edits.annotation ? { annotation: edits.annotation } : {}),
+        ...(edits.textChanges.length ? { textChanges: edits.textChanges } : {}),
         ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}),
         ...(modelKey === 'auto' ? {} : { modelKey }),
       };
@@ -69,7 +72,7 @@ export function BriefPanel({
       if (origin === 'user') {
         setPrompt('');
         setAttachments([]);
-        setPreviewSelection(null);
+        clearPreviewEdits();
       }
       const result = await generateBuildAction(buildId, sent);
       setStage(null);
@@ -290,8 +293,13 @@ export function BriefPanel({
             onSubmit={(event) => {
               event.preventDefault();
               const text = prompt.trim();
-              if (!text) return;
-              generate(text);
+              /*
+               * Retyped text is a request in itself: the person already wrote
+               * what they wanted, in the place they wanted it, and asking them
+               * to also describe it in a sentence is asking twice.
+               */
+              if (!text && !edits.textChanges.length) return;
+              generate(text || 'Apply the text changes exactly as given.');
             }}
             className="mt-4 rounded-lg border border-border-strong bg-surface p-2"
           >
@@ -301,15 +309,25 @@ export function BriefPanel({
               and each carries its own dismissal, since the way to unselect a
               thing is to put back the state you were in before you picked it.
             */}
-            {selection || attachments.length > 0 ? (
+            {picked || attachments.length > 0 ? (
               <div className="mb-2 flex flex-wrap gap-1.5">
-                {selection ? (
+                {picked ? (
                   <span className="inline-flex items-center gap-1.5 rounded-md border border-accent-border bg-accent-subtle py-1 pl-2 pr-1 text-[0.6875rem] text-accent">
-                    {selection.text ? `${selection.tag} text` : `${selection.tag} selected`}
+                    {[
+                      edits.selection ? `${edits.selection.tag} selected` : null,
+                      edits.textChanges.length
+                        ? `${edits.textChanges.length} text change${
+                            edits.textChanges.length === 1 ? '' : 's'
+                          }`
+                        : null,
+                      edits.annotation ? `drawn over the ${edits.annotation.tag}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
                     <button
                       type="button"
-                      onClick={() => setPreviewSelection(null)}
-                      aria-label="Clear the selection"
+                      onClick={clearPreviewEdits}
+                      aria-label="Clear what is selected in the preview"
                       className="rounded p-0.5 hover:bg-accent/20"
                     >
                       <X className="h-3 w-3" strokeWidth={2.5} />
@@ -351,11 +369,14 @@ export function BriefPanel({
                 /* Enter sends, as it does everywhere else a message is typed. */
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
-                  if (prompt.trim() && !pending) generate(prompt.trim());
+                  if (pending) return;
+                  const text = prompt.trim();
+                  if (!text && !edits.textChanges.length) return;
+                  generate(text || 'Apply the text changes exactly as given.');
                 }
               }}
               placeholder={
-                selection
+                picked
                   ? 'Say what to change about it…'
                   : hasFiles
                     ? "Describe a change, e.g. 'add a settings screen'"
@@ -421,7 +442,7 @@ export function BriefPanel({
 
               <button
                 type="submit"
-                disabled={pending || !prompt.trim()}
+                disabled={pending || (!prompt.trim() && !edits.textChanges.length)}
                 aria-label="Send"
                 className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-30"
               >

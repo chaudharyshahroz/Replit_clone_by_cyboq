@@ -121,6 +121,9 @@ export const VISUAL_SELECTION_BRIDGE = `
 
   var mode = 'off';
   var editing = null;
+  // Retyped text, held here until it is sent. Keyed by element id so correcting
+  // the same heading twice is one change, not two.
+  var pending = {};
 
   // Drawn by us rather than by outlining the element itself: a real outline
   // changes layout on anything sized to its border box, so hovering would nudge
@@ -193,6 +196,16 @@ export const VISUAL_SELECTION_BRIDGE = `
     send({ elementId: node.getAttribute('data-reklu-id'), tag: node.tagName.toLowerCase() });
   }, true);
 
+  function report() {
+    var changes = [];
+    for (var id in pending) {
+      if (Object.prototype.hasOwnProperty.call(pending, id)) {
+        changes.push({ elementId: id, tag: pending[id].tag, text: pending[id].text });
+      }
+    }
+    send({ textChanges: changes });
+  }
+
   function startEditing(node) {
     finishEditing(false);
     editing = { node: node, original: node.innerHTML };
@@ -213,15 +226,36 @@ export const VISUAL_SELECTION_BRIDGE = `
     editing = null;
     node.removeAttribute('contenteditable');
     var text = (node.textContent || '').trim();
-    node.innerHTML = original;
-    if (!keep) return;
+
+    if (!keep) {
+      node.innerHTML = original;
+      return;
+    }
+
+    // Left on the page rather than reverted. The point of typing in place is
+    // seeing it in place; putting the old words back the instant you finish
+    // would make every edit look like it had failed.
+    var id = node.getAttribute('data-reklu-id');
+    if (!pending[id]) pending[id] = { original: original, tag: node.tagName.toLowerCase() };
+    pending[id].text = text.slice(0, 500);
+
     // The only case where typed text crosses the frame — and it is the person's
     // own words, which is the whole instruction.
-    send({
-      elementId: node.getAttribute('data-reklu-id'),
-      tag: node.tagName.toLowerCase(),
-      text: text.slice(0, 500),
-    });
+    report();
+  }
+
+  // Put the page back the way the code says it is. The edits were only ever
+  // shown here; nothing has been written, so there is nothing to undo but this.
+  function revertEdits() {
+    finishEditing(false);
+    for (var id in pending) {
+      if (Object.prototype.hasOwnProperty.call(pending, id)) {
+        var node = document.querySelector('[data-reklu-id="' + id + '"]');
+        if (node) node.innerHTML = pending[id].original;
+      }
+    }
+    pending = {};
+    report();
   }
 
   document.addEventListener('keydown', function (event) {
@@ -264,8 +298,9 @@ export const VISUAL_SELECTION_BRIDGE = `
     var data = event.data;
     if (!data || data.source !== 'reklu-editor') return;
     if (data.region) { underRegion(data.region); return; }
+    if (data.revert) { revertEdits(); return; }
     if (typeof data.mode !== 'string') return;
-    finishEditing(false);
+    finishEditing(true);
     mode = data.mode;
     frame(null);
     document.documentElement.style.cursor =

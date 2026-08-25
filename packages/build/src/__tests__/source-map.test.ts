@@ -169,6 +169,23 @@ describe('the visual selection bridge', () => {
     expect(VISUAL_SELECTION_BRIDGE).toContain("data.source !== 'reklu-editor'");
   });
 
+  it('gathers text edits instead of sending each one', () => {
+    /*
+     * Fixing a heading and the paragraph under it is one thought and should be
+     * one request. Sending on every blur would start a build per edit, each one
+     * rewriting files the next is about to rewrite again.
+     */
+    expect(VISUAL_SELECTION_BRIDGE).toContain('pending[id]');
+    expect(VISUAL_SELECTION_BRIDGE).toContain('send({ textChanges: changes })');
+  });
+
+  it('can put the retyped words back', () => {
+    // Nothing has been written when text is cleared, so the page is the only
+    // place the edit exists — and the only place it can be undone.
+    expect(VISUAL_SELECTION_BRIDGE).toContain('function revertEdits()');
+    expect(VISUAL_SELECTION_BRIDGE).toContain('pending[id].original');
+  });
+
   it('leaves the page alone when no tool is held', () => {
     // Without this the framed app stops behaving like the app it is previewing.
     expect(VISUAL_SELECTION_BRIDGE).toContain("if (mode === 'off' && !event.altKey) return;");

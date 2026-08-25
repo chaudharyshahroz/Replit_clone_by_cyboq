@@ -74,8 +74,12 @@ export interface BuildRequest {
    * their mouth.
    */
   readonly origin?: 'user' | 'auto';
-  /** An element picked in the preview, resolved here through the source map. */
-  readonly selection?: { readonly elementId: string; readonly text?: string };
+  /** An element picked with the arrow, resolved here through the source map. */
+  readonly selection?: { readonly elementId: string };
+  /** An element circled with the pencil. */
+  readonly annotation?: { readonly elementId: string };
+  /** Text retyped in place, as exact replacements. */
+  readonly textChanges?: readonly { readonly elementId: string; readonly text: string }[];
   /** Files attached to the message, already uploaded. */
   readonly fileIds?: readonly string[];
   /** A model chosen in the composer; absent means Reklu picks. */
@@ -282,30 +286,62 @@ async function composePrompt(
   const sections: string[] = [];
   const images: { image: string; mimeType: string }[] = [];
 
-  if (request.selection) {
-    const analysis = (project.codebaseAnalysis ?? {}) as { sourceMap?: SourceMap };
-    const location = analysis.sourceMap
-      ? resolveElement(analysis.sourceMap, request.selection.elementId)
-      : undefined;
+  const analysis = (project.codebaseAnalysis ?? {}) as { sourceMap?: SourceMap };
+  const locate = (elementId: string) =>
+    analysis.sourceMap ? resolveElement(analysis.sourceMap, elementId) : undefined;
 
+  /*
+   * An element that no longer resolves is dropped rather than refused. The files
+   * have been rewritten since it was picked, and the sentence typed against it
+   * is usually still a perfectly good instruction on its own.
+   */
+  if (request.selection) {
+    const location = locate(request.selection.elementId);
+    if (location) sections.push(describeSelection(location, existing));
+  }
+
+  if (request.annotation) {
+    const location = locate(request.annotation.elementId);
     if (location) {
-      sections.push(describeSelection(location, existing));
-      /*
-       * Text typed straight into the page. It is both the target and the
-       * answer, so it is given as the exact replacement rather than as a
-       * description of one — the person already wrote what they wanted.
-       */
-      if (request.selection.text) {
-        sections.push(
-          `Replace that element's text with exactly: ${JSON.stringify(request.selection.text)}`,
-        );
-      }
+      sections.push(
+        [
+          'The user drew a circle over the preview to mark what they mean.',
+          'It encloses this element:',
+          '',
+          describeSelection(location, existing),
+        ].join('\n'),
+      );
     }
-    /*
-     * A selection that no longer resolves is dropped rather than refused. The
-     * files have been rewritten since it was made, and the sentence beneath it
-     * is usually still a perfectly good instruction on its own.
-     */
+  }
+
+  /*
+   * Retyped text is given as exact replacements rather than as a description of
+   * them. The person already wrote what they wanted, in the place they wanted
+   * it; asking the model to infer the wording from a sentence about the wording
+   * is how "change the heading" comes back as a different heading.
+   */
+  if (request.textChanges?.length) {
+    const described = request.textChanges
+      .map((change) => {
+        const location = locate(change.elementId);
+        if (!location) return null;
+        return `- ${location.file}:${location.line} (<${location.tag}>) → ${JSON.stringify(
+          change.text,
+        )}`;
+      })
+      .filter((line): line is string => line !== null);
+
+    if (described.length > 0) {
+      sections.push(
+        [
+          'The user edited text directly in the preview. Set each element’s text to',
+          'exactly the string given — do not rewrite, expand or correct it, and change',
+          'nothing else in these files.',
+          '',
+          ...described,
+        ].join('\n'),
+      );
+    }
   }
 
   if (request.fileIds?.length) {
