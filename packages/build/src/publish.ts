@@ -20,6 +20,10 @@ import { errors, loadServerEnv, logger, newId, slugify } from '@reklu/shared';
 import { loadTree } from './versions';
 import { withImageBytes } from './artwork';
 import { parseManifest } from './dev-command';
+import { repairAliasPaths } from './repair-imports';
+import { repairMissingDependencies } from './repair-deps';
+import { repairFontWeights } from './repair-fonts';
+import { repairStaticExport } from './repair-export';
 
 /** The port a published site listens on inside its container. */
 const SITE_PORT = 3000;
@@ -152,9 +156,37 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
 
   if (!project) throw errors.notFound('Build project', input.buildProjectId);
 
-  const files = await loadTree(input.buildProjectId, input.workspaceId);
-  if (files.length === 0) {
+  const stored = await loadTree(input.buildProjectId, input.workspaceId);
+  if (stored.length === 0) {
     throw errors.validation('There is nothing to publish yet. Generate the app first.');
+  }
+
+  /*
+   * The same corrections a generation applies, applied again here.
+   *
+   * They run when files are written, so a project generated before a given
+   * repair existed never receives it — and the one that matters most for
+   * publishing is exactly that case: `output: 'export'` on an app with route
+   * handlers fails only when every page is rendered ahead of time, which is
+   * something a dev server never does and a production build always does. The
+   * project would have to be regenerated to become publishable, which is a
+   * strange thing to require of a build that already works.
+   *
+   * Applied to what is built, not written back to the tree. A publish is not a
+   * request to edit the code, and a repair that silently rewrote files would be
+   * a change nobody asked for appearing in the next diff.
+   */
+  const files = repairStaticExport(
+    repairFontWeights(repairMissingDependencies(repairAliasPaths(stored))),
+  );
+
+  const corrected = files.filter(
+    (file, index) => file.content !== stored[index]?.content,
+  );
+  if (corrected.length > 0) {
+    await input.report?.(
+      `Corrected ${corrected.length} file${corrected.length === 1 ? '' : 's'} for a production build`,
+    );
   }
 
   const existing = await currentPublication(input.buildProjectId, input.workspaceId);

@@ -145,3 +145,42 @@ describe('how a published site is served', () => {
     expect(command.args.join(' ')).not.toContain('run start');
   });
 });
+
+/**
+ * The corrections a publish applies to what it builds.
+ *
+ * Repairs run when files are written, so a project generated before a given
+ * repair existed never receives it. For publishing that is the case that
+ * matters: `output: 'export'` on an app with route handlers fails only when
+ * every page is rendered ahead of time — something a dev server never does and
+ * a production build always does. Without this the project would have to be
+ * regenerated to become publishable, which is a strange thing to require of a
+ * build that already works.
+ */
+describe('what a publish builds', () => {
+  it('applies the same corrections a generation would', async () => {
+    const { repairStaticExport } = await import('../repair-export');
+
+    const tree = [
+      {
+        path: 'app/api/menu/route.ts',
+        language: 'typescript',
+        content: 'export async function GET() { return Response.json([]); }',
+      },
+      {
+        path: 'next.config.js',
+        language: 'javascript',
+        content: "const nextConfig = {\n  output: 'export',\n};\nmodule.exports = nextConfig;",
+      },
+    ];
+
+    const built = repairStaticExport(tree);
+    const config = built.find((file) => file.path === 'next.config.js');
+
+    expect(config?.content).not.toContain("output: 'export'");
+    // The route handler is untouched: it is not what is wrong.
+    expect(built.find((file) => file.path === 'app/api/menu/route.ts')?.content).toBe(
+      tree[0]!.content,
+    );
+  });
+});
