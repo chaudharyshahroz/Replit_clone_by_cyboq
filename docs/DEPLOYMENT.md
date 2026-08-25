@@ -47,6 +47,23 @@ pnpm db:migrate   # release step
 pnpm db:seed      # idempotent; safe every deploy
 ```
 
+### A shipped migration is history
+
+Once a migration has run anywhere, it does not get edited. Drizzle decides what
+to apply from the journal's timestamps, not from the contents of a file it has
+already seen — so editing one changes nothing on any database that already ran
+it. A fresh database gets the new version, every existing one keeps the old,
+and the schema and the migrations disagree silently.
+
+That happened once here: a column was added to `publications` by editing the
+migration that creates it. The column existed in the code, existed on a fresh
+database, and did not exist in production, where publishing failed on a query
+for a column nobody had added. A test now checks that every column the schema
+declares is created by some migration file, and that every migration file is
+named in the journal.
+
+New columns go in new files.
+
 ### On a server that has no checkout
 
 A deployed host usually has neither the repository nor pnpm — the application
