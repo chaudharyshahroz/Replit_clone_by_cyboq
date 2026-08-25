@@ -881,6 +881,33 @@ export interface PublishState {
   readonly buildLog?: string;
 }
 
+/**
+ * Turn a thrown thing into something a person can act on.
+ *
+ * A Drizzle failure carries the whole statement, and that statement was being
+ * shown to the user: four lines of column names and two bound parameters, in a
+ * panel whose job is to say whether the site is live. It said nothing anybody
+ * could use and published the schema to whoever clicked the tab.
+ *
+ * The one cause worth naming is a missing table, because it has a specific fix
+ * and it is what a deploy that skipped its migrations looks like.
+ */
+function publishFailure(error: unknown): string {
+  const cause = error as { code?: string; cause?: { code?: string } };
+  const code = cause?.code ?? cause?.cause?.code;
+
+  /* 42P01: undefined_table. */
+  if (code === '42P01') {
+    return 'Publishing needs a database migration that has not been run on this server yet. Run `pnpm db:migrate` and try again.';
+  }
+
+  const message = toRekluError(error).message;
+  /* Never the statement itself, whatever else goes wrong. */
+  return /^Failed query:/i.test(message)
+    ? 'The database rejected that request. Check the server logs for the statement.'
+    : message;
+}
+
 /** What is live for this build right now, and what its domain is doing. */
 export async function publicationStateAction(buildId: string): Promise<PublishState> {
   const { workspace } = await getAppContext();
@@ -888,7 +915,14 @@ export async function publicationStateAction(buildId: string): Promise<PublishSt
   const availability = publishAvailability();
   if (!availability.available) return { error: availability.detail };
 
-  const record = await currentPublication(buildId, workspace.workspaceId);
+  let record;
+  try {
+    record = await currentPublication(buildId, workspace.workspaceId);
+  } catch (error) {
+    logger.warn('Could not read the publication', { buildId, error });
+    return { error: publishFailure(error) };
+  }
+
   if (!record) return { status: 'none' };
 
   return {
@@ -927,9 +961,8 @@ export async function publishAction(buildId: string): Promise<PublishState> {
     revalidatePath(`/build/${buildId}`);
     return { url: result.url, status: result.status, detail: result.detail };
   } catch (error) {
-    const failure = toRekluError(error);
-    logger.warn('Publish failed', { buildId, error: failure.message });
-    return { error: failure.message };
+    logger.warn('Publish failed', { buildId, error });
+    return { error: publishFailure(error) };
   }
 }
 
@@ -941,14 +974,19 @@ export async function unpublishAction(buildId: string): Promise<PublishState> {
     revalidatePath(`/build/${buildId}`);
     return { status: 'stopped', detail: result.detail };
   } catch (error) {
-    return { error: toRekluError(error).message };
+    return { error: publishFailure(error) };
   }
 }
 
 export async function setDomainAction(buildId: string, domain: string): Promise<PublishState> {
   const { workspace } = await getAppContext();
 
-  const result = await setCustomDomain(buildId, workspace.workspaceId, domain);
+  let result;
+  try {
+    result = await setCustomDomain(buildId, workspace.workspaceId, domain);
+  } catch (error) {
+    return { error: publishFailure(error) };
+  }
   if (result.error) return { error: result.error };
 
   revalidatePath(`/build/${buildId}`);
@@ -972,7 +1010,7 @@ export async function checkDomainAction(buildId: string): Promise<PublishState> 
     revalidatePath(`/build/${buildId}`);
     return publicationStateAction(buildId);
   } catch (error) {
-    return { error: toRekluError(error).message };
+    return { error: publishFailure(error) };
   }
 }
 
@@ -986,7 +1024,7 @@ export async function removeDomainAction(buildId: string): Promise<PublishState>
     revalidatePath(`/build/${buildId}`);
     return publicationStateAction(buildId);
   } catch (error) {
-    return { error: toRekluError(error).message };
+    return { error: publishFailure(error) };
   }
 }
 

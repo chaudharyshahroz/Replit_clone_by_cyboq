@@ -20,33 +20,34 @@ export const BRAND_ORANGE = '#FF4A0D';
 /**
  * One arrowhead, pointing up. The other three are this one rotated.
  *
- * Three different things happen at its three corners, which is why it is a
- * hand-built path rather than a stroked line:
+ * Built from four things measured off the artwork — the peak, the outermost
+ * corner of each arm, how far the underside rises at the axis, and how blunt
+ * the arm ends are — because three different things happen at the three
+ * corners and no single stroke setting produces all of them:
  *
- *   - the point stays sharp, as a mitred join would leave it;
- *   - the two arm ends are blunt, capped by a semicircle;
- *   - the inner edge is one smooth curve from cap to cap.
+ *   - the peak is softly rounded, not mitred to a spike;
+ *   - the arms taper and end blunt, capped by a small arc;
+ *   - the underside is one smooth curve running from cap to cap.
  *
- * A stroked centreline gives the first two for free and cannot give the third:
- * offsetting a mitred corner inward produces a second sharp corner facing the
- * middle of the mark, and the artwork has a curve there. That mismatch was the
- * last thing wrong with this shape after several attempts that got the outline
- * right and the corners wrong.
+ * The arm ends are thin on purpose. Adjacent arrowheads pass within a few units
+ * of each other at the diagonals, and thickening the ends closes that gap — at
+ * which point the four shapes fuse into a solid diamond with a ring cut out of
+ * it, which is what several earlier attempts produced.
  */
 export const ARROWHEAD =
-  'M34.34 21.89 L50 7.93 L65.66 21.89 ' +
-  'A5.5 5.5 0 0 1 58.34 30.11 ' +
-  'Q50 15.23 41.66 30.11 ' +
-  'A5.5 5.5 0 0 1 34.34 21.89 Z';
+  'M34 27 L47.5 10.12 Q50 7 52.5 10.12 L66 27 ' +
+  'A3 3 0 0 1 61.31 30.75 ' +
+  'Q50 16.05 38.69 30.75 ' +
+  'A3 3 0 0 1 34 27 Z';
 
 const CENTRE_RADIUS = 13.8;
 const SATELLITE_RADIUS = 5.4;
 
 const SATELLITES = [
-  [22.5, 22.5],
-  [77.5, 22.5],
-  [22.5, 77.5],
-  [77.5, 77.5],
+  [22.6, 23.6],
+  [77.4, 23.6],
+  [22.6, 76.4],
+  [77.4, 76.4],
 ] as const;
 
 /** The mark's paths, shared by the component and the favicon. */

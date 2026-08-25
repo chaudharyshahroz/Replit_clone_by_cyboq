@@ -181,10 +181,25 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
         </div>
       ) : null}
 
-      {/* ---- The custom domain ---- */}
-      {live ? (
+      {/*
+        ---- The custom domain ----
+
+        Shown for any site that has an address, not only one that is currently
+        up. It used to appear only while `status === 'live'`, so a publish that
+        failed took the whole domain section with it — and the way to reach it
+        was to fix the publish first, which is not obvious from a panel that
+        simply does not mention domains.
+      */}
+      {state?.slug ? (
         <div className="mt-4 border-t border-border pt-4">
           <h3 className="text-xs font-medium text-text">Your own domain</h3>
+
+          {!live ? (
+            <p className="mt-2 rounded-lg border border-border bg-surface px-3 py-2 text-[0.6875rem] leading-relaxed text-text-muted">
+              The site is not running at the moment. A domain can be added now; it starts
+              answering once the site is published again.
+            </p>
+          ) : null}
 
           {state.customDomain ? (
             <>

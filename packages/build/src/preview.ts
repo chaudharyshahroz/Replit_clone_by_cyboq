@@ -60,7 +60,12 @@ async function destroyPreviousSandboxes(
   workspaceId: string,
 ): Promise<void> {
   const stale = await db
-    .select({ id: sandboxes.id, externalId: sandboxes.externalId, port: sandboxes.port })
+    .select({
+      id: sandboxes.id,
+      externalId: sandboxes.externalId,
+      port: sandboxes.port,
+      previewUrl: sandboxes.previewUrl,
+    })
     .from(sandboxes)
     .where(
       and(
@@ -108,11 +113,27 @@ async function reuseRunningSandbox(params: {
   readonly workspaceId: string;
   readonly report?: BuildStageReporter;
 }): Promise<StartPreviewResult | undefined> {
-  const handle = running.get(params.buildProjectId);
-  if (!handle) return undefined;
-
+  /*
+   * The database row is the record of what is running, not the in-memory map.
+   *
+   * This began by returning early unless `running` held a handle, and then
+   * rebuilt the handle from the row below without ever using the one it had
+   * checked for. The map is per process: it is empty after a deploy, after a
+   * restart, and in any worker that did not start the container — so on a
+   * deployed instance the reuse path was almost always skipped, and an edit
+   * only reached the preview when somebody pressed Restart and built a fresh
+   * container. Which is exactly what it looked like from outside.
+   *
+   * What the row cannot tell us is whether the container is still alive, and
+   * that is asked of the container itself a few lines down.
+   */
   const [row] = await db
-    .select({ id: sandboxes.id, externalId: sandboxes.externalId, port: sandboxes.port })
+    .select({
+      id: sandboxes.id,
+      externalId: sandboxes.externalId,
+      port: sandboxes.port,
+      previewUrl: sandboxes.previewUrl,
+    })
     .from(sandboxes)
     .where(
       and(
@@ -123,7 +144,8 @@ async function reuseRunningSandbox(params: {
     )
     .limit(1);
 
-  if (!row?.externalId) return undefined;
+  /* No address means nothing to send anybody to, whatever the row says. */
+  if (!row?.externalId || !row.previewUrl) return undefined;
 
   const driver = sandbox();
   const sandboxHandle = {
@@ -190,8 +212,8 @@ async function reuseRunningSandbox(params: {
     });
 
     return {
-      url: handle.url,
-      port: row.port ?? handle.port,
+      url: row.previewUrl,
+      port: row.port ?? 0,
       sandboxId: row.id,
       installed: true,
       checksPassed: null,
