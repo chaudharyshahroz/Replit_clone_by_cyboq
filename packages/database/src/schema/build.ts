@@ -328,3 +328,58 @@ export const buildEvents = pgTable(
 );
 
 export type BuildEvent = typeof buildEvents.$inferSelect;
+
+/**
+ * A build that is live on the internet (spec §40).
+ *
+ * Separate from `sandboxes` because the two have opposite lifetimes. A sandbox
+ * exists while somebody is looking at it and is destroyed the moment they are
+ * not; a published site has to be running at three in the morning when its
+ * owner is asleep and a stranger follows a link. Sharing the row would mean the
+ * preview cleanup could take a live website down.
+ */
+export const publications = pgTable(
+  'publications',
+  {
+    id: primaryId('publication'),
+    buildProjectId: text('build_project_id')
+      .notNull()
+      .references(() => buildProjects.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** The version that is live, which is not always the newest one. */
+    buildVersionId: text('build_version_id').references(() => buildVersions.id, {
+      onDelete: 'set null',
+    }),
+
+    /** The Reklu address: `<slug>.<PUBLISH_DOMAIN>`. Never changes. */
+    slug: text('slug').notNull(),
+    /** A domain the owner controls. Null until they add one. */
+    customDomain: text('custom_domain'),
+    /** none | pending | live | failed — how far the custom domain has got. */
+    domainStatus: text('domain_status').notNull().default('none'),
+    domainDetail: text('domain_detail'),
+
+    /** The container serving it, so it can be replaced or stopped. */
+    containerId: text('container_id'),
+    /** publishing | live | failed | stopped */
+    status: text('status').notNull().default('publishing'),
+    statusDetail: text('status_detail'),
+
+    publishedAt: tsColumn('published_at'),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('publications_slug_idx').on(table.slug),
+    /*
+     * One site per domain, globally. Two workspaces claiming the same hostname
+     * would produce two Traefik routers with the same rule, and which one
+     * answers is then a matter of container start order.
+     */
+    uniqueIndex('publications_custom_domain_idx').on(table.customDomain),
+    uniqueIndex('publications_project_idx').on(table.buildProjectId),
+  ],
+);
+
+export type Publication = typeof publications.$inferSelect;

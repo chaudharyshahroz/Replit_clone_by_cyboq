@@ -424,7 +424,7 @@ describe('previews served from a domain', () => {
   it('lets Reklu frame the preview, and nobody else', () => {
     const labels = proxyLabels({
       sandboxId: 'sbx_abc123',
-      host: 'x.example.com',
+      hosts: ['x.example.com'],
       port: 43000,
       network: 'dokploy-network',
       certResolver: 'letsencrypt',
@@ -462,7 +462,7 @@ describe('previews served from a domain', () => {
   it('routes the hostname to the container port', () => {
     const labels = proxyLabels({
       sandboxId: 'sbx_abc123',
-      host: 'sbx-abc123.preview.example.com',
+      hosts: ['sbx-abc123.preview.example.com'],
       port: 43000,
       network: 'dokploy-network',
       certResolver: 'letsencrypt',
@@ -482,7 +482,7 @@ describe('previews served from a domain', () => {
   it('names the network the proxy should reach it on', () => {
     const labels = proxyLabels({
       sandboxId: 'sbx_abc123',
-      host: 'x.example.com',
+      hosts: ['x.example.com'],
       port: 43000,
       network: 'dokploy-network',
       certResolver: 'letsencrypt',
@@ -656,6 +656,7 @@ describe('when the locally built sandbox image is missing', () => {
     host: 'tcp://10.0.0.5:2375',
     image: 'reklu-sandbox:latest',
     network: 'reklu-sandbox',
+    previewHost: 'builds.example.com',
   });
 
   function failFirstCreate() {

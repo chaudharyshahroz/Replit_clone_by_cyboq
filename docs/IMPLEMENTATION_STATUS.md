@@ -467,6 +467,47 @@ sandbox exists to prevent.
 answered **HTTP 200 on port 43000** with the generated content, the preview was
 tracked as running, and after stopping, the port no longer served.
 
+### Publishing ✅ (spec §40) — 13 tests
+
+A build goes live at `<slug>.<PUBLISH_DOMAIN>` on Reklu's own server, with no
+account anywhere else, and takes a custom domain when its owner has one.
+
+A published site is not a preview that lasted longer, and the code keeps them
+apart deliberately. They have opposite lifetimes: a preview exists while
+somebody is looking at it and is destroyed the moment they are not, while a
+published site has to be answering at three in the morning when its owner is
+asleep and a stranger follows a link. Sharing a row would let the preview
+cleanup take a live website down.
+
+It also runs the application the way it will actually be run — `npm run build`
+then the start script, or a static server where the build produced files rather
+than a server — instead of the dev server a preview uses. A dev server
+recompiles on every request and holds a compiler in memory to do it, which is
+the wrong thing to leave under a public address.
+
+The old container is stopped only after the new one is serving, so a failed
+publish leaves the previous site up rather than taking a working website down
+to put a broken one in its place.
+
+**Custom domains.** A domain is recorded as `pending` and nothing routes until
+its DNS is checked. That order is the point: a router carrying a hostname that
+does not resolve here makes the proxy ask a certificate authority for it, the
+challenge fails, and enough failures in an hour rate-limits the account —
+taking down renewal for names that were working. Once verified, the site answers
+on the domain, its `www` (or apex, whichever was not given), and its original
+Reklu address, so a link shared before the domain existed keeps working.
+
+Names inside Reklu's own domains are refused: a site claiming one would get a
+router rule for a hostname Reklu already answers on, and which one wins would
+come down to container start order.
+
+Routing a new domain means recreating the container, since Docker labels are
+fixed at creation — so it costs a rebuild, and is done only when the DNS has
+actually arrived rather than on every check.
+
+Needs `PUBLISH_DOMAIN` with wildcard DNS, and `PUBLISH_SERVER_IP` to verify a
+custom domain against. Without them the panel says which is missing.
+
 ### Generated imagery ✅ — 11 tests
 
 Asked for a barber shop landing page, the model wrote an image URL from memory

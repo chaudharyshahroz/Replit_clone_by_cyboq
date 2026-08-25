@@ -286,6 +286,24 @@ const serverSchema = z.object({
    * Needs a wildcard DNS record: *.preview.example.com → the server.
    */
   SANDBOX_PREVIEW_DOMAIN: optionalString,
+  /**
+   * The domain published sites are served under, as `<slug>.<domain>`.
+   *
+   * Separate from the preview domain on purpose. A preview is a private
+   * workspace of somebody's, reachable by an unguessable id and thrown away
+   * within the hour; a published site is a public address that has to keep
+   * answering. Wildcard DNS for this domain must point at the proxy, and the
+   * proxy must be able to obtain a certificate for it.
+   */
+  PUBLISH_DOMAIN: optionalString,
+  /**
+   * The address a custom domain must point at.
+   *
+   * Shown to whoever is adding one, and checked against what their DNS
+   * actually resolves to. Reklu cannot infer this: the proxy's public address
+   * is not visible from inside the container it runs beside.
+   */
+  PUBLISH_SERVER_IP: optionalString,
   /** The proxy's Docker network, so it can reach the sandbox container. */
   SANDBOX_PROXY_NETWORK: z.string().trim().default('dokploy-network'),
   /** Traefik certificate resolver, for the per-preview certificate. */

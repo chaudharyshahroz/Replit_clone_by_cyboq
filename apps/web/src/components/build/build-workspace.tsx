@@ -14,6 +14,7 @@ import { fetchBuildProgress } from '@/lib/build-progress';
 import { compileErrorIn } from '@/lib/compile-error';
 import { generateBuildAction } from '@/app/(app)/build/actions';
 import { ExportPanel } from './export-panel';
+import { PublishPanel } from './publish-panel';
 import { fileLook, languageFor } from '@/lib/file-icon';
 import { siteRoutes } from '@/lib/site-routes';
 import { Menu, MenuItem } from '@/components/ui/menu';
@@ -1223,6 +1224,13 @@ export function BuildWorkspace({
 
             {panel === 'deploy' ? (
               <div className="mx-auto max-w-xl p-6">
+                {/*
+                  Publishing first. It is the thing most people came to this tab
+                  for — a live address for what they just built — and it needs
+                  nothing connected. Exporting to somebody else's account is the
+                  more specialised choice, so it sits below.
+                */}
+                <PublishPanel buildId={buildId} hasFiles={files.length > 0} />
                 <ExportPanel buildId={buildId} hasFiles={files.length > 0} />
               </div>
             ) : null}

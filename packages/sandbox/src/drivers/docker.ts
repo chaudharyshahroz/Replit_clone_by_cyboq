@@ -99,26 +99,42 @@ export function previewSubdomain(sandboxId: string): string {
   return sandboxId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/** Traefik labels that route a hostname to this container's port. */
+/** Traefik labels that route one or more hostnames to this container's port. */
 export function proxyLabels(params: {
   readonly sandboxId: string;
-  readonly host: string;
+  /**
+   * Every hostname this container answers on.
+   *
+   * More than one for a published site: it keeps its `<slug>.<domain>` address
+   * after a custom domain is added, so a link shared before the domain existed
+   * does not stop working the day it does.
+   */
+  readonly hosts: readonly string[];
   readonly port: number;
   readonly network: string;
   readonly certResolver: string;
   readonly entrypoint: string;
-  /** Reklu's own origin, the only page allowed to frame a preview. */
-  readonly frameAncestor: string;
+  /**
+   * Reklu's own origin, the only page allowed to frame this container.
+   *
+   * Omitted for a published site. That rule exists so a preview can be shown
+   * inside Reklu despite the app's own `X-Frame-Options`; a published site is
+   * somebody's real website and its framing rules are theirs to set.
+   */
+  readonly frameAncestor?: string | undefined;
+  /** Distinguishes a published site's router from a preview's. */
+  readonly kind?: 'preview' | 'site';
 }): Record<string, string> {
-  const router = `reklu-preview-${previewSubdomain(params.sandboxId)}`;
+  const router = `reklu-${params.kind ?? 'preview'}-${previewSubdomain(params.sandboxId)}`;
   const middleware = `${router}-frame`;
+  const rule = params.hosts.map((host) => `Host(\`${host}\`)`).join(' || ');
 
   return {
     'traefik.enable': 'true',
     // Named explicitly: a container on two networks leaves the proxy to guess
     // which address to dial, and it guesses wrong about half the time.
     'traefik.docker.network': params.network,
-    [`traefik.http.routers.${router}.rule`]: `Host(\`${params.host}\`)`,
+    [`traefik.http.routers.${router}.rule`]: rule,
     [`traefik.http.routers.${router}.entrypoints`]: params.entrypoint,
     [`traefik.http.routers.${router}.tls.certresolver`]: params.certResolver,
     [`traefik.http.services.${router}.loadbalancer.server.port`]: String(params.port),
@@ -137,10 +153,15 @@ export function proxyLabels(params: {
      * one page instead of forbidding all of them, and still refuses every other
      * site on the internet.
      */
-    [`traefik.http.middlewares.${middleware}.headers.customresponseheaders.X-Frame-Options`]: '',
-    [`traefik.http.middlewares.${middleware}.headers.customresponseheaders.Content-Security-Policy`]:
-      `frame-ancestors 'self' ${params.frameAncestor}`,
-    [`traefik.http.routers.${router}.middlewares`]: middleware,
+    ...(params.frameAncestor
+      ? {
+          [`traefik.http.middlewares.${middleware}.headers.customresponseheaders.X-Frame-Options`]:
+            '',
+          [`traefik.http.middlewares.${middleware}.headers.customresponseheaders.Content-Security-Policy`]:
+            `frame-ancestors 'self' ${params.frameAncestor}`,
+          [`traefik.http.routers.${router}.middlewares`]: middleware,
+        }
+      : {}),
   };
 }
 
@@ -515,11 +536,12 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
           labels,
           proxyLabels({
             sandboxId: id,
-            host: `${previewSubdomain(id)}.${options.previewDomain}`,
+            hosts: createOptions?.hosts ?? [`${previewSubdomain(id)}.${options.previewDomain}`],
             port: publishPort,
             network: options.proxyNetwork ?? 'dokploy-network',
             certResolver: options.certResolver ?? 'letsencrypt',
             entrypoint: options.entrypoint ?? 'websecure',
+            ...(createOptions?.hosts ? { kind: 'site' as const } : {}),
             frameAncestor: options.appOrigin ?? '',
           }),
         );

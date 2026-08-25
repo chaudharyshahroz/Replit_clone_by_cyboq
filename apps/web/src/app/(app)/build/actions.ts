@@ -24,8 +24,17 @@ import {
   type BuildBrief,
   runDesignPass,
   previewLogs,
+  activateCustomDomain,
   addMadeWithBadge,
+  currentPublication,
+  dnsInstructions,
   drawArtwork,
+  publicUrl,
+  publishAvailability,
+  publishSite,
+  removeCustomDomain,
+  setCustomDomain,
+  unpublishSite,
   repairAliasPaths,
   repairMissingDependencies,
   repairFontWeights,
@@ -33,7 +42,7 @@ import {
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
-import { errors, isRekluError, logger, newId, slugify } from '@reklu/shared';
+import { errors, isRekluError, logger, newId, slugify, toRekluError } from '@reklu/shared';
 import { generateImage } from '@reklu/create';
 import { getAppContext } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
@@ -818,4 +827,128 @@ export async function deployToVercelAction(buildId: string): Promise<ExportState
 export async function previewLogsAction(buildId: string): Promise<string> {
   const { workspace } = await getAppContext();
   return previewLogs(buildId, workspace.workspaceId);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Publishing (spec §40)                                                     */
+/* ------------------------------------------------------------------------ */
+
+export interface PublishState {
+  readonly url?: string;
+  readonly status?: string;
+  readonly detail?: string;
+  readonly error?: string;
+  readonly slug?: string;
+  readonly customDomain?: string;
+  readonly domainStatus?: string;
+  readonly domainDetail?: string;
+  readonly dns?: { type: string; name: string; value: string };
+}
+
+/** What is live for this build right now, and what its domain is doing. */
+export async function publicationStateAction(buildId: string): Promise<PublishState> {
+  const { workspace } = await getAppContext();
+
+  const availability = publishAvailability();
+  if (!availability.available) return { error: availability.detail };
+
+  const record = await currentPublication(buildId, workspace.workspaceId);
+  if (!record) return { status: 'none' };
+
+  return {
+    url: publicUrl(record),
+    status: record.status,
+    detail: record.statusDetail ?? undefined,
+    slug: record.slug,
+    customDomain: record.customDomain ?? undefined,
+    domainStatus: record.domainStatus,
+    domainDetail: record.domainDetail ?? undefined,
+    ...(record.customDomain
+      ? { dns: dnsInstructions(record.customDomain, record.slug) }
+      : {}),
+  };
+}
+
+/**
+ * Put the build on the internet.
+ *
+ * Long — it installs, builds for production and starts a server — so it reports
+ * each stage into the same log the generation writes to, rather than leaving a
+ * button spinning with nothing to read.
+ */
+export async function publishAction(buildId: string): Promise<PublishState> {
+  const { workspace } = await getAppContext();
+
+  try {
+    const result = await publishSite({
+      buildProjectId: buildId,
+      workspaceId: workspace.workspaceId,
+      report: (message) =>
+        recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+    });
+
+    revalidatePath(`/build/${buildId}`);
+    return { url: result.url, status: result.status, detail: result.detail };
+  } catch (error) {
+    const failure = toRekluError(error);
+    logger.warn('Publish failed', { buildId, error: failure.message });
+    return { error: failure.message };
+  }
+}
+
+export async function unpublishAction(buildId: string): Promise<PublishState> {
+  const { workspace } = await getAppContext();
+
+  try {
+    const result = await unpublishSite(buildId, workspace.workspaceId);
+    revalidatePath(`/build/${buildId}`);
+    return { status: 'stopped', detail: result.detail };
+  } catch (error) {
+    return { error: toRekluError(error).message };
+  }
+}
+
+export async function setDomainAction(buildId: string, domain: string): Promise<PublishState> {
+  const { workspace } = await getAppContext();
+
+  const result = await setCustomDomain(buildId, workspace.workspaceId, domain);
+  if (result.error) return { error: result.error };
+
+  revalidatePath(`/build/${buildId}`);
+  return publicationStateAction(buildId);
+}
+
+/**
+ * Check the DNS and start serving the domain if it points here.
+ *
+ * Separate from adding it, because what happens between the two is somebody
+ * editing DNS at their registrar and waiting — which is not something Reklu can
+ * do or hurry.
+ */
+export async function checkDomainAction(buildId: string): Promise<PublishState> {
+  const { workspace } = await getAppContext();
+
+  try {
+    await activateCustomDomain(buildId, workspace.workspaceId, (message) =>
+      recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+    );
+    revalidatePath(`/build/${buildId}`);
+    return publicationStateAction(buildId);
+  } catch (error) {
+    return { error: toRekluError(error).message };
+  }
+}
+
+export async function removeDomainAction(buildId: string): Promise<PublishState> {
+  const { workspace } = await getAppContext();
+
+  try {
+    await removeCustomDomain(buildId, workspace.workspaceId, (message) =>
+      recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+    );
+    revalidatePath(`/build/${buildId}`);
+    return publicationStateAction(buildId);
+  } catch (error) {
+    return { error: toRekluError(error).message };
+  }
 }

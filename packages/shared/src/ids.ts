@@ -67,6 +67,7 @@ export const ID_PREFIXES = {
   featureFlag: 'flg',
   webhookDelivery: 'whd',
   buildEvent: 'bev',
+  publication: 'pub',
 } as const;
 
 export type IdPrefixKey = keyof typeof ID_PREFIXES;

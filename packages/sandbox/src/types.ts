@@ -93,6 +93,15 @@ export interface CreateOptions {
    * preview server starts, listens, and is reachable by nothing.
    */
   readonly publishPort?: number;
+
+  /**
+   * Hostnames a published site answers on, instead of a preview subdomain.
+   *
+   * Set only when publishing. A preview is addressed by an id nobody types; a
+   * site is addressed by the names its owner chose, and it keeps answering on
+   * all of them at once so an old link survives a new domain.
+   */
+  readonly hosts?: readonly string[];
 }
 
 export interface PreviewCommand {
