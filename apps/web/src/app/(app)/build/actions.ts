@@ -886,22 +886,42 @@ export interface PublishState {
  *
  * A Drizzle failure carries the whole statement, and that statement was being
  * shown to the user: four lines of column names and two bound parameters, in a
- * panel whose job is to say whether the site is live. It said nothing anybody
- * could use and published the schema to whoever clicked the tab.
+ * panel whose job is to say whether the site is live. It published the schema
+ * to whoever opened the tab and told them nothing they could use.
  *
- * The one cause worth naming is a missing table, because it has a specific fix
- * and it is what a deploy that skipped its migrations looks like.
+ * Hiding it entirely was not better. "Check the server logs" asks someone to
+ * go and find on a machine what the process already had in its hand. What is
+ * useful is the database's own code and message — `42703: column x does not
+ * exist` — which names the fault without reproducing the query.
  */
+function databaseFault(error: unknown): { code?: string; message?: string } | undefined {
+  /*
+   * Drizzle wraps the driver's error, and how deep the real one sits varies by
+   * driver and version — so this walks the chain rather than assuming a depth.
+   */
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth++) {
+    const candidate = current as { code?: unknown; message?: unknown; cause?: unknown };
+    if (typeof candidate.code === 'string' && /^[0-9A-Z]{5}$/.test(candidate.code)) {
+      return {
+        code: candidate.code,
+        message: typeof candidate.message === 'string' ? candidate.message : undefined,
+      };
+    }
+    current = candidate.cause;
+  }
+  return undefined;
+}
+
 function publishFailure(error: unknown): string {
-  const cause = error as { code?: string; cause?: { code?: string } };
-  const code = cause?.code ?? cause?.cause?.code;
+  const fault = databaseFault(error);
 
   /*
    * 42P01: undefined_table. Almost always a deploy that shipped code expecting
    * a table nobody created — so the message gives the command that works on a
    * server with no checkout and no pnpm, which is what a deployed host is.
    */
-  if (code === '42P01') {
+  if (fault?.code === '42P01') {
     return (
       'This needs a database migration that has not been run on this server. ' +
       'Run it against the running container: ' +
@@ -910,10 +930,28 @@ function publishFailure(error: unknown): string {
     );
   }
 
+  /*
+   * 42703 is the same story one column deeper: the table arrived but a later
+   * migration adding to it did not.
+   */
+  if (fault?.code === '42703') {
+    return (
+      `The database is missing a column this version expects (${fault.message ?? 'undefined column'}). ` +
+      'Run the migration against the running container: ' +
+      'docker exec -w /app/packages/database <container> ./node_modules/.bin/tsx src/migrate.ts'
+    );
+  }
+
+  if (fault?.code) {
+    /* The code and the driver's own sentence — never the statement. */
+    return `The database rejected that request (${fault.code})${
+      fault.message ? `: ${fault.message.split('\n')[0]?.slice(0, 200)}` : ''
+    }.`;
+  }
+
   const message = toRekluError(error).message;
-  /* Never the statement itself, whatever else goes wrong. */
   return /^Failed query:/i.test(message)
-    ? 'The database rejected that request. Check the server logs for the statement.'
+    ? 'The database rejected that request, and gave no code. The server logs have the statement.'
     : message;
 }
 
