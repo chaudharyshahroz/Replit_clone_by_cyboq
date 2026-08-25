@@ -47,6 +47,31 @@ pnpm db:migrate   # release step
 pnpm db:seed      # idempotent; safe every deploy
 ```
 
+### On a server that has no checkout
+
+A deployed host usually has neither the repository nor pnpm — the application
+arrives as an image. The image carries the migrations and the runner, so the
+release step is a role of that same image rather than something to install:
+
+```bash
+docker run --rm --env-file /path/to/.env <image> migrate
+```
+
+Platforms that only run one container per service — Dokploy among them — have
+nowhere to put that step. Run it against the container that is already up,
+which has the environment and the network already:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Image}}' | grep -i reklu
+docker exec -w /app/packages/database <container> ./node_modules/.bin/tsx src/migrate.ts
+```
+
+That is exactly what the `migrate` role does, minus the seed. **A deploy that
+skips this leaves the code expecting tables that do not exist**, and the first
+symptom is a feature failing on a query for a table nobody has created — which
+is why the publish panel names this specifically rather than reporting a
+database error.
+
 ---
 
 ## Startup contract

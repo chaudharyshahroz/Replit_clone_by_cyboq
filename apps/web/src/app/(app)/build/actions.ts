@@ -896,9 +896,18 @@ function publishFailure(error: unknown): string {
   const cause = error as { code?: string; cause?: { code?: string } };
   const code = cause?.code ?? cause?.cause?.code;
 
-  /* 42P01: undefined_table. */
+  /*
+   * 42P01: undefined_table. Almost always a deploy that shipped code expecting
+   * a table nobody created — so the message gives the command that works on a
+   * server with no checkout and no pnpm, which is what a deployed host is.
+   */
   if (code === '42P01') {
-    return 'Publishing needs a database migration that has not been run on this server yet. Run `pnpm db:migrate` and try again.';
+    return (
+      'This needs a database migration that has not been run on this server. ' +
+      'Run it against the running container: ' +
+      'docker exec -w /app/packages/database <container> ./node_modules/.bin/tsx src/migrate.ts ' +
+      '— see docs/DEPLOYMENT.md.'
+    );
   }
 
   const message = toRekluError(error).message;
