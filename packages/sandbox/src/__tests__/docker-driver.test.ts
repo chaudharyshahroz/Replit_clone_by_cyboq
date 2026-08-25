@@ -784,3 +784,40 @@ describe('when the locally built sandbox image is missing', () => {
     );
   });
 });
+
+/**
+ * What the container is called on the host.
+ *
+ * They were created unnamed, so Docker assigned its own — `crazy_moser` sitting
+ * in `docker ps` beside `reklu-app` and `pgvector`, with nothing to say which
+ * of them belonged to Reklu, which build it served, or whether it was a leak.
+ */
+describe('naming a container', () => {
+  it('names it after the sandbox, under a reklu prefix', async () => {
+    await driver.create('sbx_abc123', DEFAULT_LIMITS);
+
+    const call = dockerRequest.mock.calls.find((args) =>
+      String(args[2]).includes('/containers/create'),
+    );
+    const path = String(call?.[2]);
+
+    expect(path).toContain('name=reklu-sbx-abc123-');
+  });
+
+  it('gives two containers for the same sandbox different names', async () => {
+    /*
+     * A publish keeps the old container running until its replacement serves,
+     * so two exist at once — and a name derived only from the sandbox would
+     * collide with the container it is meant to replace.
+     */
+    await driver.create('sbx_abc123', DEFAULT_LIMITS);
+    await driver.create('sbx_abc123', DEFAULT_LIMITS);
+
+    const names = dockerRequest.mock.calls
+      .filter((args) => String(args[2]).includes('/containers/create'))
+      .map((args) => String(args[2]));
+
+    expect(names).toHaveLength(2);
+    expect(names[0]).not.toBe(names[1]);
+  });
+});

@@ -208,9 +208,12 @@ async function createContainer(
   target: DockerTarget,
   config: unknown,
   image: string,
+  name: string,
 ): Promise<{ Id: string }> {
+  const path = `/containers/create?name=${encodeURIComponent(name)}`;
+
   try {
-    const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
+    const response = await dockerRequest(target, 'POST', path, { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
   } catch (error) {
     /*
@@ -228,9 +231,28 @@ async function createContainer(
 
     await restoreImage(target, image);
 
-    const response = await dockerRequest(target, 'POST', '/containers/create', { json: config });
+    const response = await dockerRequest(target, 'POST', path, { json: config });
     return JSON.parse(response.body.toString('utf8')) as { Id: string };
   }
+}
+
+/**
+ * A name an operator can read on the host.
+ *
+ * Containers were created unnamed, so Docker assigned its own — `crazy_moser`
+ * beside `reklu-app` and `pgvector` in `docker ps`. Nothing on the host said
+ * which of those belonged to Reklu, which build it was serving, or whether it
+ * was a leak worth removing.
+ *
+ * The random suffix is not decoration. A publish deliberately keeps the old
+ * container running until its replacement is serving, so two containers for one
+ * site exist at once — and a name derived only from the site would collide with
+ * the container it is meant to replace.
+ */
+function containerName(sandboxId: string): string {
+  const slug = sandboxId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `reklu-${slug.slice(0, 48)}-${suffix}`;
 }
 
 /**
@@ -614,7 +636,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
          */
         await ensureNetwork(target, options.network);
 
-        created = await createContainer(target, config, options.image);
+        created = await createContainer(target, config, options.image, containerName(id));
         await dockerRequest(target, 'POST', `/containers/${created.Id}/start`);
       } catch (error) {
         wrap('container creation', error);
