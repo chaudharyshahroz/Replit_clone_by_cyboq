@@ -32,6 +32,7 @@ import {
   currentPublication,
   dnsInstructions,
   drawArtwork,
+  type ArtworkRequest,
   publicUrl,
   publishAvailability,
   publishSite,
@@ -47,7 +48,7 @@ import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
 import { errors, isRekluError, logger, newId, slugify, toRekluError } from '@reklu/shared';
-import { generateImage } from '@reklu/create';
+import { findStockImage, generateImage } from '@reklu/create';
 import { getAppContext } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { storage } from '@reklu/storage';
@@ -414,10 +415,26 @@ async function composePrompt(
  * and a photograph is a megabyte.
  */
 async function drawOne(
+  request: ArtworkRequest,
   imagePrompt: string,
-  shape: 'landscape' | 'square' | 'portrait',
   workspaceId: string,
 ): Promise<GeneratedFile['binary']> {
+  const shape = request.shape;
+
+  /*
+   * A real photograph first, where one exists.
+   *
+   * Generating costs money and about half a minute, and a page wanting six
+   * pictures costs six of each. For most of what a marketing site needs — a
+   * barber at work, a coffee bar, a plate of food — a photograph of exactly
+   * that already exists and is free. A miss costs one request and falls
+   * through to the generator, which is the one that never misses.
+   */
+  const stock = await findStockImage({ workspaceId, query: request.description, shape });
+  if (stock) {
+    return { storageKey: stock.storageKey, contentType: stock.contentType, bytes: stock.bytes };
+  }
+
   const size =
     shape === 'landscape' ? '1536x1024' : shape === 'portrait' ? '1024x1536' : '1024x1024';
 
@@ -646,8 +663,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   const illustrated = await drawArtwork(
     resolved,
     `${brief.product} — ${brief.summary}`,
-    (imagePrompt, shape) =>
-      drawOne(imagePrompt, shape, workspace.workspaceId),
+    (request, imagePrompt) => drawOne(request, imagePrompt, workspace.workspaceId),
     (message) =>
       recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
   );

@@ -119,7 +119,16 @@ export interface ArtworkResult {
 export async function drawArtwork(
   files: readonly GeneratedFile[],
   subject: string,
-  draw: (prompt: string, shape: ArtworkRequest['shape']) => Promise<GeneratedFile['binary']>,
+  /*
+   * Given the request as well as the prompt. A generator wants the prompt —
+   * lighting, framing, the instruction about lettering — and a stock search
+   * wants the plain description those were built around, because the words
+   * that steer a camera confuse a search engine.
+   */
+  draw: (
+    request: ArtworkRequest,
+    prompt: string,
+  ) => Promise<GeneratedFile['binary']>,
   onProgress?: (message: string) => Promise<void> | void,
 ): Promise<ArtworkResult> {
   const requests = plannedArtwork(files);
@@ -134,7 +143,7 @@ export async function drawArtwork(
     );
 
     try {
-      const binary = await draw(artworkPrompt(request, subject), request.shape);
+      const binary = await draw(request, artworkPrompt(request, subject));
       if (binary) drawn.set(request.path, binary);
     } catch (error) {
       /*

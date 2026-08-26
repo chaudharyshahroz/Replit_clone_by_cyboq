@@ -116,6 +116,17 @@ describe('drawing them', () => {
     const draw = vi.fn().mockResolvedValue(binary);
     const result = await drawArtwork(files, 'a barber shop', draw);
 
+    /*
+     * Given the request as well as the prompt. A generator wants the prompt;
+     * a stock search wants the plain description it was built around, because
+     * the words that steer a camera confuse a search engine.
+     */
+    expect(draw.mock.calls[0]?.[0]).toMatchObject({
+      description: 'a barber trimming a beard',
+      shape: 'landscape',
+    });
+    expect(String(draw.mock.calls[0]?.[1])).toContain('a barber trimming a beard');
+
     expect(result.generated).toBe(1);
     const image = result.files.find((file) => file.path === 'public/generated/hero.png');
     expect(image?.binary).toEqual(binary);

@@ -633,13 +633,28 @@ until the transition settles, so clearing the box in there cleared it two
 minutes later. It happens outside the transition now, where it is an ordinary
 update and commits at once.
 
-### Generated imagery ✅ — 11 tests
+### Imagery ✅ — 16 tests
 
 Asked for a barber shop landing page, the model wrote an image URL from memory
 and the page rendered a photograph of someone deadlifting. It was not a bad
 guess so much as a guess: no model has a catalogue of real image URLs, so
 anything written into a `src` is misremembered or invented, and an invented URL
 is a broken image.
+
+Pictures are searched for before any are drawn. A generated image costs money
+and about half a minute, and a page wanting six costs six of each — while for
+most of what a marketing site needs, a real photograph of exactly that subject
+already exists on Pixabay and is free. A miss costs one request and falls
+through to the generator, which is the one that never misses. The bytes are
+downloaded and stored rather than hotlinked, which Pixabay's licence requires
+and which also makes an exported site self-contained. Needs `PIXABAY_API_KEY`;
+without it every picture is generated, as before.
+
+The search query is built from the alt text by keeping the nouns, because alt
+text is written to be read aloud and a search engine wants the subject. Getting
+that wrong does not error — it returns nothing, everything falls through to the
+generator, and the saving silently never happens, which is why it is the part
+under test.
 
 So the model no longer chooses pictures. It references `/generated/<name>.png`
 and writes what the photograph shows in the `alt` it has to write anyway — the

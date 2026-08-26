@@ -304,6 +304,16 @@ const serverSchema = z.object({
    * answering. Wildcard DNS for this domain must point at the proxy, and the
    * proxy must be able to obtain a certificate for it.
    */
+  /**
+   * Pixabay, searched for photographs before any are generated.
+   *
+   * Optional, and its absence is not a failure: without it every picture is
+   * generated, which is what happened before this existed. With it, the common
+   * case — a real photograph of an ordinary subject — costs one request instead
+   * of a model call.
+   */
+  PIXABAY_API_KEY: optionalString,
+
   PUBLISH_DOMAIN: optionalString,
   /**
    * The address a custom domain must point at.
