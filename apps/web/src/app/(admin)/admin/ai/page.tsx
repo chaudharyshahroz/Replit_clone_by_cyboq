@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import { features } from '@reklu/shared';
 import { listModels, listPlans, listProviders } from '@/lib/admin-data';
-import { TIER_WEIGHT } from '@reklu/ai';
+import { configuredProviderKeys, TIER_WEIGHT } from '@reklu/ai';
 import { AiControls } from '@/components/admin/ai-controls';
 
 export const metadata: Metadata = { title: 'Admin · AI' };
@@ -13,7 +12,7 @@ export default async function AdminAiPage() {
     listModels(),
     listPlans(),
   ]);
-  const configured = features();
+  const configuredKeys = configuredProviderKeys();
 
   return (
     <div className="space-y-8">
@@ -32,13 +31,18 @@ export default async function AdminAiPage() {
               displayName: provider.displayName,
               apiKeyEnvVar: provider.apiKeyEnvVar,
               enabled: provider.enabled,
-              // Whether the key is present — never its value.
-              hasKey:
-                (provider.key === 'anthropic' && configured.anthropic) ||
-                (provider.key === 'openai' && configured.openai) ||
-                (provider.key === 'google' && configured.google) ||
-                (provider.key === 'xai' && configured.xai) ||
-                (provider.key === 'deepseek' && configured.deepseek),
+              /*
+                Whether the key is present — never its value.
+
+                Asked of the same function that decides whether a provider can
+                actually be used, rather than a list of provider names written
+                out here. That list named five providers and a sixth existed:
+                OpenRouter showed NO OPENROUTER_API_KEY while its key was set,
+                its models were listed, and it was answering requests. A panel
+                whose job is to report configuration was reporting its own
+                omission.
+              */
+              hasKey: configuredKeys.includes(provider.key),
             }))}
             models={models.map((model) => ({
               id: model.id,
