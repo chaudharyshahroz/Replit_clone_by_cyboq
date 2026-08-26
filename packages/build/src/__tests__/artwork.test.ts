@@ -185,3 +185,26 @@ describe('drawing them', () => {
     expect(result.files).toHaveLength(1);
   });
 });
+
+describe('what the log says while pictures are found', () => {
+  it('does not claim a picture was drawn before it is known', async () => {
+    /*
+     * Which source answers is decided inside the callback: a search runs first
+     * and a generation only happens when it misses. Saying "drawing" up front
+     * reports the expensive path even when the cheap one served it, which is
+     * the one thing the log is there to distinguish.
+     */
+    const said: string[] = [];
+    await drawArtwork(
+      [page('<img src="/generated/hero.png" alt="a barber trimming a beard" />')],
+      'a barber shop',
+      async () => ({ storageKey: 'k', contentType: 'image/png', bytes: 1 }),
+      (message) => {
+        said.push(message);
+      },
+    );
+
+    expect(said.join(' ')).not.toMatch(/drawing/i);
+    expect(said.join(' ')).toContain('a barber trimming a beard');
+  });
+});

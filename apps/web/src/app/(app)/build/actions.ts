@@ -419,6 +419,14 @@ async function drawOne(
   request: ArtworkRequest,
   imagePrompt: string,
   workspaceId: string,
+  /**
+   * Which source answered, said out loud.
+   *
+   * Without it a search and a generation are indistinguishable from the log,
+   * so there is no way to tell whether a Pixabay key is working — the build
+   * simply costs less, or does not, and nothing says which.
+   */
+  report: (message: string) => Promise<void>,
 ): Promise<GeneratedFile['binary']> {
   const shape = request.shape;
 
@@ -433,8 +441,11 @@ async function drawOne(
    */
   const stock = await findStockImage({ workspaceId, query: request.description, shape });
   if (stock) {
+    await report(`Found a photograph on Pixabay by ${stock.credit}`);
     return { storageKey: stock.storageKey, contentType: stock.contentType, bytes: stock.bytes };
   }
+
+  await report('No photograph matched; drawing one');
 
   const size =
     shape === 'landscape' ? '1536x1024' : shape === 'portrait' ? '1024x1536' : '1024x1024';
@@ -664,7 +675,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   const illustrated = await drawArtwork(
     resolved,
     `${brief.product} — ${brief.summary}`,
-    (request, imagePrompt) => drawOne(request, imagePrompt, workspace.workspaceId),
+    (request, imagePrompt) =>
+      drawOne(request, imagePrompt, workspace.workspaceId, (message) =>
+        recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+      ),
     (message) =>
       recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
   );

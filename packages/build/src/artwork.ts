@@ -138,8 +138,14 @@ export async function drawArtwork(
   const failures: { path: string; reason: string }[] = [];
 
   for (const [index, request] of requests.entries()) {
+    /*
+     * Neutral, because which source answers is decided inside the callback: a
+     * search runs first and a generation only happens when it misses. Saying
+     * "drawing" here would report the expensive path even when the cheap one
+     * served it.
+     */
     await onProgress?.(
-      `Drawing image ${index + 1} of ${requests.length}: ${request.description.slice(0, 60)}`,
+      `Image ${index + 1} of ${requests.length}: ${request.description.slice(0, 60)}`,
     );
 
     try {
