@@ -36,3 +36,46 @@ describe('the free plan', () => {
     expect(unknown).toEqual([]);
   });
 });
+
+/**
+ * Seed data is the source of truth, not the database.
+ *
+ * A model's identifier was corrected in production with SQL and not here — so
+ * the next seed overwrote the correction and restored an identifier the
+ * provider had withdrawn. The seed reports success either way, and the models
+ * simply stop working again.
+ */
+describe('the OpenRouter models', () => {
+  const openrouter = MODELS.filter((model) => model.providerKey === 'openrouter');
+
+  it('are all on the free tier', () => {
+    for (const model of openrouter) {
+      expect(model.modelIdentifier, model.key).toMatch(/:free$/);
+      expect(Number(model.inputCostPerMillion)).toBe(0);
+      expect(Number(model.outputCostPerMillion)).toBe(0);
+    }
+  });
+
+  it('are named for the model they point at', () => {
+    /*
+     * `openrouter-deepseek-v3-free` pointed at GLM for a while, because the
+     * identifier was replaced and the key was not. A key that names a different
+     * model than it serves misleads every person who reads it afterwards.
+     */
+    for (const model of openrouter) {
+      const slug = model.modelIdentifier.split('/')[1]?.replace(':free', '') ?? '';
+      const stem = slug.split('-')[0] ?? '';
+      expect(model.key.includes(stem), `${model.key} vs ${model.modelIdentifier}`).toBe(true);
+    }
+  });
+
+  it('rank below every paid model', () => {
+    // A way to run at no cost, not the right model for the work.
+    const paid = MODELS.filter((model) => Number(model.inputCostPerMillion) > 0);
+    const cheapestPaid = Math.min(...paid.map((model) => model.routingPriority));
+
+    for (const model of openrouter) {
+      expect(model.routingPriority, model.key).toBeLessThan(cheapestPaid);
+    }
+  });
+});
