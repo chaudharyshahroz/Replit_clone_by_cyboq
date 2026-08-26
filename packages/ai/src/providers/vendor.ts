@@ -9,6 +9,7 @@
  */
 import { generateText, streamText, embedMany, type LanguageModel } from 'ai';
 import { jsonSchema, tool as defineTool } from 'ai';
+import { LoopGuard, LOOP_MESSAGE } from '../loop-guard';
 import type {
   AIProvider,
   EmbedOptions,
@@ -232,11 +233,32 @@ export function createVendorAdapter(options: VendorAdapterOptions): AIProvider {
           ...(request.signal ? { abortSignal: request.signal } : {}),
         });
 
+        /*
+         * Watching for a model that has started repeating itself. One answered
+         * "hi" with the same sentence a hundred times and then recited the
+         * system prompt, streaming every token of it to the reader and charging
+         * for all of them, because nothing was looking.
+         */
+        const guard = new LoopGuard();
+
         for await (const part of result.fullStream) {
           switch (part.type) {
-            case 'text-delta':
-              yield { type: 'text-delta', text: (part as { text: string }).text };
+            case 'text-delta': {
+              const text = (part as { text: string }).text;
+              yield { type: 'text-delta', text };
+
+              if (guard.push(text)) {
+                /*
+                 * Said out loud rather than trailing off. A reply that simply
+                 * stopped would read as a network failure, and the useful part
+                 * — that this model is a poor fit — would be lost.
+                 */
+                yield { type: 'text-delta', text: LOOP_MESSAGE };
+                yield { type: 'finish', usage, finishReason: 'stop' };
+                return;
+              }
               break;
+            }
             case 'reasoning-delta':
               yield { type: 'reasoning-delta', text: (part as { text: string }).text };
               break;

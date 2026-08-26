@@ -633,6 +633,27 @@ until the transition settles, so clearing the box in there cleared it two
 minutes later. It happens outside the transition now, where it is an ordinary
 update and commits at once.
 
+### A model that repeats itself is stopped ✅ — 8 tests
+
+A quantised model answered "hi" with the same sentence more than a hundred
+times, then began reciting the system prompt, and ran until it hit the output
+limit. Every token was streamed to the reader and charged for, because nothing
+was watching the stream.
+
+The detector is deliberately dull: one substantial sentence repeating six times
+in a row. The danger in fixing this is cutting a correct answer short, so the
+threshold sits where ordinary prose does not reach, and a repeat only counts
+when it is prose — several words and real length.
+
+That last rule came from a test. An early version stopped at any repeated line
+of twelve characters, which twenty `return null;` lines satisfy, and Build
+streams whole components: a false positive there loses an application rather
+than a paragraph.
+
+When it fires it says so in the reply rather than trailing off, because a
+message that simply stopped would read as a network failure and lose the useful
+part — that this model is a poor fit for the request.
+
 ### Imagery ✅ — 16 tests
 
 Asked for a barber shop landing page, the model wrote an image URL from memory

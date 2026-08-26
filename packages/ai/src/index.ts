@@ -1,6 +1,7 @@
 export * from './types';
 export * from './registry';
 export * from './router';
+export * from './loop-guard';
 export * from './usage';
 export * from './embeddings';
 export {
