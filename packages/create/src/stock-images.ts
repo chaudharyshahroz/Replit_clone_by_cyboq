@@ -55,13 +55,54 @@ export function searchTerms(description: string): string {
     'photograph', 'photo', 'image', 'picture', 'shot',
   ]);
 
-  return description
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length > 2 && !stop.has(word))
-    .slice(0, 6)
-    .join(' ');
+  return (
+    description
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length > 2 && !stop.has(word))
+      .slice(0, 6)
+      .join(' ')
+      /* Pixabay rejects a query over 100 characters outright. */
+      .slice(0, 100)
+      .trim()
+  );
+}
+
+/**
+ * Answers already given, kept for a day.
+ *
+ * Pixabay asks that responses be cached for 24 hours, and it is a reasonable
+ * thing to ask: two builds of the same kind of site search for the same
+ * ordinary subjects, and the answer does not change hour to hour.
+ *
+ * In memory, so per process and forgotten on restart. That is enough for what
+ * this is — a build asking for six pictures, twice, an hour apart — and honest
+ * about what it is not. A shared cache would need a store, and the request it
+ * saves costs nothing.
+ */
+const CACHE_MS = 24 * 60 * 60 * 1000;
+const cache = new Map<string, { at: number; url?: string; credit?: string }>();
+
+function cached(key: string): { url?: string; credit?: string } | undefined {
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > CACHE_MS) {
+    cache.delete(key);
+    return undefined;
+  }
+  return hit;
+}
+
+function remember(key: string, value: { url?: string; credit?: string }): void {
+  /* Bounded, so a long-running process cannot accumulate every query ever made. */
+  if (cache.size > 500) {
+    for (const [entry, held] of cache) {
+      if (Date.now() - held.at > CACHE_MS) cache.delete(entry);
+    }
+    if (cache.size > 500) cache.clear();
+  }
+  cache.set(key, { at: Date.now(), ...value });
 }
 
 const ORIENTATION = {
@@ -87,31 +128,55 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
   const query = searchTerms(input.query);
   if (!query) return undefined;
 
-  try {
-    const url = new URL('https://pixabay.com/api/');
-    url.searchParams.set('key', env.PIXABAY_API_KEY);
-    url.searchParams.set('q', query);
-    url.searchParams.set('image_type', 'photo');
-    url.searchParams.set('orientation', ORIENTATION[input.shape]);
-    /* The site is public and Reklu does not review what it puts on one. */
-    url.searchParams.set('safesearch', 'true');
-    url.searchParams.set('order', 'popular');
-    url.searchParams.set('per_page', '3');
+  const cacheKey = `${input.shape}:${query}`;
+  const remembered = cached(cacheKey);
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!response.ok) {
-      logger.debug('Pixabay refused a search', { status: response.status });
-      return undefined;
+  /*
+   * A remembered miss counts as much as a remembered hit. Asking again for a
+   * subject Pixabay does not have costs a request and returns the same nothing.
+   */
+  if (remembered && !remembered.url) return undefined;
+
+  try {
+    let chosen = remembered?.url;
+    let credit = remembered?.credit;
+
+    /* The search is what gets cached; the download happens either way, because
+       every build needs its own stored copy of the bytes. */
+    if (!chosen) {
+      const url = new URL('https://pixabay.com/api/');
+      url.searchParams.set('key', env.PIXABAY_API_KEY);
+      url.searchParams.set('q', query);
+      url.searchParams.set('image_type', 'photo');
+      url.searchParams.set('orientation', ORIENTATION[input.shape]);
+      /* The site is public and Reklu does not review what it puts on one. */
+      url.searchParams.set('safesearch', 'true');
+      url.searchParams.set('order', 'popular');
+      /* Three is the smallest page the API accepts. */
+      url.searchParams.set('per_page', '3');
+
+      const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (!response.ok) {
+        logger.debug('Pixabay refused a search', { status: response.status });
+        return undefined;
+      }
+
+      const payload = (await response.json()) as {
+        hits?: { largeImageURL?: string; user?: string }[];
+      };
+
+      const hit = payload.hits?.find((candidate) => candidate.largeImageURL);
+      if (!hit?.largeImageURL) {
+        remember(cacheKey, {});
+        return undefined;
+      }
+
+      chosen = hit.largeImageURL;
+      credit = hit.user;
+      remember(cacheKey, { url: chosen, ...(credit ? { credit } : {}) });
     }
 
-    const payload = (await response.json()) as {
-      hits?: { largeImageURL?: string; user?: string; imageWidth?: number }[];
-    };
-
-    const hit = payload.hits?.find((candidate) => candidate.largeImageURL);
-    if (!hit?.largeImageURL) return undefined;
-
-    const image = await fetch(hit.largeImageURL, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const image = await fetch(chosen, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!image.ok) return undefined;
 
     const body = Buffer.from(await image.arrayBuffer());
@@ -144,7 +209,7 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
       storageKey: key,
       contentType,
       bytes: body.byteLength,
-      credit: hit.user ? `${hit.user} / Pixabay` : 'Pixabay',
+      credit: credit ? `${credit} / Pixabay` : 'Pixabay',
     };
   } catch (error) {
     /*
