@@ -77,6 +77,63 @@ export const IMAGERY: BuildSkill = {
 };
 
 /**
+ * What makes a generated site look designed rather than assembled.
+ *
+ * The hard part of writing this was keeping it checkable, which the file
+ * demands of every rule here. "Make it look good" is not guidance — nobody can
+ * read a file and say whether it was followed. So each line below names
+ * something a reader can find in the output, and the ones that could not be
+ * written that way were left out however true they are.
+ *
+ * The failure being addressed is specific and recognisable: generated sites
+ * arrive looking like a component library's demo page. Evenly grey, evenly
+ * spaced, every heading the same size, a card for everything. That is what a
+ * model produces when nothing tells it to make a decision.
+ */
+export const VISUAL_DESIGN: BuildSkill = {
+  key: 'visual-design',
+  name: 'Visual design',
+  summary: 'Decisions, not defaults.',
+  guidance: [
+    'Pick a type scale and use its extremes. A hero heading should be three to four times the body size, not one-and-a-half — a page where every heading is nearly body-sized reads as unfinished.',
+    'Choose two typefaces at most: one for display, one for text. Load only the weights actually used, and only weights the font really publishes.',
+    'Build the palette from one accent plus a neutral ramp, and use the accent for one job — the primary action. An accent on every card is the same as no accent.',
+    'Space on a single scale (4 / 8 / 12 / 16 / 24 / 32 / 48 / 64). Sections get generous vertical room; related things sit close together. Even spacing everywhere is what makes a page feel machine-made.',
+    'Give the page a shape: alternate full-bleed and contained sections, and vary the column count between them. A single stack of centred cards is the default nobody chose.',
+    'Every interactive element needs hover, focus-visible and disabled states. A button with only a resting state looks broken the moment somebody uses it.',
+    'Contrast: body text at least 4.5:1 against its background, and never grey-on-grey for anything a person has to read.',
+    'Constrain running text to roughly 65 characters. Full-width paragraphs on a wide screen are unreadable and are the most common flaw in a generated page.',
+    'Anchor the page in the subject: real names, real copy, photographs of the actual thing. A coffee shop page reads as a coffee shop, not as a template with coffee words in it.',
+    'Motion is optional and must be earned — a considered transition on hover or entry, nothing that moves on its own, and everything behind prefers-reduced-motion.',
+  ],
+};
+
+/**
+ * The Next.js App Router rules a model gets wrong, stated as rules.
+ *
+ * These are not preferences. Each one is a compile error or a runtime failure,
+ * each has been produced by a real generation, and each is invisible until the
+ * page is opened — which is the worst moment to find out.
+ *
+ * The client/server boundary is the one that recurs. A page needs a title, so
+ * the model exports metadata; the page needs a dropdown, so it adds
+ * `"use client"`. Both are right on their own and Next refuses the file.
+ */
+export const NEXT_CORRECTNESS: BuildSkill = {
+  key: 'next-correctness',
+  name: 'App Router rules',
+  summary: 'The constraints that fail the build rather than the review.',
+  guidance: [
+    'A file marked "use client" must not export metadata or generateMetadata. Keep the page a server component and move the interactive part into its own "use client" child — that is the fix, not removing the title.',
+    'Only add "use client" to the file that actually needs the browser: state, effects, event handlers, or a browser API. A page that merely renders data is a server component.',
+    'Never call a route handler of your own app from a page. At build time there is no server to answer, and the page fails to prerender. Read the data directly instead.',
+    'Do not set output: "export" in next.config unless the app has no route handlers, no middleware, and no headers, redirects or rewrites. A static export has no server.',
+    'Every async server component that reads request data — cookies, headers, searchParams — must be reachable dynamically. Do not force it static.',
+    'Import types with `import type`, and never import a server-only module into a client component.',
+  ],
+};
+
+/**
  * What makes a page fast, stated as things that can be checked in the output.
  *
  * "Optimise performance" is not guidance — nobody can tell from a file whether
@@ -180,9 +237,15 @@ export const BUILD_SKILLS: Readonly<Record<BuildTarget, BuildSkill>> = {
 export function skillsFor(target: BuildTarget): readonly BuildSkill[] {
   /* An API has no pages, so it has nothing to put a photograph on. */
   const visual = target !== 'api';
-  return visual
-    ? [CORE_ENGINEERING, IMAGERY, PERFORMANCE, BUILD_SKILLS[target]]
-    : [CORE_ENGINEERING, BUILD_SKILLS[target]];
+  /* The App Router rules apply wherever Next is the stack, which is everywhere but mobile. */
+  const nextjs = target !== 'mobile_app';
+
+  return [
+    CORE_ENGINEERING,
+    ...(nextjs ? [NEXT_CORRECTNESS] : []),
+    ...(visual ? [IMAGERY, VISUAL_DESIGN, PERFORMANCE] : []),
+    BUILD_SKILLS[target],
+  ];
 }
 
 /**

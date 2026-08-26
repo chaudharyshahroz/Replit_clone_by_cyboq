@@ -98,3 +98,55 @@ describe('the guidance a build receives', () => {
     }
   });
 });
+
+/**
+ * The skills added for how a site looks and whether it compiles.
+ *
+ * Both exist because of specific failures: generated pages arriving evenly grey
+ * and evenly spaced, and a page marked "use client" exporting metadata, which
+ * Next refuses at compile time.
+ */
+describe('the design and correctness skills', () => {
+  it('reach a website build', () => {
+    const keys = skillsFor('website').map((skill) => skill.key);
+
+    expect(keys).toContain('visual-design');
+    expect(keys).toContain('next-correctness');
+  });
+
+  it('do not reach a build with no pages', () => {
+    // An API has nothing to look at, and nothing to lay out.
+    expect(skillsFor('api').map((skill) => skill.key)).not.toContain('visual-design');
+  });
+
+  it('do not give App Router rules to a build that is not Next', () => {
+    /*
+     * Mobile is Expo. Telling it about "use client" is advice about a framework
+     * it does not use, which is worse than silence — it invites a model to
+     * invent a way to comply.
+     */
+    expect(skillsFor('mobile_app').map((skill) => skill.key)).not.toContain('next-correctness');
+  });
+
+  it('names the client/metadata rule explicitly', () => {
+    /* The failure that produced the skill, so the rule cannot quietly go missing. */
+    const rules = skillsFor('website').flatMap((skill) => skill.guidance).join('\n');
+
+    expect(rules).toMatch(/use client/);
+    expect(rules).toMatch(/metadata/);
+  });
+
+  it('keeps every rule checkable in the output', () => {
+    /*
+     * The file's own standard: guidance nobody can verify from the generated
+     * files is decoration. Vague verbs are how that slips.
+     */
+    const vague = /\b(?:look good|be beautiful|modern|clean|nice|stunning|best practices)\b/i;
+
+    for (const skill of skillsFor('website')) {
+      for (const rule of skill.guidance) {
+        expect(vague.test(rule), rule).toBe(false);
+      }
+    }
+  });
+});

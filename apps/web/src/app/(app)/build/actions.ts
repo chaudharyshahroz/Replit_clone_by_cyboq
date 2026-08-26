@@ -42,6 +42,7 @@ import {
   repairAliasPaths,
   repairMissingDependencies,
   repairFontWeights,
+  repairClientMetadata,
   repairStaticExport,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
@@ -648,8 +649,8 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = repairStaticExport(
-    repairFontWeights(repairMissingDependencies(repairAliasPaths(merged))),
+  const resolved = repairClientMetadata(
+    repairStaticExport(repairFontWeights(repairMissingDependencies(repairAliasPaths(merged)))),
   );
 
   /*

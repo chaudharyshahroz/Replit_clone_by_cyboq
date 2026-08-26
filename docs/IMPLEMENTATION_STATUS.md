@@ -532,6 +532,22 @@ with no TypeScript, or no compiler installed, is not a project with type errors,
 and handing "tsc: not found" to a model sends it editing code that was never
 wrong.
 
+### repairClientMetadata ✅ — 6 tests
+
+`"use client"` and `export const metadata` in one file is a compile error, and
+the reader meets it as a wall of red in the preview. The export is removed and
+the directive kept: without the directive the interactive parts throw at
+runtime, and without the export the page renders and loses its title — a page
+that works beats a page that does not compile.
+
+The whole declaration goes, not its first line. Cutting one line leaves a
+dangling object literal, which fails to compile for a new reason. The now-unused
+`Metadata` type import goes with it, because the generated build script runs
+`next lint` and the default config treats an unused import as an error.
+
+A server component exporting metadata is left alone — that is where it belongs,
+and stripping it there would remove the title from every correctly written page.
+
 ### Publishing ✅ (spec §40) — 22 tests
 
 A build goes live at `<slug>.<PUBLISH_DOMAIN>` on Reklu's own server, with no
@@ -701,6 +717,23 @@ Binary files travel as base64 from the tree down to the tar header.
 
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
+
+### Build skills — design, App Router rules, imagery, performance
+
+`VISUAL_DESIGN` addresses a specific, recognisable failure: generated sites
+arriving evenly grey and evenly spaced, every heading the same size, a card
+around everything — what a model produces when nothing asks it to make a
+decision. Each rule names something findable in the output (a type scale with
+real extremes, one accent used for one job, a single spacing scale, 65-character
+measure, hover and focus states), because the file's own standard is that
+guidance nobody can verify is decoration. A test rejects vague verbs in any rule.
+
+`NEXT_CORRECTNESS` collects the App Router rules a model gets wrong in ways that
+fail the build rather than the review. The recurring one is the client/server
+boundary: a page needs a title so the model exports metadata, the page needs a
+dropdown so it adds `"use client"`, and Next refuses the file. Both halves are
+reasonable on their own. Not given to mobile builds, which are Expo — advice
+about a framework in use nowhere invites a model to invent compliance.
 
 ### Build skills — imagery and performance
 
