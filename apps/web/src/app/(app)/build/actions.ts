@@ -989,7 +989,7 @@ function publishFailure(error: unknown): string {
       'This needs a database migration that has not been run on this server. ' +
       'Run it against the running container: ' +
       'docker exec -w /app/packages/database <container> ./node_modules/.bin/tsx src/migrate.ts ' +
-      '— see docs/DEPLOYMENT.md.'
+      '— then the seed, src/seed/index.ts. See docs/DEPLOYMENT.md.'
     );
   }
 

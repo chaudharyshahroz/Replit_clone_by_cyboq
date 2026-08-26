@@ -81,9 +81,14 @@ which has the environment and the network already:
 ```bash
 docker ps --format '{{.Names}}\t{{.Image}}' | grep -i reklu
 docker exec -w /app/packages/database <container> ./node_modules/.bin/tsx src/migrate.ts
+docker exec -w /app/packages/database <container> ./node_modules/.bin/tsx src/seed/index.ts
 ```
 
-That is exactly what the `migrate` role does, minus the seed. **A deploy that
+**Both, not just the first.** The `migrate` role runs the seed straight after
+the migrations, and running only the migration step is a deploy that applied
+its schema changes and none of the reference data that goes with them — new
+plans, providers and models are seed rows, so the tables exist and the feature
+still does not appear. The seed is idempotent and safe on every deploy. **A deploy that
 skips this leaves the code expecting tables that do not exist**, and the first
 symptom is a feature failing on a query for a table nobody has created — which
 is why the publish panel names this specifically rather than reporting a
