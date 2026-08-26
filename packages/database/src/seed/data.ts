@@ -350,7 +350,24 @@ export const PLANS: readonly PlanSeed[] = [
       mcpServersMax: 1,
       concurrentJobsMax: 1,
       // Economy tier only; premium models require a paid plan.
-      allowedModelKeys: ['claude-haiku-4-5', 'gpt-5-mini', 'gemini-2-5-flash'],
+      /*
+       * The cheap end of each paid vendor, plus every model that costs nothing
+       * to serve.
+       *
+       * The free models were missing from this list, which put Reklu in the
+       * position of offering models that are free and then refusing them to the
+       * people on the free plan — the only ones for whom the distinction
+       * mattered. An allowlist is a spending control, and a model with no price
+       * is not something to control.
+       */
+      allowedModelKeys: [
+        'claude-haiku-4-5',
+        'gpt-5-mini',
+        'gemini-2-5-flash',
+        'openrouter-deepseek-v3-free',
+        'openrouter-qwen-coder-free',
+        'openrouter-llama-33-70b-free',
+      ],
       features: ['chat', 'research_quick', 'projects', 'skills_install'],
     },
   },
