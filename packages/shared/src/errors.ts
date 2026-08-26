@@ -11,6 +11,7 @@
  * without leaking infrastructure detail, and to log real diagnostics without
  * writing secrets into the browser.
  */
+import { randomBytes } from 'node:crypto';
 
 export type ErrorCode =
   // Authentication / authorization
@@ -286,15 +287,32 @@ export const errors = {
       context: { tool: params.tool, riskClass: params.riskClass },
     }),
 
-  internal: (detail: string, cause?: unknown): RekluError =>
-    new RekluError({
+  /**
+   * A failure with no useful advice for the person who hit it.
+   *
+   * The message stays vague on purpose — an internal detail is often a stack
+   * frame or a query, and neither belongs on somebody's screen. But "something
+   * failed" and nothing else means the only way to learn anything is to open a
+   * shell on the server and search its logs for roughly the right minute, which
+   * has now been the answer twice.
+   *
+   * So each one carries a short reference, printed to the reader and logged
+   * with the detail. Finding the cause becomes grepping for eight characters
+   * that appear exactly once.
+   */
+  internal: (detail: string, cause?: unknown): RekluError => {
+    const reference = randomBytes(4).toString('hex');
+
+    return new RekluError({
       code: 'INTERNAL',
-      message: detail,
-      userMessage: 'Something failed on our side. The team has been notified.',
+      message: `[${reference}] ${detail}`,
+      userMessage: `Something failed on our side. Reference ${reference}.`,
       actions: [{ label: 'Retry', intent: 'retry' }],
+      context: { reference },
       cause,
       retryable: true,
-    }),
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
