@@ -100,6 +100,34 @@ export function getProvider(providerKey: string): AIProvider | undefined {
       }
       break;
 
+    case 'openrouter':
+      if (env.OPENROUTER_API_KEY) {
+        provider = createVendorAdapter({
+          key: 'openrouter',
+          displayName: 'OpenRouter',
+          /*
+           * Declared per provider and true of the route, not of every model
+           * behind it. OpenRouter fronts hundreds, and what any one supports is
+           * a property of that model's row in the registry.
+           */
+          capabilities: FULL,
+          model: createOpenAI({
+            apiKey: env.OPENROUTER_API_KEY,
+            baseURL: env.OPENROUTER_BASE_URL,
+            /*
+             * OpenRouter attributes traffic by these, and uses them to decide
+             * whether a request may use the free tier at all. They identify the
+             * application, never the person using it.
+             */
+            headers: {
+              'HTTP-Referer': env.APP_URL,
+              'X-Title': 'Reklu',
+            },
+          }),
+        });
+      }
+      break;
+
     case DEV_ECHO_PROVIDER_KEY:
       // Only available when no real provider exists, and never in production.
       if (env.NODE_ENV !== 'production') {
@@ -124,6 +152,7 @@ export function configuredProviderKeys(): readonly string[] {
   if (env.GOOGLE_GENERATIVE_AI_API_KEY) keys.push('google');
   if (env.XAI_API_KEY) keys.push('xai');
   if (env.DEEPSEEK_API_KEY) keys.push('deepseek');
+  if (env.OPENROUTER_API_KEY) keys.push('openrouter');
   return keys;
 }
 

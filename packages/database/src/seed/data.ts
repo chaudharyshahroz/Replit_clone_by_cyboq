@@ -15,7 +15,7 @@ import type { PlanLimits } from '../schema/billing';
 
 export interface ProviderSeed {
   readonly key: string;
-  readonly kind: 'anthropic' | 'openai' | 'google' | 'xai' | 'deepseek';
+  readonly kind: 'anthropic' | 'openai' | 'google' | 'xai' | 'deepseek' | 'openrouter';
   readonly displayName: string;
   readonly apiKeyEnvVar: string;
 }
@@ -26,6 +26,12 @@ export const PROVIDERS: readonly ProviderSeed[] = [
   { key: 'google', kind: 'google', displayName: 'Google', apiKeyEnvVar: 'GOOGLE_GENERATIVE_AI_API_KEY' },
   { key: 'xai', kind: 'xai', displayName: 'xAI', apiKeyEnvVar: 'XAI_API_KEY' },
   { key: 'deepseek', kind: 'deepseek', displayName: 'DeepSeek', apiKeyEnvVar: 'DEEPSEEK_API_KEY' },
+  {
+    key: 'openrouter',
+    kind: 'openrouter',
+    displayName: 'OpenRouter',
+    apiKeyEnvVar: 'OPENROUTER_API_KEY',
+  },
 ];
 
 export interface ModelSeed {
@@ -237,6 +243,76 @@ export const MODELS: readonly ModelSeed[] = [
     bestFor: ['reasoning', 'math', 'coding'],
     routingPriority: 45,
     sortOrder: 90,
+  },
+
+  // ---- OpenRouter --------------------------------------------------------
+  //
+  // The free tier, which is genuinely free and genuinely limited: a few
+  // requests a minute, a daily cap, and no promise that any given model stays
+  // on it. Identifiers here move — a `:free` variant is withdrawn when its
+  // sponsor stops paying for it — and that is survivable because models are
+  // rows: a withdrawn one is edited or disabled in the admin panel rather than
+  // deployed around.
+  //
+  // Routing priority is low on purpose. These are a way to run Reklu at no
+  // cost, not the best model for the job, and Reklu Auto should reach for them
+  // only when nothing better is configured.
+  {
+    ...base,
+    key: 'openrouter-deepseek-v3-free',
+    providerKey: 'openrouter',
+    modelIdentifier: 'deepseek/deepseek-chat-v3-0324:free',
+    displayName: 'DeepSeek V3 (free)',
+    description: 'Free through OpenRouter. Rate limited, and the strongest of the free options for code.',
+    contextWindow: 64_000,
+    maxOutputTokens: 8_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'slow',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['coding', 'general'],
+    routingPriority: 10,
+    sortOrder: 200,
+  },
+  {
+    ...base,
+    key: 'openrouter-llama-33-70b-free',
+    providerKey: 'openrouter',
+    modelIdentifier: 'meta-llama/llama-3.3-70b-instruct:free',
+    displayName: 'Llama 3.3 70B (free)',
+    description: 'Free through OpenRouter. Good general instruction following.',
+    contextWindow: 64_000,
+    maxOutputTokens: 8_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'slow',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['general', 'writing'],
+    routingPriority: 8,
+    sortOrder: 210,
+  },
+  {
+    ...base,
+    key: 'openrouter-qwen-coder-free',
+    providerKey: 'openrouter',
+    modelIdentifier: 'qwen/qwen-2.5-coder-32b-instruct:free',
+    displayName: 'Qwen 2.5 Coder 32B (free)',
+    description: 'Free through OpenRouter. Tuned for code.',
+    contextWindow: 32_000,
+    maxOutputTokens: 8_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'slow',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['coding'],
+    routingPriority: 9,
+    sortOrder: 220,
   },
 ];
 
