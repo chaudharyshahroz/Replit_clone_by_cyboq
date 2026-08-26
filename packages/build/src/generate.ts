@@ -16,6 +16,7 @@ import { logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
 import { skillGuidanceFor } from './build-skills';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
+import { NPM_INSTALL_ARGS } from './install-args';
 import { withImageBytes } from './artwork';
 
 export type BuildStage =
@@ -311,7 +312,7 @@ export async function materialize(params: {
   await params.report('installing_dependencies');
   const install = await driver.exec(handle, {
     command: 'npm',
-    args: ['install', '--no-audit', '--no-fund'],
+    args: [...NPM_INSTALL_ARGS],
     /*
      * Installing is the one step that is legitimately slow, and the cost of
      * cutting it short is the whole build. A Next.js tree on a small
@@ -323,6 +324,18 @@ export async function materialize(params: {
   });
 
   if (install.exitCode !== 0) {
+    /*
+     * Logged as well as returned. It was returned only — into a panel in
+     * somebody's browser — so a failing install was invisible from the machine
+     * it happened on. Diagnosing one meant asking the person to read it back,
+     * which is exactly backwards: the server had the text and could not say it.
+     */
+    logger.error('npm install failed', {
+      sandboxId: params.sandboxId,
+      exitCode: install.exitCode,
+      output: (install.stderr || install.stdout).slice(-4_000),
+    });
+
     return {
       handle,
       installed: false,

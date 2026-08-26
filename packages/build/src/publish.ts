@@ -20,6 +20,7 @@ import { errors, loadServerEnv, logger, newId, slugify } from '@reklu/shared';
 import { loadTree } from './versions';
 import { withImageBytes } from './artwork';
 import { parseManifest } from './dev-command';
+import { NPM_INSTALL_ARGS_WITH_DEV } from './install-args';
 import { repairAliasPaths } from './repair-imports';
 import { repairMissingDependencies } from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
@@ -228,14 +229,7 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
     await input.report?.('Installing dependencies');
     const install = await driver.exec(handle, {
       command: 'npm',
-      /*
-       * `--include=dev` because the build needs them. TypeScript, Tailwind and
-       * the type packages are devDependencies in every generated app, and npm
-       * omits devDependencies whenever NODE_ENV is production — so an install
-       * that quietly did the production thing would leave the build with no
-       * compiler to run.
-       */
-      args: ['install', '--no-audit', '--no-fund', '--include=dev'],
+      args: [...NPM_INSTALL_ARGS_WITH_DEV],
       timeoutMs: 900_000,
     });
     if (install.exitCode !== 0) {

@@ -24,6 +24,7 @@ import { errors, logger, newId } from '@reklu/shared';
 import { devCommandFor, parseManifest } from './dev-command';
 import { materialize, type BuildStageReporter } from './generate';
 import { loadTree } from './versions';
+import { NPM_INSTALL_ARGS } from './install-args';
 import { withImageBytes } from './artwork';
 import type { GeneratedFile } from './parse';
 
@@ -271,13 +272,20 @@ async function reuseRunningSandbox(params: {
       await params.report?.('installing_dependencies');
       const install = await driver.exec(sandboxHandle, {
         command: 'npm',
-        args: ['install', '--no-audit', '--no-fund'],
+        args: [...NPM_INSTALL_ARGS],
         timeoutMs: 600_000,
       });
 
       if (install.exitCode !== 0) {
+        /*
+         * With the output. Without it this said only that an install had
+         * failed, and the rebuild that follows fails the same way for the same
+         * reason — so the log recorded two attempts and neither cause.
+         */
         logger.warn('Install failed in a reused sandbox; rebuilding it', {
           buildProjectId: params.buildProjectId,
+          exitCode: install.exitCode,
+          output: (install.stderr || install.stdout).slice(-4_000),
         });
         return undefined;
       }

@@ -13,5 +13,6 @@ export * from './repair-imports';
 export * from './repair-deps';
 export * from './repair-fonts';
 export * from './repair-export';
+export * from './install-args';
 export * from './artwork';
 export * from './publish';

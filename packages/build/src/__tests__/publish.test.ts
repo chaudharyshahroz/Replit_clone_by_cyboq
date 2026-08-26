@@ -210,7 +210,8 @@ describe('publishing steps', () => {
       source.indexOf("'Installing dependencies'"),
       source.indexOf("'Building for production'"),
     );
-    expect(install).toContain("'--include=dev'");
+    /* The shared arguments, which carry both --include=dev and the peer flag. */
+    expect(install).toContain('NPM_INSTALL_ARGS_WITH_DEV');
     /* And sets no environment of its own, so it stays out of production mode. */
     expect(install).not.toContain('env: {');
   });
