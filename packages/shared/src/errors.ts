@@ -333,8 +333,66 @@ function formatDate(date: Date): string {
  * Normalize anything thrown into a RekluError. Unknown throwables become
  * INTERNAL so that a stack trace never reaches the browser.
  */
+/**
+ * What a model provider said, when it is the provider that refused.
+ *
+ * An upstream rejection is not our failure and the answer is not in our logs.
+ * It is about the request — a model that does not exist on that account, a rate
+ * limit, a data policy that has to be accepted before free models are served —
+ * and every one of those is something the person can act on, none of it is
+ * secret, and none of it can be worked out by reading Reklu's code.
+ *
+ * Turning those into "something failed on our side" was the difference between
+ * a message that fixes the problem and one that starts an investigation.
+ */
+function providerRejection(thrown: unknown): RekluError | undefined {
+  const error = thrown as {
+    name?: unknown;
+    statusCode?: unknown;
+    responseBody?: unknown;
+    url?: unknown;
+    message?: unknown;
+  };
+
+  /* The AI SDK's shape for an upstream HTTP failure. */
+  if (error?.name !== 'AI_APICallError' || typeof error.statusCode !== 'number') return undefined;
+
+  /* The provider's own sentence, which is the part worth reading. */
+  let detail = typeof error.message === 'string' ? error.message : 'no detail given';
+  if (typeof error.responseBody === 'string') {
+    try {
+      const body = JSON.parse(error.responseBody) as { error?: { message?: string } };
+      if (body.error?.message) detail = body.error.message;
+    } catch {
+      /* Not JSON. The message above is what there is. */
+    }
+  }
+
+  /* The host, never the path: a URL can carry a key in a query string. */
+  let provider = 'The model provider';
+  if (typeof error.url === 'string') {
+    try {
+      provider = new URL(error.url).hostname;
+    } catch {
+      /* Unparseable, so unnamed. */
+    }
+  }
+
+  return errors.providerError({
+    provider,
+    detail,
+    userMessage: `${provider} refused the request (${error.statusCode}): ${detail.slice(0, 300)}`,
+    /* 429 and 5xx are worth trying again; a 4xx about the request is not. */
+    retryable: error.statusCode === 429 || error.statusCode >= 500,
+  });
+}
+
 export function toRekluError(thrown: unknown): RekluError {
   if (isRekluError(thrown)) return thrown;
+
+  const rejection = providerRejection(thrown);
+  if (rejection) return rejection;
+
   if (thrown instanceof Error) return errors.internal(thrown.message, thrown);
   return errors.internal(`Non-Error thrown: ${String(thrown)}`, thrown);
 }
