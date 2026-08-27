@@ -309,6 +309,8 @@ async function reuseRunningSandbox(params: {
     return {
       url: row.previewUrl,
       port: row.port ?? 0,
+      /* Reuse only happens after a liveness probe, so it is answering. */
+      ready: true,
       sandboxId: row.id,
       installed: true,
       checksPassed: null,
@@ -336,6 +338,22 @@ const READY_TIMEOUT_MS = 90_000;
  * open a preview because compilation took ninety seconds would turn a slow
  * build into a failed one.
  */
+/**
+ * The dev server's own output, from inside the container.
+ *
+ * Where the reason lives when nothing came up: a port already taken, a missing
+ * script, a compile error at boot. None of that reaches Reklu any other way.
+ */
+async function readDevLog(handle: SandboxHandle): Promise<string> {
+  const driver = sandbox();
+  const result = await driver.exec(handle, {
+    command: 'sh',
+    args: ['-c', `tail -c 8000 ${DEV_LOG_PATH} 2>/dev/null || true`],
+    timeoutMs: 10_000,
+  });
+  return (result.stdout || '').trim();
+}
+
 async function waitForServer(
   handle: SandboxHandle,
   port: number,
@@ -399,6 +417,15 @@ export interface StartPreviewResult {
   readonly port: number;
   readonly sandboxId: string;
   readonly installed: boolean;
+  /**
+   * Whether anything ever answered on the port.
+   *
+   * This was computed and discarded. A dev server that never started left the
+   * sandbox recorded as running and handed back a URL pointing at nothing — a
+   * white frame, and a bare "Bad Gateway" from the proxy when opened directly.
+   * Reklu knew, waited the full ninety seconds to find out, and said nothing.
+   */
+  readonly ready: boolean;
   readonly checksPassed: boolean | null;
   readonly output: string;
   /** False for the local driver, so the UI can keep saying so. */
@@ -629,6 +656,7 @@ export async function startPreview(params: {
         port,
         sandboxId,
         installed: false,
+        ready: false,
         checksPassed: false,
         output: materialized.output,
         isIsolated: status.isolated,
@@ -664,7 +692,22 @@ export async function startPreview(params: {
      * Asked from inside the container, so this is the server answering rather
      * than a proxy or a DNS record that may not have caught up yet.
      */
-    await waitForServer(materialized.handle, port, report);
+    const ready = await waitForServer(materialized.handle, port, report);
+
+    /*
+     * The dev server's own output, which is where the reason is. Read only on
+     * failure: on the happy path it is a compile log nobody needs.
+     */
+    let startupOutput = materialized.output;
+    if (!ready) {
+      const log = await readDevLog(materialized.handle).catch(() => '');
+      startupOutput = [materialized.output, log].filter(Boolean).join('\n\n');
+      logger.warn('The dev server never answered', {
+        buildProjectId: params.buildProjectId,
+        port,
+        log: log.slice(-2_000),
+      });
+    }
 
     await db
       .update(sandboxes)
@@ -688,8 +731,9 @@ export async function startPreview(params: {
       port,
       sandboxId,
       installed: true,
+      ready,
       checksPassed: null,
-      output: materialized.output,
+      output: startupOutput,
       isIsolated: status.isolated,
     };
   } catch (error) {

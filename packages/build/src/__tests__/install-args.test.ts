@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   describeInstallFailure,
+  describeStartupFailure,
   NPM_INSTALL_ARGS,
   NPM_INSTALL_ARGS_WITH_DEV,
 } from '../install-args';
@@ -99,5 +100,59 @@ describe('describing an install failure', () => {
       'Dependencies failed to install.',
     );
     expect(describeInstallFailure('')).toBe('Dependencies failed to install.');
+  });
+});
+
+/**
+ * Why nothing came up on the port.
+ *
+ * A dev server that never starts is the worst failure to meet: a white frame,
+ * and "Bad Gateway" from the proxy if the address is opened directly. Neither
+ * says which of a dozen things went wrong, and Reklu waited ninety seconds to
+ * find out and then said nothing.
+ */
+describe('describing a preview that never started', () => {
+  const app = ['package.json', 'app/page.tsx', 'app/layout.tsx', 'components/Hero.tsx'];
+
+  it('recognises a monorepo, which Reklu cannot run', () => {
+    /*
+     * The dev server is started at the root of the tree. In a workspace layout
+     * the application is not there — the root has a manifest and no server, so
+     * nothing listens and nothing errors either.
+     */
+    const monorepo = [
+      'package.json',
+      'apps/web/package.json',
+      'apps/web/src/pages/Home.tsx',
+      'apps/web/src/pages/Menu.tsx',
+      'apps/api/src/index.ts',
+      'packages/ui/src/Button.tsx',
+    ];
+
+    expect(describeStartupFailure('', monorepo)).toMatch(/monorepo/);
+  });
+
+  it('does not call an ordinary app a monorepo', () => {
+    // A single `apps/` file among many is not a workspace layout.
+    expect(describeStartupFailure('', app)).not.toMatch(/monorepo/);
+  });
+
+  it('recognises a port already taken', () => {
+    expect(describeStartupFailure('Error: listen EADDRINUSE :::3000', app)).toMatch(/port/);
+  });
+
+  it('recognises a missing dev script', () => {
+    expect(describeStartupFailure('npm error Missing script: "dev"', app)).toMatch(/dev script/);
+  });
+
+  it('names a module that could not be found', () => {
+    const log = "Error: Cannot find module 'next/navigation'";
+    expect(describeStartupFailure(log, app)).toContain('next/navigation');
+  });
+
+  it('falls back to the log when it recognises nothing', () => {
+    const described = describeStartupFailure('something unfamiliar', app);
+    expect(described).toMatch(/never started/);
+    expect(described).toMatch(/output is below/);
   });
 });

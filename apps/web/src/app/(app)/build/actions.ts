@@ -32,6 +32,7 @@ import {
   currentPublication,
   dnsInstructions,
   describeInstallFailure,
+  describeStartupFailure,
   drawArtwork,
   planFromResearch,
   planToPrompt,
@@ -909,6 +910,9 @@ export async function startPreviewAction(
 ): Promise<{ url: string | null; output: string; error?: string }> {
   const { workspace } = await getAppContext();
 
+  /* The layout of the tree, which is one of the reasons a server never starts. */
+  const tree = await loadTree(buildId, workspace.workspaceId);
+
   try {
     const result = await startPreview({
       buildProjectId: buildId,
@@ -930,6 +934,22 @@ export async function startPreviewAction(
         error: describeInstallFailure(result.output),
       };
     }
+    if (!result.ready) {
+      /*
+       * A URL to nothing is worse than no URL. The frame renders white and the
+       * proxy answers "Bad Gateway", and neither says which of a dozen things
+       * went wrong — so the reason is named here instead.
+       */
+      return {
+        url: null,
+        output: result.output,
+        error: describeStartupFailure(
+          result.output,
+          tree.map((file) => file.path),
+        ),
+      };
+    }
+
     return { url: result.url, output: result.output };
   } catch (error) {
     if (isRekluError(error)) return { url: null, output: '', error: error.userMessage };

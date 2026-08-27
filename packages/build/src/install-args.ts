@@ -86,3 +86,48 @@ export function describeInstallFailure(output: string): string {
 
   return generic;
 }
+
+/**
+ * Why nothing came up on the port.
+ *
+ * A dev server that never starts is the worst failure to meet, because there is
+ * nothing to look at: a white frame, and "Bad Gateway" from the proxy if the
+ * address is opened directly. Neither says which of a dozen things went wrong.
+ *
+ * The cases here are the ones that have happened. Anything else keeps the plain
+ * message and the log beneath it, which is the honest answer when the log is
+ * all there is.
+ */
+export function describeStartupFailure(log: string, paths: readonly string[]): string {
+  /*
+   * A workspace layout, which Reklu cannot run. The dev server is started at
+   * the root of the tree, and in a monorepo the application is not there — the
+   * root has a workspace manifest and no server to start, so nothing listens
+   * and nothing errors either.
+   */
+  const nested = paths.filter((path) => /^(apps|packages)\//.test(path)).length;
+  if (nested > paths.length / 2 && paths.length > 4) {
+    return (
+      'The preview server never started: this build is laid out as a monorepo, ' +
+      'with the application under apps/. Reklu runs one application at the root ' +
+      'of the tree. Ask for it as a single app rather than a workspace.'
+    );
+  }
+
+  if (/EADDRINUSE/.test(log)) {
+    return 'The preview server never started: the port was already taken inside the sandbox.';
+  }
+
+  if (/Missing script|command not found|ENOENT.*package\.json/i.test(log)) {
+    return 'The preview server never started: package.json has no dev script to run.';
+  }
+
+  if (/Cannot find module|Module not found/.test(log)) {
+    const missing = /Cannot find module '([^']+)'/.exec(log)?.[1];
+    return missing
+      ? `The preview server never started: it could not find ${missing}.`
+      : 'The preview server never started: a module it imports does not exist.';
+  }
+
+  return 'The preview server never started. Its output is below.';
+}

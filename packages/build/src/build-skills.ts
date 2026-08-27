@@ -39,6 +39,7 @@ export const CORE_ENGINEERING: BuildSkill = {
   name: 'Engineering standards',
   summary: 'What separates a working application from a demo.',
   guidance: [
+    'One application, at the root of the tree. package.json, the config files and the source all live at the top level — no apps/, no packages/, no workspaces. Reklu runs the dev server at the root, and a workspace root has no server to start, so nothing listens and nothing errors either.',
     'TypeScript strict. No `any` that a real type would replace.',
     'Every list has an empty state, every fetch has a loading and an error state.',
     'Validate anything that crosses a boundary — form input, route params, API responses.',
