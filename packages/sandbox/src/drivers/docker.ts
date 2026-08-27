@@ -29,6 +29,7 @@
  * The Docker socket is never mounted into the container. That would hand
  * generated code the daemon, which is equivalent to handing it root.
  */
+import { createHash } from 'node:crypto';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
 import { createTar, extractTar } from '../tar';
@@ -209,8 +210,16 @@ async function createContainer(
   config: unknown,
   image: string,
   name: string,
+  verified: Set<string>,
 ): Promise<{ Id: string }> {
   const path = `/containers/create?name=${encodeURIComponent(name)}`;
+
+  /*
+   * Checked before the container is created rather than after it fails, because
+   * an out-of-date image does not fail — it runs, and produces a build that
+   * breaks later for a reason the image would explain.
+   */
+  await ensureImageCurrent(target, image, verified);
 
   try {
     const response = await dockerRequest(target, 'POST', path, { json: config });
@@ -403,6 +412,80 @@ function repositoryOf(image: string): string {
 }
 
 /**
+ * A fingerprint of the image definition, carried by the image itself.
+ *
+ * The image was rebuilt only when it was missing, so a change to its definition
+ * reached a host only if somebody read a release note and ran a build by hand.
+ * Adding Python and a compiler to it fixed nothing on any machine until that
+ * happened — which is a fix that is not deployed, and indistinguishable from
+ * one that does not work.
+ *
+ * The definition is hashed and the hash is baked in as a label. An image whose
+ * label does not match what this code expects is not the image this code means,
+ * and is rebuilt. Nobody has to notice anything.
+ */
+const SANDBOX_VERSION = createHash('sha256')
+  .update(SANDBOX_DOCKERFILE)
+  .digest('hex')
+  .slice(0, 12);
+
+const VERSION_LABEL = 'com.reklu.sandbox-version';
+
+/**
+ * Make sure the image on this host is the one this code describes.
+ *
+ * Missing and outdated are the same problem with the same answer, so they take
+ * the same path — and neither is an error to report, because nothing has gone
+ * wrong. An image is simply built when it needs to be.
+ */
+async function ensureImageCurrent(
+  target: DockerTarget,
+  image: string,
+  /**
+   * Images this driver has already confirmed, so the check costs one call
+   * rather than one per container.
+   *
+   * Held by the driver rather than by the module: two drivers can point at two
+   * different daemons, and an image verified on one says nothing about the
+   * other. A module-level cache would have one host's answer silently satisfy
+   * the other's question.
+   */
+  verified: Set<string>,
+): Promise<void> {
+  if (repositoryOf(image) !== BUILT_LOCALLY) return;
+  if (verified.has(image)) return;
+
+  try {
+    const response = await dockerRequest(target, 'GET', `/images/${encodeURIComponent(image)}/json`);
+    const inspected = JSON.parse(response.body.toString('utf8')) as {
+      Config?: { Labels?: Record<string, string> };
+    };
+
+    if (inspected.Config?.Labels?.[VERSION_LABEL] === SANDBOX_VERSION) {
+      verified.add(image);
+      return;
+    }
+
+    logger.info('The sandbox image is out of date; rebuilding it', {
+      image,
+      expected: SANDBOX_VERSION,
+      found: inspected.Config?.Labels?.[VERSION_LABEL] ?? 'none',
+    });
+  } catch (error) {
+    /*
+     * A 404 here is an image that does not exist yet, which is the same answer.
+     * Anything else is a daemon that cannot be asked, and the create call that
+     * follows will fail with a better message than this one could.
+     */
+    if (!(error instanceof DockerError && error.status === 404)) return;
+    logger.info('The sandbox image is missing; building it', { image });
+  }
+
+  await buildSandboxImage(target, image);
+  verified.add(image);
+}
+
+/**
  * Put the image back, by whichever route can actually work.
  *
  * A prune takes the image and the person who ran it has no idea a build
@@ -430,7 +513,17 @@ async function restoreImage(target: DockerTarget, image: string): Promise<void> 
  * repository and no shell on the host.
  */
 async function buildSandboxImage(target: DockerTarget, image: string): Promise<void> {
-  const context = createTar([{ path: 'Dockerfile', content: SANDBOX_DOCKERFILE }]);
+  /*
+   * The version label is added here rather than written into the definition,
+   * because the definition is what the version is a hash of — including it
+   * would make the hash depend on itself.
+   */
+  const context = createTar([
+    {
+      path: 'Dockerfile',
+      content: `${SANDBOX_DOCKERFILE}\nLABEL ${VERSION_LABEL}="${SANDBOX_VERSION}"\n`,
+    },
+  ]);
 
   const response = await dockerRequest(
     target,
@@ -530,6 +623,13 @@ function wrap(stage: string, error: unknown): never {
 
 export function createDockerSandboxDriver(options: DockerDriverOptions): SandboxDriver {
   const target: DockerTarget = { host: options.host };
+
+  /*
+   * Which images this driver has confirmed are the ones this code describes.
+   * Per driver, because two of them can point at two different daemons and an
+   * image verified on one says nothing about the other.
+   */
+  const verifiedImages = new Set<string>();
 
   return {
     name: 'docker',
@@ -641,7 +741,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
          */
         await ensureNetwork(target, options.network);
 
-        created = await createContainer(target, config, options.image, containerName(id));
+        created = await createContainer(target, config, options.image, containerName(id), verifiedImages);
         await dockerRequest(target, 'POST', `/containers/${created.Id}/start`);
       } catch (error) {
         wrap('container creation', error);

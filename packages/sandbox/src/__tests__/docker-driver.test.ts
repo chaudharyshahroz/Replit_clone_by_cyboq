@@ -821,3 +821,108 @@ describe('naming a container', () => {
     expect(names[0]).not.toBe(names[1]);
   });
 });
+
+/**
+ * Keeping the image current without anybody being told to.
+ *
+ * It was rebuilt only when missing, so a change to its definition reached a
+ * host only if somebody read a release note and ran a build by hand. Adding
+ * Python and a compiler to it fixed nothing anywhere until that happened —
+ * which is a fix that is not deployed, and indistinguishable from one that does
+ * not work.
+ */
+describe('keeping the sandbox image current', () => {
+  /*
+   * A fresh driver per test, because the record of which images have been
+   * confirmed belongs to the driver — two of them can point at two different
+   * daemons, and one host's answer must not satisfy the other's question.
+   */
+  const freshDriver = () =>
+    createDockerSandboxDriver({
+      host: 'tcp://10.0.0.5:2375',
+      image: 'reklu-sandbox:latest',
+      network: 'reklu-sandbox',
+      previewHost: 'builds.example.com',
+    });
+
+  /** Answer an image inspect with the given labels, and record every call. */
+  function daemonWithLabels(labels: Record<string, string> | 'missing') {
+    dockerRequest.mockImplementation(async (_t: unknown, _m: unknown, path: unknown) => {
+      const route = String(path);
+
+      if (route.includes('/images/') && route.endsWith('/json')) {
+        if (labels === 'missing') throw new DockerError(404, 'no such image');
+        return { status: 200, body: Buffer.from(JSON.stringify({ Config: { Labels: labels } })) };
+      }
+      if (route.startsWith('/build')) return { status: 200, body: Buffer.from('{"stream":"ok"}') };
+      return { status: 200, body: Buffer.from(JSON.stringify({ Id: 'container-1' })) };
+    });
+  }
+
+  const builds = () =>
+    dockerRequest.mock.calls.filter((args) => String(args[2]).startsWith('/build'));
+
+  it('rebuilds an image whose definition has changed', async () => {
+    daemonWithLabels({ 'com.reklu.sandbox-version': 'an-older-hash' });
+
+    await freshDriver().create('sbx_1', DEFAULT_LIMITS);
+
+    expect(builds()).toHaveLength(1);
+    /* The version travels in the image, so the next run can compare against it. */
+    const context = (builds()[0]?.[3] as { body: Buffer }).body.toString('utf8');
+    expect(context).toContain('com.reklu.sandbox-version');
+  });
+
+  it('builds an image that is not there at all', async () => {
+    // Missing and outdated are the same problem with the same answer.
+    daemonWithLabels('missing');
+
+    await freshDriver().create('sbx_1', DEFAULT_LIMITS);
+    expect(builds()).toHaveLength(1);
+  });
+
+  it('leaves a current image alone', async () => {
+    /*
+     * The check runs before every container, so an unnecessary rebuild here
+     * would cost minutes on every preview.
+     */
+    daemonWithLabels('missing');
+    await freshDriver().create('sbx_warm', DEFAULT_LIMITS);
+    const context = (builds()[0]?.[3] as { body: Buffer }).body.toString('utf8');
+    const version = /com\.reklu\.sandbox-version="([a-f0-9]+)"/.exec(context)?.[1];
+
+    expect(version).toBeTruthy();
+
+    dockerRequest.mockClear();
+    daemonWithLabels({ 'com.reklu.sandbox-version': version! });
+
+    await freshDriver().create('sbx_2', DEFAULT_LIMITS);
+    expect(builds()).toHaveLength(0);
+  });
+
+  it('asks only once however many containers it creates', async () => {
+    daemonWithLabels({ 'com.reklu.sandbox-version': 'stale' });
+    const reused = freshDriver();
+
+    await reused.create('sbx_1', DEFAULT_LIMITS);
+    dockerRequest.mockClear();
+    daemonWithLabels({ 'com.reklu.sandbox-version': 'stale' });
+    await reused.create('sbx_2', DEFAULT_LIMITS);
+
+    /* Already settled for this driver; a second look would be a wasted call. */
+    expect(builds()).toHaveLength(0);
+  });
+
+  it('does not inspect an image it did not build', async () => {
+    /* A registry image is somebody else's; its contents are not ours to check. */
+    dockerRequest.mockClear();
+    daemonWithLabels({ 'com.reklu.sandbox-version': 'irrelevant' });
+
+    await driver.create('sbx_1', DEFAULT_LIMITS);
+
+    const inspects = dockerRequest.mock.calls.filter(
+      (args) => String(args[2]).includes('/images/') && String(args[2]).endsWith('/json'),
+    );
+    expect(inspects).toHaveLength(0);
+  });
+});

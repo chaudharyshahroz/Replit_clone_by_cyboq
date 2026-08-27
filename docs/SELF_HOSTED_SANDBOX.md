@@ -104,8 +104,15 @@ The image also carries Python, make and a C++ compiler. A generated app
 sometimes depends on a native module — `better-sqlite3` is the one that turned
 up — and without a toolchain npm runs node-gyp, node-gyp finds no Python, and
 the install fails with forty lines of gyp output that say nothing about the
-application. **An image built before this was added will keep failing that way,
-so rebuild after upgrading.**
+application. **Reklu keeps this image current by itself.** The definition is hashed and the
+hash is baked in as a label; an image whose label does not match what the code
+expects is rebuilt before the next container is created. A change to the
+definition therefore reaches a host by deploying, not by somebody reading a
+release note and running a build by hand — which is a fix that is not deployed,
+and indistinguishable from one that does not work.
+
+The command above is still the way to bootstrap a host quickly, or to rebuild
+deliberately. It is no longer something to remember.
 
 Rebuild it every few months. A stale cache is not wrong, only less useful — npm
 fetches whatever is missing.
