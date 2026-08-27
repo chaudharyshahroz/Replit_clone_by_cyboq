@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { THEME_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -31,6 +32,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Before the first paint. A theme applied from a component runs after
+          hydration, by which time the wrong one has already been shown — and a
+          flash of the opposite theme is the most noticeable bug a theme switch
+          can have.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-dvh antialiased">
         {/* Spec §99: keyboard users should be able to skip repeated navigation. */}
         <a

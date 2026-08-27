@@ -718,6 +718,35 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### Light mode ✅ — 4 tests
+
+Reklu was dark only. The light tokens already existed and were complete —
+declared as their own set rather than patched into the dark ones — so this was
+a switch rather than a palette.
+
+Three settings, not two: somebody whose machine changes at sunset wants Reklu to
+change with it, and somebody who has chosen wants that choice to survive.
+`system` is the default and follows the machine live, because a preference
+already expressed elsewhere should not have to be expressed again.
+
+Applied by an inline script in the head, before the first paint. A theme applied
+from a component runs after hydration, by which point the wrong one has been
+shown — and a flash of the opposite theme is the most noticeable bug a theme
+switch can have. The script is tiny and defensive: a browser with storage
+disabled throws on read, and a theme script that throws leaves the page
+unstyled.
+
+Light's surface ramp was wrong and looking at it is what found it: `surface` and
+`surface-raised` were both pure white, which flattened every component that
+distinguishes them — a raised panel sat invisibly on the panel it was raised
+above, and the selected item in a group looked unselected. Light now has four
+steps like dark, on the same rule: raised is further from the canvas.
+
+A test holds the two blocks to the same token names. What each name means is a
+design decision; that both exist is not — and a colour declared in one theme
+and not the other looks right until somebody switches, then keeps the value from
+the theme it was written in.
+
 ### Market research before a build ✅ — 6 tests
 
 Asked for a coffee shop landing page, a model writes the coffee shop landing

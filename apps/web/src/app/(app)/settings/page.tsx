@@ -5,6 +5,7 @@ import { ChevronRight, CreditCard, Gauge, Plug, SlidersHorizontal } from 'lucide
 import { db, plans, subscriptions, type PlanLimits } from '@reklu/database';
 import { describeAllProviders, listConnections } from '@reklu/integrations';
 import { getAppContext } from '@/lib/auth-context';
+import { ThemeSwitch } from '@/components/app/theme-switch';
 
 export const metadata: Metadata = { title: 'Settings' };
 
@@ -40,6 +41,20 @@ export default async function SettingsPage() {
           What this workspace is on and what it can reach.
         </p>
       </header>
+
+      {/* ---- Appearance ---------------------------------------------------- */}
+      <section className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-text">Appearance</h2>
+            <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+              Kept in this browser. System follows whatever your machine is set to, and changes
+              with it.
+            </p>
+          </div>
+          <ThemeSwitch />
+        </div>
+      </section>
 
       {/* ---- Plan ---------------------------------------------------------- */}
       <section className="mt-8">

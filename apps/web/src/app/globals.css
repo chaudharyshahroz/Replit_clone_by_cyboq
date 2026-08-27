@@ -69,10 +69,20 @@
 [data-theme='light'] {
   color-scheme: light;
 
-  --canvas: #fbfbfa;
-  --surface: #ffffff;
+  /*
+   * Four steps, as dark has. `surface` and `surface-raised` were both pure
+   * white, which flattened every component that distinguishes them — a raised
+   * panel sat invisibly on the panel it was raised above, and the selected
+   * item in a group looked unselected.
+   *
+   * The rule is the same in both themes: raised is further from the canvas.
+   * Dark moves toward light and light moves toward white, which is why the
+   * ramp reads the same way in each without being a mirror of the other.
+   */
+  --canvas: #f6f6f4;
+  --surface: #fbfbfa;
   --surface-raised: #ffffff;
-  --surface-hover: #f4f4f2;
+  --surface-hover: #efefec;
 
   --border: #e6e6e2;
   --border-strong: #d4d4ce;
