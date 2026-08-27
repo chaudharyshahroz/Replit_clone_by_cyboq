@@ -32,6 +32,10 @@ import {
   currentPublication,
   dnsInstructions,
   drawArtwork,
+  planFromResearch,
+  planToPrompt,
+  researchQuestion,
+  type SitePlan,
   type ArtworkRequest,
   publicUrl,
   publishAvailability,
@@ -50,6 +54,7 @@ import { listConnections } from '@reklu/integrations';
 import { sandboxStatus } from '@reklu/sandbox';
 import { errors, isRekluError, logger, newId, slugify, toRekluError } from '@reklu/shared';
 import { findStockImage, generateImage } from '@reklu/create';
+import { createWebAdapter, runResearch, SEARCH_PROVIDER_ENV } from '@reklu/research';
 import { getAppContext } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
 import { storage } from '@reklu/storage';
@@ -526,9 +531,94 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     user.id,
   );
 
+  /*
+   * What comparable sites do, before deciding what this one should.
+   *
+   * Only on a first build. An edit already has a site with a shape; researching
+   * the trade again would spend a minute and several searches to rediscover
+   * decisions that are sitting in the files.
+   */
+  let plan: SitePlan | undefined;
+
+  if (existing.length === 0) {
+    const web = createWebAdapter();
+
+    if (!web.isConfigured()) {
+      /*
+       * Said once, plainly, and then the build continues. A site nobody
+       * researched is worth more than no site, and inventing competitors to
+       * fill the gap would be worse than either.
+       */
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'say',
+        message:
+          'Building without market research: no web search provider is configured. ' +
+          `Set ${Object.values(SEARCH_PROVIDER_ENV).join(' or ')} to have Reklu study ` +
+          'comparable sites first.',
+      });
+    } else {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message: 'Studying how the best sites in this trade are built',
+      });
+
+      try {
+        const outcome = await runResearch({
+          query: researchQuestion(brief),
+          mode: 'research',
+          model,
+          adapters: [web],
+          report: async (stage) => {
+            await recordStep({
+              buildId,
+              workspaceId: workspace.workspaceId,
+              kind: 'stage',
+              message: stage.replace(/_/g, ' '),
+            });
+          },
+        });
+
+        /* The findings, with their real citations, shown to whoever asked. */
+        if (outcome.report.trim()) {
+          await recordStep({
+            buildId,
+            workspaceId: workspace.workspaceId,
+            kind: 'say',
+            message: outcome.report.slice(0, 8_000),
+          });
+        }
+
+        plan = await planFromResearch({ brief, report: outcome.report, model });
+
+        if (plan) {
+          await recordStep({
+            buildId,
+            workspaceId: workspace.workspaceId,
+            kind: 'stage',
+            message: `Planned ${plan.pages.length} page${plan.pages.length === 1 ? '' : 's'} from ${outcome.sourcesUsed} source${outcome.sourcesUsed === 1 ? '' : 's'}`,
+          });
+        }
+      } catch (error) {
+        /*
+         * Research is an improvement to a build, not a precondition for one.
+         * A search provider that is down must not cost somebody their site.
+         */
+        logger.warn('Market research failed; building from the brief alone', {
+          buildId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   const generated = await generateFiles({
     brief,
-    prompt,
+    /* The plan leads, because it is the part derived from evidence. */
+    prompt: plan ? `${planToPrompt(plan)}\n\n---\n\n${prompt}` : prompt,
     images,
     model,
     existingFiles: existing,

@@ -718,6 +718,35 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### Market research before a build ✅ — 6 tests
+
+Asked for a coffee shop landing page, a model writes the coffee shop landing
+page it has always written: hero, three cards, a form. It does not know what the
+good ones in that trade do — that a neighbourhood cafe lives on hours and a map,
+that a menu people can read beats a menu people download.
+
+A first build now researches the trade before deciding anything, through the
+existing research pipeline. That routing is deliberate: the pipeline carries
+real sources and strips citation markers a model invented, so the findings
+cannot be fabricated competitors. Asking a model directly what competitors do
+would produce exactly that.
+
+What comes back is turned into a plan rather than left as prose — pages,
+sections in the order a visitor needs them, and a direction for how the site
+should feel. The plan leads the generation prompt, because it is the part
+derived from evidence. `theme` describes a feeling and its consequences and
+never hex codes; the design standards choose colour, and what they need from
+research is direction.
+
+The report itself is shown in the build log with its citations, so the reasoning
+is visible rather than implied.
+
+Only on a first build. An edit already has a site with a shape, and researching
+the trade again would spend a minute rediscovering decisions sitting in the
+files. Without a search provider it says so, naming the variables, and builds
+anyway — a site nobody researched is worth more than no site, and a search
+provider that is down must not cost somebody their build.
+
 ### Build skills — design, App Router rules, imagery, performance
 
 `VISUAL_DESIGN` addresses a specific, recognisable failure: generated sites
