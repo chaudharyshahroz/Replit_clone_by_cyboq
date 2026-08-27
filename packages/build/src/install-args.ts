@@ -39,3 +39,50 @@ export const NPM_INSTALL_ARGS_WITH_DEV: readonly string[] = [
   ...NPM_INSTALL_ARGS,
   '--include=dev',
 ];
+
+/**
+ * What an npm failure was actually about.
+ *
+ * npm's output is long and the reason is rarely at the end of it. A native
+ * module that could not compile prints forty lines of node-gyp before anything
+ * names the package, and "Dependencies failed to install" above that tells the
+ * reader only that they now have forty lines to read.
+ *
+ * Each case here is one that has actually happened, and each names the cause in
+ * a sentence. Anything unrecognised keeps the plain message — a guess dressed
+ * as a diagnosis is worse than no diagnosis.
+ */
+export function describeInstallFailure(output: string): string {
+  const generic = 'Dependencies failed to install.';
+  if (!output) return generic;
+
+  /* node-gyp could not find Python, or there were no prebuilt binaries. */
+  if (/gyp ERR!|prebuild-install warn install No prebuilt binaries/.test(output)) {
+    const pkg = /npm error path .*node_modules\/([^\s/]+)/.exec(output)?.[1];
+    return pkg
+      ? `Dependencies failed to install: ${pkg} has to be compiled and the build toolchain is missing. Rebuild the sandbox image, or ask for a version of the app that does not use ${pkg}.`
+      : 'Dependencies failed to install: a dependency has to be compiled and the build toolchain is missing. Rebuild the sandbox image.';
+  }
+
+  /* An unresolvable peer tree, which is what a mismatched linter config gives. */
+  if (/ERESOLVE|peer dep/i.test(output)) {
+    return 'Dependencies failed to install: two packages disagree about a shared dependency.';
+  }
+
+  if (/ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET/.test(output)) {
+    return 'Dependencies failed to install: the npm registry could not be reached.';
+  }
+
+  if (/ENOSPC|no space left/i.test(output)) {
+    return 'Dependencies failed to install: the sandbox host has run out of disk space.';
+  }
+
+  if (/404 Not Found.*npm error 404/s.test(output) || /npm error 404/.test(output)) {
+    const pkg = /npm error 404\s+'([^']+)'/.exec(output)?.[1];
+    return pkg
+      ? `Dependencies failed to install: the package ${pkg} does not exist.`
+      : 'Dependencies failed to install: a package in package.json does not exist.';
+  }
+
+  return generic;
+}

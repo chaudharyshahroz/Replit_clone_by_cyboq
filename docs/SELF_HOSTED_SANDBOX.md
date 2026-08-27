@@ -100,6 +100,13 @@ write to it, so nothing one build installs can reach the next. That is what
 makes it safe to share, and why it is a cache rather than a pre-installed
 `node_modules`.
 
+The image also carries Python, make and a C++ compiler. A generated app
+sometimes depends on a native module — `better-sqlite3` is the one that turned
+up — and without a toolchain npm runs node-gyp, node-gyp finds no Python, and
+the install fails with forty lines of gyp output that say nothing about the
+application. **An image built before this was added will keep failing that way,
+so rebuild after upgrading.**
+
 Rebuild it every few months. A stale cache is not wrong, only less useful — npm
 fetches whatever is missing.
 

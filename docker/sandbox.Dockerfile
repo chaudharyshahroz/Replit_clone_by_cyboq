@@ -24,6 +24,18 @@ FROM node:22-bookworm-slim
 # label is what `--filter "label!=com.reklu.keep=true"` matches on.
 LABEL com.reklu.keep="true"
 
+# Python and a compiler, because a generated app sometimes depends on a native
+# module. `better-sqlite3` is the one that turned up: npm runs node-gyp, node-gyp
+# looks for Python, finds none, and the install fails with a wall of gyp output
+# that says nothing about the application. The image is a few hundred megabytes
+# larger and the failure is gone — and it only costs compile time when a package
+# actually needs it, which is rare.
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+USER node
+
 # npm reads its cache from here, and this path is owned by the build user.
 ENV NPM_CONFIG_CACHE=/home/node/.npm
 

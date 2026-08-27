@@ -14,7 +14,11 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { NPM_INSTALL_ARGS, NPM_INSTALL_ARGS_WITH_DEV } from '../install-args';
+import {
+  describeInstallFailure,
+  NPM_INSTALL_ARGS,
+  NPM_INSTALL_ARGS_WITH_DEV,
+} from '../install-args';
 
 describe('install arguments', () => {
   it('accepts a peer tree npm would refuse', () => {
@@ -42,5 +46,58 @@ describe('install arguments', () => {
       expect(installs, `${file} builds an install by hand`).toEqual([]);
       expect(source).toMatch(/NPM_INSTALL_ARGS/);
     }
+  });
+});
+
+/**
+ * What an install failure is reported as.
+ *
+ * npm's output is long and the reason is rarely at the end of it. A native
+ * module that will not compile prints forty lines of node-gyp before anything
+ * names the package, and "Dependencies failed to install" above that tells the
+ * reader only that they have forty lines to read. Each case below is one that
+ * has actually happened here.
+ */
+describe('describing an install failure', () => {
+  it('names the package that needed compiling', () => {
+    const gyp = [
+      'npm error code 1',
+      'npm error path /home/node/app/node_modules/better-sqlite3',
+      'npm error command sh -c prebuild-install || node-gyp rebuild --release',
+      'npm error gyp ERR! find Python',
+      'npm error gyp ERR! stack Error: Could not find any Python installation to use',
+    ].join('\n');
+
+    const described = describeInstallFailure(gyp);
+    expect(described).toContain('better-sqlite3');
+    expect(described).toMatch(/compiled/);
+  });
+
+  it('recognises a peer conflict', () => {
+    const eresolve = 'npm error ERESOLVE could not resolve\nnpm error peer eslint@"^8.0.0"';
+    expect(describeInstallFailure(eresolve)).toMatch(/disagree/);
+  });
+
+  it('recognises a registry that could not be reached', () => {
+    expect(describeInstallFailure('npm error network ENOTFOUND registry.npmjs.org')).toMatch(
+      /registry/,
+    );
+  });
+
+  it('recognises a full disk', () => {
+    expect(describeInstallFailure('npm error ENOSPC: no space left on device')).toMatch(/disk/);
+  });
+
+  it('recognises a package that does not exist', () => {
+    const missing = "npm error 404 Not Found - GET https://registry.npmjs.org/nope\nnpm error 404  'nope@1.0.0' is not in this registry.";
+    expect(describeInstallFailure(missing)).toMatch(/does not exist/);
+  });
+
+  it('keeps the plain message for anything it does not recognise', () => {
+    /* A guess dressed as a diagnosis is worse than no diagnosis. */
+    expect(describeInstallFailure('npm error something entirely new')).toBe(
+      'Dependencies failed to install.',
+    );
+    expect(describeInstallFailure('')).toBe('Dependencies failed to install.');
   });
 });

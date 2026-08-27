@@ -31,6 +31,7 @@ import {
   buildFailureDetail,
   currentPublication,
   dnsInstructions,
+  describeInstallFailure,
   drawArtwork,
   planFromResearch,
   planToPrompt,
@@ -922,7 +923,12 @@ export async function startPreviewAction(
 
     if (!result.installed) {
       // Dependencies failing is a real, readable failure — not a generic error.
-      return { url: null, output: result.output, error: 'Dependencies failed to install.' };
+      return {
+        url: null,
+        output: result.output,
+        /* The cause, where npm's own output names one. */
+        error: describeInstallFailure(result.output),
+      };
     }
     return { url: result.url, output: result.output };
   } catch (error) {

@@ -373,6 +373,11 @@ const BUILT_LOCALLY = 'reklu-sandbox';
 const SANDBOX_DOCKERFILE = `
 FROM node:22-bookworm-slim
 LABEL com.reklu.keep="true"
+USER root
+RUN apt-get update \\
+  && apt-get install -y --no-install-recommends python3 make g++ \\
+  && rm -rf /var/lib/apt/lists/*
+USER node
 ENV NPM_CONFIG_CACHE=/home/node/.npm
 USER node
 WORKDIR /home/node

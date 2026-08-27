@@ -47,6 +47,8 @@ export const CORE_ENGINEERING: BuildSkill = {
     'Accessible by construction: labelled controls, keyboard reachable, visible focus, contrast that passes.',
     'A web font must exist and must publish the weights you ask for. Only request weights you are certain of — 400 and 700 are safe — or use a system font stack. A page that does not compile is worth less than a plain one.',
     'Name things for what they do in the product, not for the pattern they use.',
+    'Prefer a dependency that is plain JavaScript. A package that compiles C++ at install time — better-sqlite3, sqlite3, canvas, node-sass, bcrypt — needs a toolchain, adds minutes to every install, and fails on machines that do not have one. Use bcryptjs over bcrypt, and a hosted database over an embedded one.',
+    'Persist to a real database only when the brief asks for one. A marketing site that stores a contact form submission needs an API route and a service, not a database engine embedded in the application.',
   ],
 };
 
