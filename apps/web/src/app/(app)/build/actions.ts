@@ -131,6 +131,15 @@ export async function createBuildAction(
 ): Promise<BuildFormState> {
   const { user, workspace } = await getAppContext();
   const prompt = String(formData.get('prompt') ?? '').trim();
+  /*
+   * The model chosen on the form, honoured here as well as at generation.
+   *
+   * The brief decides the target, the stack and the pages, and it was always
+   * written by whichever model `pickModel` preferred — so choosing one and
+   * watching a different vendor's key be spent on the first call was a real
+   * observation, not a misreading.
+   */
+  const requestedModel = String(formData.get('modelKey') ?? '').trim() || undefined;
 
   if (prompt.length < 8) {
     return { error: 'Describe what you want built in a little more detail.' };
@@ -144,7 +153,7 @@ export async function createBuildAction(
   let buildId: string;
 
   try {
-    const model = await pickModel();
+    const model = await pickModel(requestedModel);
     const { brief, usedFallback } = await generateBrief({ prompt, model });
 
     buildId = newId('build');

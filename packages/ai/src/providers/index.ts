@@ -102,6 +102,17 @@ export function getProvider(providerKey: string): AIProvider | undefined {
 
     case 'openrouter':
       if (env.OPENROUTER_API_KEY) {
+        const openrouter = createOpenAI({
+          apiKey: env.OPENROUTER_API_KEY,
+          baseURL: env.OPENROUTER_BASE_URL,
+          /*
+           * OpenRouter attributes traffic by these, and uses them to decide
+           * whether a request may use the free tier at all. They identify the
+           * application, never the person using it.
+           */
+          headers: { 'HTTP-Referer': env.APP_URL, 'X-Title': 'Reklu' },
+        });
+
         provider = createVendorAdapter({
           key: 'openrouter',
           displayName: 'OpenRouter',
@@ -111,25 +122,24 @@ export function getProvider(providerKey: string): AIProvider | undefined {
            * a property of that model's row in the registry.
            */
           capabilities: FULL,
-          model: createOpenAI({
-            apiKey: env.OPENROUTER_API_KEY,
-            baseURL: env.OPENROUTER_BASE_URL,
-            /*
-             * OpenRouter attributes traffic by these, and uses them to decide
-             * whether a request may use the free tier at all. They identify the
-             * application, never the person using it.
-             */
-            headers: {
-              'HTTP-Referer': env.APP_URL,
-              'X-Title': 'Reklu',
-            },
-          }),
+          /*
+           * Chat Completions explicitly, not the SDK's default.
+           *
+           * `openai(id)` resolves to the Responses API, which is OpenAI's own
+           * newer surface. An OpenAI-*compatible* provider implements Chat
+           * Completions — that is what compatible means — and may or may not
+           * have Responses. Sending the wrong one produces a 404 from a host
+           * that is working perfectly, about a model that exists.
+           */
+          model: (id: string) => openrouter.chat(id),
         });
       }
       break;
 
     case 'bai':
       if (env.BAI_API_KEY) {
+        const bai = createOpenAI({ apiKey: env.BAI_API_KEY, baseURL: env.BAI_BASE_URL });
+
         provider = createVendorAdapter({
           key: 'bai',
           displayName: 'B.AI',
@@ -139,10 +149,8 @@ export function getProvider(providerKey: string): AIProvider | undefined {
            * one of these reads images and the rest do not.
            */
           capabilities: FULL,
-          model: createOpenAI({
-            apiKey: env.BAI_API_KEY,
-            baseURL: env.BAI_BASE_URL,
-          }),
+          /* Chat Completions, for the reason given on OpenRouter above. */
+          model: (id: string) => bai.chat(id),
         });
       }
       break;
