@@ -595,6 +595,9 @@ importers:
       '@reklu/database':
         specifier: workspace:*
         version: link:../database
+      '@reklu/integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@reklu/projects':
         specifier: workspace:*
         version: link:../projects

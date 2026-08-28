@@ -61,7 +61,9 @@ import {
   linkCitations,
   runResearch,
   type StageReporter,
+  createGoogleDriveAdapter,
 } from '@reklu/research';
+import { listConnections } from '@reklu/integrations';
 import { buildProjects, researchSessions } from '@reklu/database';
 
 export const runtime = 'nodejs';
@@ -510,6 +512,7 @@ export async function POST(request: Request): Promise<Response> {
                 workspaceId: access.workspaceId,
                 projectId: projectId ?? null,
               }),
+              ...(await connectedSourceAdapters(access.workspaceId)),
             ].filter((adapter) => adapter.isConfigured());
 
             if (adapters.length === 0) {
@@ -833,4 +836,30 @@ async function loadHistory(conversationId: string): Promise<ModelMessage[]> {
       role: row.role as 'user' | 'assistant',
       content: [{ type: 'text' as const, text: row.contentText ?? '' }],
     }));
+}
+
+/**
+ * Adapters for whatever this workspace has connected.
+ *
+ * A connector that connects and does nothing is a dead button. Reading them
+ * here is what makes connecting Google mean something: a question can be
+ * answered out of somebody's own documents rather than only out of the web.
+ *
+ * Built per request. A connection belongs to a workspace and its token is
+ * refreshed on read — a cached adapter would eventually be holding somebody
+ * else's Drive, which is the worst bug this feature could have.
+ */
+async function connectedSourceAdapters(workspaceId: string) {
+  try {
+    const connections = await listConnections(workspaceId);
+
+    return connections
+      .filter((connection) => connection.provider === 'google' && connection.status === 'connected')
+      .map((connection) =>
+        createGoogleDriveAdapter({ connectionId: connection.id, workspaceId }),
+      );
+  } catch {
+    /* A connection that cannot be read is one fewer source, not a failed run. */
+    return [];
+  }
 }

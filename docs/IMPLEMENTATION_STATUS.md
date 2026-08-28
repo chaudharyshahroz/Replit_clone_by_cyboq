@@ -718,6 +718,36 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### The Google connector ✅ — 7 tests
+
+The kind of connector other assistants offer: sign in with Google, and Reklu can
+read your own documents. It is a different OAuth client from Google sign-in,
+because one needs to know who somebody is and the other needs to read their
+files — bundling them would ask for Drive access from anybody who wanted a login
+button.
+
+Every scope is a `.readonly` variant. A mistake in Reklu, or a model asked to
+tidy somebody's Drive, cannot delete a document — and that is a property of the
+grant rather than of this code being careful.
+
+Two details that decide whether the connection survives the day. Google issues a
+refresh token only for an offline request and only on first consent, so the
+authorize URL sets `access_type=offline` and `prompt=consent`; without them a
+reconnection returns an access token that expires in an hour and nothing to
+renew it with. And the refresh response does not repeat the refresh token, so
+the old one is carried forward — dropping it looks like it worked and fails
+tomorrow.
+
+**Connecting is not the feature.** A connector that connects and does nothing is
+a dead button, so Drive is a source Chat and Research read: a question can be
+answered out of somebody's own documents, with the text fetched at search time
+so retrieval is a lookup rather than another round trip. Docs, Sheets and Slides
+are Drive files, so one scope covers what other products present as four
+connectors.
+
+Needs `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`; without them
+the connections page names them rather than hiding the provider.
+
 ### Finding MCP servers ✅ — 9 tests
 
 Reklu could always connect to an MCP server and could never say which ones

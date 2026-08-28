@@ -6,4 +6,5 @@ export * from './fetch';
 export * from './pipeline';
 export { createWorkspaceAdapter } from './sources/workspace';
 export { createWebAdapter, SEARCH_PROVIDER_ENV } from './sources/web';
+export { createGoogleDriveAdapter } from './sources/google-drive';
 export * from './passages';

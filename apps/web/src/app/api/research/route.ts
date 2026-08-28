@@ -33,7 +33,9 @@ import {
   runResearch,
   type ResearchStage,
   linkCitations,
+  createGoogleDriveAdapter,
 } from '@reklu/research';
+import { listConnections } from '@reklu/integrations';
 import { enqueue } from '@reklu/queue';
 import { errors, isRekluError, logger, newId, toRekluError, planPacing } from '@reklu/shared';
 import { getSession } from '@/lib/auth-context';
@@ -138,7 +140,11 @@ export async function POST(request: Request): Promise<Response> {
       projectId: body.projectId ?? null,
     });
 
-    const adapters = [webAdapter, workspaceAdapter].filter((adapter) => adapter.isConfigured());
+    const adapters = [
+      webAdapter,
+      workspaceAdapter,
+      ...(await connectedSourceAdapters(access.workspaceId)),
+    ].filter((adapter) => adapter.isConfigured());
     const activeKinds = adapters.map((adapter) => adapter.kind);
 
     // ---- Session record ----------------------------------------------------
@@ -393,5 +399,31 @@ export async function POST(request: Request): Promise<Response> {
     const rekluError = toRekluError(error);
     if (!isRekluError(error)) log.error('Unhandled research error', { error });
     return NextResponse.json(rekluError.toClientJSON(), { status: rekluError.status });
+  }
+}
+
+/**
+ * Adapters for whatever this workspace has connected.
+ *
+ * A connector that connects and does nothing is a dead button. Reading them
+ * here is what makes connecting Google mean something: a question can be
+ * answered out of somebody's own documents rather than only out of the web.
+ *
+ * Built per request. A connection belongs to a workspace and its token is
+ * refreshed on read — a cached adapter would eventually be holding somebody
+ * else's Drive, which is the worst bug this feature could have.
+ */
+async function connectedSourceAdapters(workspaceId: string) {
+  try {
+    const connections = await listConnections(workspaceId);
+
+    return connections
+      .filter((connection) => connection.provider === 'google' && connection.status === 'connected')
+      .map((connection) =>
+        createGoogleDriveAdapter({ connectionId: connection.id, workspaceId }),
+      );
+  } catch {
+    /* A connection that cannot be read is one fewer source, not a failed run. */
+    return [];
   }
 }

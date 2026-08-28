@@ -7,7 +7,7 @@
  */
 
 /** Providers Reklu can connect to. */
-export const INTEGRATION_PROVIDERS = ['github', 'vercel', 'supabase'] as const;
+export const INTEGRATION_PROVIDERS = ['github', 'google', 'vercel', 'supabase'] as const;
 export type IntegrationProviderKey = (typeof INTEGRATION_PROVIDERS)[number];
 
 export function isIntegrationProvider(value: string): value is IntegrationProviderKey {

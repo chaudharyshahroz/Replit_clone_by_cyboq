@@ -7,6 +7,7 @@
  */
 import { loadServerEnv } from '@reklu/shared';
 import { githubProvider } from './providers/github';
+import { googleProvider } from './providers/google';
 import { supabaseProvider } from './providers/supabase';
 import { vercelProvider } from './providers/vercel';
 import {
@@ -18,6 +19,7 @@ import {
 
 const PROVIDERS: Readonly<Record<IntegrationProviderKey, IntegrationProvider>> = {
   github: githubProvider,
+  google: googleProvider,
   vercel: vercelProvider,
   supabase: supabaseProvider,
 };
@@ -36,9 +38,11 @@ export function redirectUriFor(key: IntegrationProviderKey): string {
   const configured =
     key === 'github'
       ? env.GITHUB_OAUTH_REDIRECT_URI
-      : key === 'vercel'
-        ? env.VERCEL_OAUTH_REDIRECT_URI
-        : env.SUPABASE_OAUTH_REDIRECT_URI;
+      : key === 'google'
+        ? env.GOOGLE_OAUTH_REDIRECT_URI
+        : key === 'vercel'
+          ? env.VERCEL_OAUTH_REDIRECT_URI
+          : env.SUPABASE_OAUTH_REDIRECT_URI;
 
   // Deriving from APP_URL by default means the callback is right in every
   // environment without a fourth variable to keep in sync.

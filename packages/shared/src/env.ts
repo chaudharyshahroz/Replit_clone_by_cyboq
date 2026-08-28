@@ -198,6 +198,15 @@ const serverSchema = z.object({
   GITHUB_APP_CLIENT_ID: optionalString,
   GITHUB_APP_CLIENT_SECRET: optionalString,
   GITHUB_OAUTH_REDIRECT_URI: optionalString,
+  /*
+   * The Google connector, which is a different OAuth client from Google
+   * sign-in: one needs to know who somebody is, the other needs to read their
+   * files. Bundling them would ask for Drive access from anybody who wanted a
+   * login button.
+   */
+  GOOGLE_OAUTH_CLIENT_ID: optionalString,
+  GOOGLE_OAUTH_CLIENT_SECRET: optionalString,
+  GOOGLE_OAUTH_REDIRECT_URI: optionalString,
   VERCEL_CLIENT_ID: optionalString,
   VERCEL_CLIENT_SECRET: optionalString,
   VERCEL_OAUTH_REDIRECT_URI: optionalString,

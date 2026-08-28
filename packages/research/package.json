@@ -5,7 +5,9 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -15,6 +17,7 @@
     "@reklu/ai": "workspace:*",
     "@reklu/artifacts": "workspace:*",
     "@reklu/database": "workspace:*",
+    "@reklu/integrations": "workspace:*",
     "@reklu/projects": "workspace:*",
     "@reklu/shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
