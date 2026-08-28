@@ -36,6 +36,7 @@ export const aiProviderKindEnum = pgEnum('ai_provider_kind', [
   'xai',
   'deepseek',
   'openrouter',
+  'bai',
   'custom',
 ]);
 

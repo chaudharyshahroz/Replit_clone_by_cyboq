@@ -166,6 +166,15 @@ const serverSchema = z.object({
    * party that was never meant to see it.
    */
   OPENROUTER_API_KEY: optionalString,
+  /**
+   * B.AI, which serves several models free on an OpenAI-compatible API.
+   *
+   * Its own key rather than OPENAI_API_KEY, for the reason OpenRouter has its
+   * own: the base URL differs, and a key sent to the wrong host is a credential
+   * handed to a party that was never meant to see it.
+   */
+  BAI_API_KEY: optionalString,
+  BAI_BASE_URL: z.string().url().default('https://api.b.ai/v1'),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   /**
    * `none` is an explicit choice to run without semantic retrieval: project
@@ -536,13 +545,14 @@ function crossFieldProblems(env: ServerEnv): string[] {
         env.GOOGLE_GENERATIVE_AI_API_KEY ||
         env.XAI_API_KEY ||
         env.DEEPSEEK_API_KEY ||
-        env.OPENROUTER_API_KEY,
+        env.OPENROUTER_API_KEY ||
+        env.BAI_API_KEY,
     );
     if (!hasAnyModelProvider) {
       problems.push(
         'No AI provider key is configured. Reklu cannot serve Chat, Research, or Build. ' +
           'Set at least one of ANTHROPIC_API_KEY, OPENAI_API_KEY, ' +
-          'GOOGLE_GENERATIVE_AI_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY.',
+          'GOOGLE_GENERATIVE_AI_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, BAI_API_KEY.',
       );
     }
     if (env.STORAGE_DRIVER === 'local' && !env.STORAGE_LOCAL_SINGLE_NODE_ACK) {

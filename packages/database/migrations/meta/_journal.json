@@ -99,6 +99,13 @@
       "when": 1787724071682,
       "tag": "0013_openrouter_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787936136744,
+      "tag": "0014_bai_provider",
+      "breakpoints": true
     }
   ]
 }

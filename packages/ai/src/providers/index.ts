@@ -128,6 +128,25 @@ export function getProvider(providerKey: string): AIProvider | undefined {
       }
       break;
 
+    case 'bai':
+      if (env.BAI_API_KEY) {
+        provider = createVendorAdapter({
+          key: 'bai',
+          displayName: 'B.AI',
+          /*
+           * Declared for the route rather than for any one model behind it.
+           * What a given model supports is a property of its registry row —
+           * one of these reads images and the rest do not.
+           */
+          capabilities: FULL,
+          model: createOpenAI({
+            apiKey: env.BAI_API_KEY,
+            baseURL: env.BAI_BASE_URL,
+          }),
+        });
+      }
+      break;
+
     case DEV_ECHO_PROVIDER_KEY:
       // Only available when no real provider exists, and never in production.
       if (env.NODE_ENV !== 'production') {
@@ -153,6 +172,7 @@ export function configuredProviderKeys(): readonly string[] {
   if (env.XAI_API_KEY) keys.push('xai');
   if (env.DEEPSEEK_API_KEY) keys.push('deepseek');
   if (env.OPENROUTER_API_KEY) keys.push('openrouter');
+  if (env.BAI_API_KEY) keys.push('bai');
   return keys;
 }
 

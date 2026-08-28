@@ -45,8 +45,40 @@ describe('the free plan', () => {
  * provider had withdrawn. The seed reports success either way, and the models
  * simply stop working again.
  */
-describe('the OpenRouter models', () => {
+describe('the free models', () => {
   const openrouter = MODELS.filter((model) => model.providerKey === 'openrouter');
+  const zeroCost = MODELS.filter(
+    (model) =>
+      Number(model.inputCostPerMillion) === 0 && Number(model.outputCostPerMillion) === 0,
+  );
+
+  it('all rank below every paid model', () => {
+    /*
+     * A way to run at no cost, not the right model for the work. Reklu Auto
+     * should reach a free model only when nothing better is configured — so
+     * adding a free provider must never change what a paying workspace gets.
+     */
+    const paid = MODELS.filter((model) => Number(model.inputCostPerMillion) > 0);
+    const cheapestPaid = Math.min(...paid.map((model) => model.routingPriority));
+
+    for (const model of zeroCost) {
+      expect(model.routingPriority, model.key).toBeLessThan(cheapestPaid);
+    }
+  });
+
+  it('are all allowed on the free plan', () => {
+    /*
+     * An allowlist is a spending control, and a model with no price is not
+     * something that control is for. Adding a free provider and forgetting the
+     * plan is how the models appear in the registry and not in the picker.
+     */
+    const free = PLANS.find((plan) => plan.key === 'free');
+    const allowed = free?.limits.allowedModelKeys ?? [];
+    if (allowed.length === 0) return;
+
+    const refused = zeroCost.filter((model) => !allowed.includes(model.key)).map((m) => m.key);
+    expect(refused).toEqual([]);
+  });
 
   it('are all on the free tier', () => {
     for (const model of openrouter) {

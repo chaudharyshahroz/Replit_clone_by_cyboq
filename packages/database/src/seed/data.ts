@@ -15,7 +15,7 @@ import type { PlanLimits } from '../schema/billing';
 
 export interface ProviderSeed {
   readonly key: string;
-  readonly kind: 'anthropic' | 'openai' | 'google' | 'xai' | 'deepseek' | 'openrouter';
+  readonly kind: 'anthropic' | 'openai' | 'google' | 'xai' | 'deepseek' | 'openrouter' | 'bai';
   readonly displayName: string;
   readonly apiKeyEnvVar: string;
 }
@@ -32,6 +32,7 @@ export const PROVIDERS: readonly ProviderSeed[] = [
     displayName: 'OpenRouter',
     apiKeyEnvVar: 'OPENROUTER_API_KEY',
   },
+  { key: 'bai', kind: 'bai', displayName: 'B.AI', apiKeyEnvVar: 'BAI_API_KEY' },
 ];
 
 export interface ModelSeed {
@@ -262,6 +263,164 @@ export const MODELS: readonly ModelSeed[] = [
   // Routing priority is low on purpose. These are a way to run Reklu at no
   // cost, not the best model for the job, so Reklu Auto reaches for them only
   // when nothing better is configured.
+  // ---- B.AI ---------------------------------------------------------------
+  //
+  // Free on an OpenAI-compatible API. The identifiers came from the operator
+  // rather than from B.AI's own list, which returns an id and nothing that
+  // would confirm one — so they are seeded as given and checked by using them.
+  // `GET https://api.b.ai/v1/models` with the key reports what that credential
+  // can actually reach.
+  {
+    ...base,
+    key: 'bai-deepseek-v4-flash',
+    providerKey: 'bai',
+    modelIdentifier: 'deepseek-v4-flash',
+    displayName: 'DeepSeek V4 Flash (free)',
+    description: 'Free through B.AI. Fast general and coding model.',
+    /*
+     * A conservative window: B.AI's model list reports an id and nothing else,
+     * so this is a floor rather than a measurement. The router penalises a
+     * window that barely fits, which errs toward not choosing these — the safe
+     * direction for a number nobody has confirmed.
+     */
+    contextWindow: 128_000,
+    maxOutputTokens: 16_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['coding', 'general', 'quick'],
+    routingPriority: 18,
+    sortOrder: 300,
+  },
+  {
+    ...base,
+    key: 'bai-deepseek-v4-flash-vision',
+    providerKey: 'bai',
+    modelIdentifier: 'deepseek-v4-flash-vision-exp',
+    displayName: 'DeepSeek V4 Flash Vision (free)',
+    description: 'Free through B.AI. Reads images as well as text. Experimental.',
+    /*
+     * A conservative window: B.AI's model list reports an id and nothing else,
+     * so this is a floor rather than a measurement. The router penalises a
+     * window that barely fits, which errs toward not choosing these — the safe
+     * direction for a number nobody has confirmed.
+     */
+    contextWindow: 128_000,
+    maxOutputTokens: 16_000,
+    supportsVision: true,
+    supportsReasoning: false,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['general', 'vision'],
+    routingPriority: 15,
+    sortOrder: 310,
+  },
+  {
+    ...base,
+    key: 'bai-glm-53-flash',
+    providerKey: 'bai',
+    modelIdentifier: 'glm-5.3-flash',
+    displayName: 'GLM 5.3 Flash (free)',
+    description: 'Free through B.AI. Strong at coding and tool use.',
+    /*
+     * A conservative window: B.AI's model list reports an id and nothing else,
+     * so this is a floor rather than a measurement. The router penalises a
+     * window that barely fits, which errs toward not choosing these — the safe
+     * direction for a number nobody has confirmed.
+     */
+    contextWindow: 128_000,
+    maxOutputTokens: 16_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['coding', 'reasoning'],
+    routingPriority: 17,
+    sortOrder: 320,
+  },
+  {
+    ...base,
+    key: 'bai-qwen38-flash',
+    providerKey: 'bai',
+    modelIdentifier: 'qwen3.8-flash',
+    displayName: 'Qwen 3.8 Flash (free)',
+    description: 'Free through B.AI. Fast general-purpose model.',
+    /*
+     * A conservative window: B.AI's model list reports an id and nothing else,
+     * so this is a floor rather than a measurement. The router penalises a
+     * window that barely fits, which errs toward not choosing these — the safe
+     * direction for a number nobody has confirmed.
+     */
+    contextWindow: 128_000,
+    maxOutputTokens: 16_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['general', 'quick'],
+    routingPriority: 16,
+    sortOrder: 330,
+  },
+  {
+    ...base,
+    key: 'bai-mimo-v25',
+    providerKey: 'bai',
+    modelIdentifier: 'mimo-v2.5',
+    displayName: 'MiMo v2.5 (free)',
+    description: 'Free through B.AI.',
+    /*
+     * A conservative window: B.AI's model list reports an id and nothing else,
+     * so this is a floor rather than a measurement. The router penalises a
+     * window that barely fits, which errs toward not choosing these — the safe
+     * direction for a number nobody has confirmed.
+     */
+    contextWindow: 128_000,
+    maxOutputTokens: 16_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['general'],
+    routingPriority: 14,
+    sortOrder: 340,
+  },
+  {
+    ...base,
+    key: 'bai-hy3',
+    providerKey: 'bai',
+    modelIdentifier: 'hy3',
+    displayName: 'HY3 (free)',
+    description: 'Free through B.AI.',
+    /*
+     * A conservative window: B.AI's model list reports an id and nothing else,
+     * so this is a floor rather than a measurement. The router penalises a
+     * window that barely fits, which errs toward not choosing these — the safe
+     * direction for a number nobody has confirmed.
+     */
+    contextWindow: 128_000,
+    maxOutputTokens: 16_000,
+    supportsVision: false,
+    supportsReasoning: false,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.0000',
+    outputCostPerMillion: '0.0000',
+    bestFor: ['general'],
+    routingPriority: 13,
+    sortOrder: 350,
+  },
+
   {
     ...base,
     key: 'openrouter-nemotron-ultra-free',
@@ -432,6 +591,12 @@ export const PLANS: readonly PlanSeed[] = [
         'openrouter-north-mini-code-free',
         'openrouter-nemotron-super-free',
         'openrouter-minimax-m27-free',
+        'bai-deepseek-v4-flash',
+        'bai-deepseek-v4-flash-vision',
+        'bai-glm-53-flash',
+        'bai-qwen38-flash',
+        'bai-mimo-v25',
+        'bai-hy3',
       ],
       features: ['chat', 'research_quick', 'projects', 'skills_install'],
     },
