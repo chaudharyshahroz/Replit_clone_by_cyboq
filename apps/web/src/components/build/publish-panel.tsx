@@ -1,12 +1,22 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { CheckCircle2, ExternalLink, Globe, Loader2, RefreshCw, Trash2, Wrench } from 'lucide-react';
+import {
+  CheckCircle2,
+  ExternalLink,
+  Globe,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  Triangle,
+  Wrench,
+} from 'lucide-react';
 import {
   checkDomainAction,
   fixPublishFailureAction,
   publicationStateAction,
   publishAction,
+  publishToVercelAction,
   removeDomainAction,
   setDomainAction,
   unpublishAction,
@@ -24,6 +34,12 @@ import {
 export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles: boolean }) {
   const [state, setState] = useState<PublishState | null>(null);
   const [domain, setDomain] = useState('');
+  /*
+   * Where this build should live. Not remembered across visits: it is a
+   * decision about one deploy, and a remembered answer would silently send the
+   * next one somewhere the person did not choose today.
+   */
+  const [target, setTarget] = useState<'reklu' | 'vercel'>('reklu');
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -78,14 +94,56 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
         Publish
       </h2>
       <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-        Put this app on the internet at its own address, hosted by Reklu. Add your own domain
-        when you have one.
+        Put this app on the internet. Reklu hosts it at its own address, or it goes to your own
+        Vercel account and Reklu stops being involved.
       </p>
+
+      {/*
+        Two destinations, offered together rather than one here and one under
+        Export. They answer the same question — where does this site live — and
+        separating them made the Vercel path look like a developer's escape
+        hatch rather than a way to publish.
+      */}
+      <div
+        role="radiogroup"
+        aria-label="Where to publish"
+        className="mt-3 inline-flex items-center gap-0.5 rounded-lg border border-border p-0.5"
+      >
+        {(
+          [
+            ['reklu', 'Reklu', 'Hosted here, with a domain you can point at it'],
+            ['vercel', 'Vercel', 'Your account, your bill, your control'],
+          ] as const
+        ).map(([value, label, hint]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={target === value}
+            title={hint}
+            onClick={() => setTarget(value)}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs transition-colors ${
+              target === value ? 'bg-surface-raised text-text' : 'text-text-secondary hover:text-text'
+            }`}
+          >
+            {value === 'vercel' ? (
+              <Triangle className="h-3 w-3" strokeWidth={2} />
+            ) : (
+              <Globe className="h-3.5 w-3.5" strokeWidth={2} />
+            )}
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => run('publish', () => publishAction(buildId))}
+          onClick={() =>
+            run('publish', () =>
+              target === 'vercel' ? publishToVercelAction(buildId) : publishAction(buildId),
+            )
+          }
           disabled={working || !hasFiles}
           className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -94,10 +152,16 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
           ) : (
             <Globe className="h-3.5 w-3.5" strokeWidth={1.75} />
           )}
-          {busy === 'publish' ? 'Publishing…' : live ? 'Publish the latest version' : 'Publish'}
+          {busy === 'publish'
+            ? 'Publishing…'
+            : target === 'vercel'
+              ? 'Deploy to Vercel'
+              : live
+                ? 'Publish the latest version'
+                : 'Publish'}
         </button>
 
-        {live ? (
+        {live && target === 'reklu' ? (
           <button
             type="button"
             onClick={() => run('unpublish', () => unpublishAction(buildId))}
@@ -129,6 +193,23 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
         >
           {state.error}
         </p>
+      ) : null}
+
+      {state?.status === 'publishing' && state.url ? (
+        <div role="status" className="mt-3 rounded-lg border border-border bg-surface px-3 py-2.5">
+          <p className="text-xs leading-relaxed text-text-secondary">
+            Vercel is building it. This link answers once that finishes.
+          </p>
+          <a
+            href={state.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+          >
+            {state.url.replace('https://', '')}
+            <ExternalLink className="h-3 w-3" strokeWidth={2} />
+          </a>
+        </div>
       ) : null}
 
       {live && state.url ? (
@@ -196,13 +277,17 @@ export function PublishPanel({ buildId, hasFiles }: { buildId: string; hasFiles:
       {/*
         ---- The custom domain ----
 
+        Reklu's own hosting only. A site on Vercel has its domains managed
+        there, and offering a second place to set one would be two sources of
+        truth for one hostname.
+
         Shown for any site that has an address, not only one that is currently
         up. It used to appear only while `status === 'live'`, so a publish that
         failed took the whole domain section with it — and the way to reach it
         was to fix the publish first, which is not obvious from a panel that
         simply does not mention domains.
       */}
-      {state?.slug ? (
+      {state?.slug && target === 'reklu' ? (
         <div className="mt-4 border-t border-border pt-4">
           <h3 className="text-xs font-medium text-text">Your own domain</h3>
 

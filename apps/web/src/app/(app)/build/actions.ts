@@ -1223,6 +1223,34 @@ export async function publishAction(buildId: string): Promise<PublishState> {
   }
 }
 
+/**
+ * Publish to the person's own Vercel account.
+ *
+ * The same deployment that Export performs, answering as a publish — because it
+ * is one. Somebody deciding where their site lives is asking one question, and
+ * splitting the answer across two panels made this look like a developer's
+ * escape hatch rather than the other way to publish.
+ *
+ * Nothing of it runs on Reklu's server afterwards. That is the point of it, and
+ * the reason to offer it beside the option that does.
+ */
+export async function publishToVercelAction(buildId: string): Promise<PublishState> {
+  const result = await deployToVercelAction(buildId);
+
+  if (result.error) return { error: result.error, status: 'failed' };
+
+  return {
+    ...(result.url ? { url: result.url } : {}),
+    /*
+     * Vercel reports a deployment as building for a while after it accepts one,
+     * and the URL 404s until it finishes. Saying "live" then would be a claim
+     * Reklu cannot make about somebody else's platform.
+     */
+    status: result.status === 'ready' ? 'live' : 'publishing',
+    ...(result.detail ? { detail: result.detail } : {}),
+  };
+}
+
 export async function unpublishAction(buildId: string): Promise<PublishState> {
   const { workspace } = await getAppContext();
 
