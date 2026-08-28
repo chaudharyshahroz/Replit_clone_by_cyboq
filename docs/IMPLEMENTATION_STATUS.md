@@ -718,6 +718,28 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### Finding MCP servers ✅ — 9 tests
+
+Reklu could always connect to an MCP server and could never say which ones
+exist, so the form asked for an endpoint almost nobody has memorised. The
+feature was complete and looked empty to everybody who had not read the protocol
+spec.
+
+Settings → MCP now searches the official registry, and picking a server fills
+the connect form. It does not connect: a server is somebody else's code reached
+over the network, and its tools already arrive disabled pending review, so the
+step before that begins stays deliberate.
+
+Read live rather than kept as a list here, and this repository has already paid
+for the alternative — a hardcoded set of free model identifiers, every one
+withdrawn upstream within days, failing in a way that looked like Reklu was
+broken rather than like the world had moved. Endpoints rot the same way.
+
+Three filters decide what is offered, because every row that survives is
+presented as something connectable. A server with no https remote is a local
+process, and Reklu does not run other people's code on its own machine. A
+superseded version duplicates a newer row. A withdrawn one no longer answers.
+
 ### Light mode ✅ — 4 tests
 
 Reklu was dark only. The light tokens already existed and were complete —

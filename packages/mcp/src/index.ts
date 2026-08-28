@@ -4,3 +4,4 @@ export * from './permissions';
 export * from './client';
 export * from './servers';
 export * from './queries';
+export * from './registry';

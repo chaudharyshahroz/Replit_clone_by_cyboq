@@ -6,7 +6,9 @@ import {
   connectServer,
   deleteServer,
   rediscoverTools,
+  searchRegistry,
   setToolEnabled,
+  type RegistryServer,
 } from '@reklu/mcp';
 import { isRekluError, logger } from '@reklu/shared';
 import { getAppContext } from '@/lib/auth-context';
@@ -124,4 +126,19 @@ export async function deleteServerAction(serverId: string): Promise<McpFormState
   } catch (error) {
     return { error: toMessage(error, 'The server could not be removed.') };
   }
+}
+
+/**
+ * Search the MCP registry for servers worth connecting.
+ *
+ * Reklu could always connect to a server and could never say which ones exist,
+ * so somebody had to already know an endpoint. This is asked live rather than
+ * answered from a list in the code: endpoints published by other people change
+ * and are withdrawn, and a stale list fails in a way that looks like Reklu is
+ * broken rather than like the world moved.
+ */
+export async function searchRegistryAction(query: string): Promise<readonly RegistryServer[]> {
+  /* Authenticated, because it is a signed-in surface — not because the registry is private. */
+  await getAppContext();
+  return searchRegistry(query, 24);
 }

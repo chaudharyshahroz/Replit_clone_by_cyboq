@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { ServerDirectory } from './server-directory';
 import { Loader2, Plus, X } from 'lucide-react';
 import { connectServerAction, type McpFormState } from '@/app/(app)/settings/mcp/actions';
 
@@ -15,6 +16,12 @@ export function ConnectServerForm() {
   // Reopened automatically after a failure, so the error and the fields that
   // caused it stay on screen together.
   const [open, setOpen] = useState(false);
+  /*
+   * Filled from the directory, so picking a server writes into the same fields
+   * somebody would otherwise type. Held as state rather than written to the DOM
+   * because the inputs are controlled by React the moment this is set.
+   */
+  const [picked, setPicked] = useState<{ name: string; endpoint: string } | null>(null);
   const [state, action, pending] = useActionState<McpFormState, FormData>(
     connectServerAction,
     {},
@@ -60,12 +67,29 @@ export function ConnectServerForm() {
         </p>
       ) : null}
 
+      {/*
+        Finding one, for everybody who does not already know an endpoint —
+        which was almost everybody, and made this form look like a feature for
+        people who had read the protocol spec.
+      */}
+      <div className="mt-4 rounded-lg border border-border bg-surface/40 p-3">
+        <p className="text-xs font-medium text-text">Find a server</p>
+        <p className="mt-1 mb-2.5 text-[0.6875rem] leading-relaxed text-text-secondary">
+          Searches the MCP registry. Picking one fills the form below; nothing connects until
+          you say so.
+        </p>
+        <ServerDirectory
+          onPick={(server) => setPicked({ name: server.title, endpoint: server.url })}
+        />
+      </div>
+
       <div className="mt-4 grid gap-4">
         <label className="block">
           <span className="text-xs font-medium text-text">Name</span>
           <input
+            key={picked?.endpoint ?? 'name'}
             name="name"
-            defaultValue={state.submitted?.name}
+            defaultValue={picked?.name ?? state.submitted?.name}
             placeholder="My tools"
             className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus:border-accent"
           />
@@ -75,10 +99,15 @@ export function ConnectServerForm() {
           <span className="text-xs font-medium text-text">Endpoint URL</span>
           <span className="ml-2 text-[0.6875rem] text-text-muted">Must be reachable over HTTPS.</span>
           <input
+            /*
+              Keyed on the pick, so choosing a server replaces what is in the
+              field. An uncontrolled input ignores a changed defaultValue.
+            */
+            key={picked?.endpoint ?? 'endpoint'}
             name="endpoint"
             required
             type="url"
-            defaultValue={state.submitted?.endpoint}
+            defaultValue={picked?.endpoint ?? state.submitted?.endpoint}
             placeholder="https://example.com/mcp"
             className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text outline-none placeholder:text-text-muted focus:border-accent"
           />
