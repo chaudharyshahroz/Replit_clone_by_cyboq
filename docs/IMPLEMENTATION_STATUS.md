@@ -718,6 +718,38 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### Connectors as data ✅ — 10 tests
+
+Four providers were four files, each repeating the same OAuth dance with
+different URLs. Fine for four and hopeless for two hundred: the ninety-fifth
+connector should not be the ninety-fifth code path, for the same reason a model
+here is a row rather than a constant.
+
+A connector is a descriptor now — authorize URL, token URL, scopes, how the
+secret is presented, where the account name comes from — and one adapter serves
+all of them. Its environment variables are derived from its key, so adding one
+adds no schema to maintain. The four hand-written providers stay hand-written,
+because each does something a generic OAuth client cannot: push a repository,
+create a deployment, read a Drive.
+
+The descriptors have to express real variation, and each way of getting it wrong
+fails quietly. Slack takes comma-separated scopes and reads a space-separated
+list as one unknown scope. Notion requires HTTP Basic at its token endpoint and
+answers a body-authenticated request with a bare 401. Slack and Notion both
+return the account inside the token response and have no userinfo endpoint to
+ask afterwards.
+
+**What this does not remove is the credential.** Every provider requires an
+OAuth application registered with them, and the id and secret belong to whoever
+runs the instance. A hosted assistant registers those once as a company; a
+self-hosted one cannot inherit them. That is the real cost of a connector, and
+it is not code.
+
+Endpoints are added by verification, never recollection. This project has
+already paid for the alternative once, in model identifiers that had all been
+withdrawn — and an OAuth URL written from memory fails at the moment somebody is
+trying to trust it with their account.
+
 ### The Google connector ✅ — 7 tests
 
 The kind of connector other assistants offer: sign in with Google, and Reklu can

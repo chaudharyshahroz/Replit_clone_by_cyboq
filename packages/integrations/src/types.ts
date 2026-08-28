@@ -6,13 +6,24 @@
  * three times. Adding a provider means adding an adapter, not a code path.
  */
 
-/** Providers Reklu can connect to. */
+/**
+ * Providers with a hand-written adapter, because they need one.
+ *
+ * The rest are descriptors in the catalogue and share a single adapter. These
+ * four are here because each does something a generic OAuth client cannot: push
+ * a repository, create a deployment, read a Drive.
+ */
 export const INTEGRATION_PROVIDERS = ['github', 'google', 'vercel', 'supabase'] as const;
-export type IntegrationProviderKey = (typeof INTEGRATION_PROVIDERS)[number];
 
-export function isIntegrationProvider(value: string): value is IntegrationProviderKey {
-  return (INTEGRATION_PROVIDERS as readonly string[]).includes(value);
-}
+/**
+ * A provider key.
+ *
+ * A string rather than a union of the four above, because the set of connectors
+ * is data now: a catalogue entry is a connector, and a type that enumerated
+ * them would have to be edited every time one is added — which is exactly the
+ * per-connector code cost the catalogue exists to remove.
+ */
+export type IntegrationProviderKey = string;
 
 /** The connected account, as the UI should display it. Never includes a token. */
 export interface ExternalAccount {

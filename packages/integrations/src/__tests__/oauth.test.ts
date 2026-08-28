@@ -12,7 +12,7 @@ import { credentialsFor, describeProvider, redirectUriFor } from '../registry';
 import { expiryFrom, parseScopes } from '../http';
 import { githubProvider } from '../providers/github';
 import { supabaseProvider } from '../providers/supabase';
-import { isIntegrationProvider } from '../types';
+import { isIntegrationProvider } from '../registry';
 
 const key = () => randomBytes(32).toString('base64');
 
