@@ -95,3 +95,36 @@ describe('the request Pixabay actually receives', () => {
     expect(source).toMatch(/storageKey: key/);
   });
 });
+
+/**
+ * The free generation path.
+ *
+ * Pixabay answers what a real photograph can, and this answers the rest — so
+ * with both, illustrating a generated site costs nothing. The trade is real and
+ * worth stating: it is slower, follows a prompt more loosely, and returns a
+ * smaller image than it is asked for.
+ */
+describe('generating without a key', () => {
+  const source = readFileSync(new URL('../images.ts', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('async function generateWithPollinations'));
+
+  it('needs no credential to be available', () => {
+    /* The entire reason it is here — a site that costs nothing to illustrate. */
+    expect(source).toMatch(/IMAGE_PROVIDER === 'pollinations'[\s\S]{0,200}available: true/);
+  });
+
+  it('suppresses the watermark', () => {
+    // Without it the image arrives with a logo burned into the picture.
+    expect(body).toContain("'nologo'");
+  });
+
+  it('refuses an answer that is not an image', () => {
+    /*
+     * A free endpoint under load can return 200 with an error page. Storing a
+     * few hundred bytes of HTML would put a broken image on the page rather
+     * than failing where the log can say what happened.
+     */
+    expect(body).toMatch(/startsWith\('image\/'\)/);
+    expect(body).toMatch(/byteLength < \d/);
+  });
+});

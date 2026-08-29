@@ -185,7 +185,7 @@ const serverSchema = z.object({
   EMBEDDING_PROVIDER: enumWithDefault(['openai', 'google', 'none'], 'openai'),
   EMBEDDING_MODEL: z.string().trim().default('text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: intWithDefault(1536),
-  IMAGE_PROVIDER: enumWithDefault(['openai', 'google'], 'openai'),
+  IMAGE_PROVIDER: enumWithDefault(['openai', 'google', 'pollinations'], 'openai'),
   VIDEO_PROVIDER: optionalString,
 
   // ---- Research ------------------------------------------------------------
@@ -748,7 +748,8 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
           ? openai
           : google,
     webSearch: Boolean(env.SEARCH_PROVIDER),
-    imageGeneration: env.IMAGE_PROVIDER === 'openai' ? openai : google,
+    imageGeneration:
+      env.IMAGE_PROVIDER === 'pollinations' ? true : env.IMAGE_PROVIDER === 'openai' ? openai : google,
     videoGeneration: Boolean(env.VIDEO_PROVIDER),
     googleSignIn: Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET),
     githubSignIn: Boolean(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET),
