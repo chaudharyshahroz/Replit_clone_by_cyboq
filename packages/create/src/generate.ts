@@ -33,6 +33,14 @@ export interface CreateResult {
   readonly title: string;
   readonly kind: CreateKind;
   readonly detail: string;
+  /**
+   * Where the produced file lives, when the result is one.
+   *
+   * Set for images so a caller can show the picture rather than describe it.
+   */
+  readonly storageKey?: string;
+  readonly size?: string;
+  readonly bytes?: number;
 }
 
 /**
@@ -253,6 +261,9 @@ export async function createImage(
     title,
     kind: 'image',
     detail: `${image.size} · ${Math.round(image.bytes / 1024)} KB`,
+    storageKey: image.storageKey,
+    size: image.size,
+    bytes: image.bytes,
   };
 }
 

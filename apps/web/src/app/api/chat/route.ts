@@ -409,6 +409,23 @@ export async function POST(request: Request): Promise<Response> {
     const started = Date.now();
     let firstTokenAt: number | undefined;
     let text = '';
+    /**
+     * A picture this turn produced, stored with the message that produced it.
+     *
+     * Kept out here because it has to outlive the stream: a message whose image
+     * lives only in the event stream shows a picture once and a bare sentence
+     * ever after.
+     */
+    let imagePart:
+      | {
+          type: 'image';
+          storageKey: string;
+          alt: string;
+          size: string;
+          bytes: number;
+          artifactId: string;
+        }
+      | undefined;
     /** Filled by a tool that cites sources; empty for an ordinary reply. */
     let citedSources: {
       index: number;
@@ -457,6 +474,30 @@ export async function POST(request: Request): Promise<Response> {
 
             text = `Generated **${result.title}** · ${result.detail}`;
             send({ type: 'text-delta', text });
+
+            // The picture itself, not a note about it. Only when the file
+            // actually landed in storage — there is nothing to show otherwise.
+            if (result.storageKey) {
+              imagePart = {
+                type: 'image',
+                storageKey: result.storageKey,
+                alt: body.message,
+                size: result.size ?? '',
+                bytes: result.bytes ?? 0,
+                artifactId: result.artifactId,
+              };
+              send({
+                type: 'image',
+                image: {
+                  storageKey: imagePart.storageKey,
+                  alt: imagePart.alt,
+                  size: imagePart.size,
+                  bytes: imagePart.bytes,
+                  artifactId: imagePart.artifactId,
+                },
+              });
+            }
+
             send({
               type: 'artifact',
               artifact: { id: result.artifactId, title: result.title, type: 'image' },
@@ -662,8 +703,9 @@ export async function POST(request: Request): Promise<Response> {
               conversationId,
               workspaceId: access.workspaceId,
               role: 'assistant',
-              content: [{ type: 'text', text }],
+              content: imagePart ? [{ type: 'text', text }, imagePart] : [{ type: 'text', text }],
               contentText: text,
+              ...(imagePart ? { artifactIds: [imagePart.artifactId] } : {}),
               modelKey: model.key,
               // Stored with the message, so reopening the conversation still
               // shows what each claim rests on.

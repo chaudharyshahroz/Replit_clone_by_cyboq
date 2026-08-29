@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
   AlertCircle,
   ArrowUp,
   Check,
   ChevronDown,
+  Download,
   ImagePlus,
   Loader2,
   ExternalLink,
@@ -104,6 +106,15 @@ export interface SelectableModel {
   readonly isDevelopmentMock: boolean;
 }
 
+/** A picture a turn produced, shown in the transcript where it was asked for. */
+export interface ChatImage {
+  readonly storageKey: string;
+  readonly alt: string;
+  readonly size: string;
+  readonly bytes: number;
+  readonly artifactId?: string;
+}
+
 export interface ChatMessage {
   /** Sources this reply cites, when it is a research answer. */
   readonly sources?: readonly CitedSource[];
@@ -116,6 +127,8 @@ export interface ChatMessage {
   readonly text: string;
   readonly modelKey?: string | null;
   readonly attachments?: readonly string[];
+  /** Pictures this turn produced. */
+  readonly images?: readonly ChatImage[];
 }
 
 export interface UploadedFile {
@@ -182,6 +195,7 @@ type ServerEvent =
   | { type: 'tool-result'; toolResult: unknown }
   | { type: 'status'; stage: string; detail?: string }
   | { type: 'artifact'; artifact: { id: string; title: string; type: string } }
+  | { type: 'image'; image: ChatImage & { artifactId: string } }
   | { type: 'finish'; finishReason: string; messageId?: string }
   | { type: 'error'; code: string; message: string; retryable: boolean };
 
@@ -342,6 +356,8 @@ export function ChatView({
   const [modelKey, setModelKey] = useState('auto');
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
+  /** Pictures already produced by the turn currently streaming. */
+  const [streamImages, setStreamImages] = useState<readonly ChatImage[]>([]);
   const [routingReason, setRoutingReason] = useState<string | undefined>();
   const [error, setError] = useState<StreamError | undefined>();
   const [conversationId, setConversationId] = useState(initialConversationId);
@@ -461,6 +477,7 @@ export function ChatView({
       abortRef.current = controller;
       let assembled = '';
       let capturedSources: readonly CitedSource[] = [];
+      let capturedImages: readonly ChatImage[] = [];
       /** Where to go once the turn is finished, if the server asked. */
       let navigateTo: string | undefined;
       let capturedFailed: number | undefined;
@@ -582,6 +599,15 @@ export function ChatView({
               capturedSources = event.sources;
               capturedFailed = event.failed;
               setStreamSources(event.sources);
+            } else if (event.type === 'image') {
+              /*
+               * Shown at once and kept for the committed message.
+               * `capturedImages` is a local for the same reason `capturedSources`
+               * is: the commit below closes over the state as it was when this
+               * loop started.
+               */
+              capturedImages = [...capturedImages, event.image];
+              setStreamImages(capturedImages);
             } else if (event.type === 'artifact') {
               // Spec §20: a substantial output opens beside the chat.
               setArtifact(event.artifact);
@@ -601,6 +627,7 @@ export function ChatView({
               modelKey: usedModelKey,
               ...(capturedSources.length > 0 ? { sources: capturedSources } : {}),
               ...(capturedFailed ? { sourcesFailed: capturedFailed } : {}),
+              ...(capturedImages.length > 0 ? { images: capturedImages } : {}),
             },
           ]);
         }
@@ -618,6 +645,7 @@ export function ChatView({
       } finally {
         setStreaming(false);
         setStreamText('');
+        setStreamImages([]);
         abortRef.current = null;
 
         // A first message creates the thread server-side. Move to its URL and
@@ -1100,6 +1128,7 @@ export function ChatView({
                       {streamText ? (
                         <div className={PROSE}>
                           <Markdown content={streamText} citations={streamSources} />
+                          <ImageGallery images={streamImages} />
                         </div>
                       ) : (
                         /*
@@ -1225,6 +1254,63 @@ export function ChatView({
   );
 }
 
+/**
+ * Pictures shown where they were asked for.
+ *
+ * A generated image used to be announced in a sentence and filed in Artifacts,
+ * which meant the one thing requested was the one thing not on screen. The
+ * file route is authenticated, so Next's optimiser — which fetches as an
+ * anonymous client — would get nothing; `unoptimized` is required, not a
+ * shortcut.
+ */
+function ImageGallery({ images }: { images: readonly ChatImage[] }) {
+  if (images.length === 0) return null;
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      {images.map((image) => {
+        const [width, height] = parseSize(image.size);
+        return (
+          <figure key={image.storageKey} className="max-w-lg">
+            <Image
+              src={`/api/files/${image.storageKey}`}
+              alt={image.alt}
+              width={width}
+              height={height}
+              unoptimized
+              className="h-auto w-full rounded-xl border border-border"
+            />
+            <figcaption className="mt-2 flex items-center gap-3 text-xs text-text-muted">
+              {image.size ? <span>{image.size}</span> : null}
+              {image.bytes > 0 ? <span>{formatBytes(image.bytes)}</span> : null}
+              <a
+                href={`/api/files/${image.storageKey}?download`}
+                download
+                className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
+              >
+                <Download className="h-3 w-3" strokeWidth={2} />
+                Download
+              </a>
+            </figcaption>
+          </figure>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Pixel dimensions from a "1024x1536" label.
+ *
+ * Next needs an intrinsic size to reserve space before the bytes arrive; the
+ * square fallback is only ever a layout hint, since the CSS sizes the element.
+ */
+function parseSize(size: string): [number, number] {
+  const match = /^(\d+)x(\d+)$/.exec(size.trim());
+  if (!match) return [1024, 1024];
+  return [Number(match[1]), Number(match[2])];
+}
+
 function Bubble({
   message,
   models,
@@ -1303,6 +1389,10 @@ function Bubble({
           <Markdown content={message.text} />
         </div>
       )}
+
+      <div className={prose}>
+        <ImageGallery images={message.images ?? []} />
+      </div>
 
       <div className={prose}>
         <MessageActions

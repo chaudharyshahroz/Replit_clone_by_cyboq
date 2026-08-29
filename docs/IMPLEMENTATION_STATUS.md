@@ -718,6 +718,25 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### Generated pictures in chat ✅ — 2 tests
+
+Asking chat for a picture produced one and then described it: a line reading
+`Generated … · 1024x1024 · 1465 KB`, with the picture filed in Artifacts behind
+a panel that is hidden below `lg`. The one thing asked for was the one thing not
+on screen.
+
+The image is now a content part of the message that produced it — `{ type:
+'image', storageKey, alt, size, bytes, artifactId }` — so it is rendered inline
+under the reply and is still there when the conversation is reopened. Storing it
+only in the event stream would show the picture once and a bare sentence ever
+after.
+
+It is read through `/api/files/<key>`, which re-checks workspace membership on
+every request, so `unoptimized` is required rather than convenient: Next's
+optimiser fetches as an anonymous client and would get nothing. A content part
+that is malformed is skipped rather than throwing, so one bad row cannot take a
+conversation down on reopen.
+
 ### Connectors as data ✅ — 10 tests
 
 Four providers were four files, each repeating the same OAuth dance with

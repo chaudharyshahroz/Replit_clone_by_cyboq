@@ -191,6 +191,24 @@ export type StreamEvent =
       readonly artifact: { readonly id: string; readonly title: string; readonly type: string };
     }
   | {
+      /**
+       * A picture this turn produced, to be shown in the transcript itself.
+       *
+       * A generated image used to arrive as a sentence saying its size, with
+       * the picture filed away in Artifacts — so the one thing that was asked
+       * for was the one thing not shown. The key names a stored object; the
+       * client reads it through the authenticated file route.
+       */
+      readonly type: 'image';
+      readonly image: {
+        readonly storageKey: string;
+        readonly alt: string;
+        readonly size: string;
+        readonly bytes: number;
+        readonly artifactId: string;
+      };
+    }
+  | {
       readonly type: 'finish';
       readonly usage: TokenUsage;
       readonly finishReason: FinishReason;

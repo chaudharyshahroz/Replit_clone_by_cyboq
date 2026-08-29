@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { conversations, db, messages, projects } from '@reklu/database';
 import { errors } from '@reklu/shared';
 import type { User } from '@reklu/database';
-import type { ChatMessage } from '@/components/chat/chat-view';
+import type { ChatImage, ChatMessage } from '@/components/chat/chat-view';
 
 export interface ConversationSummary {
   readonly id: string;
@@ -96,6 +96,7 @@ export async function loadConversation(
       id: messages.id,
       role: messages.role,
       contentText: messages.contentText,
+      content: messages.content,
       modelKey: messages.modelKey,
       sources: messages.sources,
       feedback: messages.feedback,
@@ -124,9 +125,35 @@ export async function loadConversation(
         modelKey: row.modelKey,
         // Carried back so a reopened conversation still shows its citations.
         ...(row.sources.length > 0 ? { sources: row.sources } : {}),
+        // And still shows its pictures: an image is the answer, not a footnote.
+        ...(imagesIn(row.content).length > 0 ? { images: imagesIn(row.content) } : {}),
         ...(row.feedback ? { feedback: row.feedback as 'up' | 'down' } : {}),
       })),
   };
+}
+
+/**
+ * The pictures stored among a message's content parts.
+ *
+ * Content is `unknown[]` by design — a turn can hold text, tool calls, and
+ * more — so each part is checked rather than cast. A malformed part is skipped
+ * instead of crashing a whole conversation on reopen.
+ */
+function imagesIn(content: unknown[]): ChatImage[] {
+  const images: ChatImage[] = [];
+  for (const part of content) {
+    if (typeof part !== 'object' || part === null) continue;
+    const record = part as Record<string, unknown>;
+    if (record.type !== 'image' || typeof record.storageKey !== 'string') continue;
+    images.push({
+      storageKey: record.storageKey,
+      alt: typeof record.alt === 'string' ? record.alt : '',
+      size: typeof record.size === 'string' ? record.size : '',
+      bytes: typeof record.bytes === 'number' ? record.bytes : 0,
+      ...(typeof record.artifactId === 'string' ? { artifactId: record.artifactId } : {}),
+    });
+  }
+  return images;
 }
 
 /** Soft-delete a thread the user owns. */
