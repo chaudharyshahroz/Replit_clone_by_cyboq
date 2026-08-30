@@ -15,6 +15,12 @@ import { sandbox, type SandboxHandle } from '@reklu/sandbox';
 import { logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
 import { skillGuidanceFor } from './build-skills';
+import {
+  chooseDirection,
+  describeDirection,
+  directionPrompt,
+  isVisualTarget,
+} from './design-intelligence';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import { NPM_INSTALL_ARGS } from './install-args';
 import { withImageBytes } from './artwork';
@@ -178,7 +184,27 @@ export async function generateFiles(
    * something the person asked for — putting them in the user turn would let a
    * request talk them out of handling errors.
    */
-  const system = `${GENERATION_PROMPT}\n${skillGuidanceFor(options.brief.target)}`;
+  /*
+   * And the materials: the palette, the typefaces, the style. The standards say
+   * "one accent, used for one job"; the direction says which colour it is. A
+   * model given only the first invents the second, and invents the same one
+   * every time.
+   */
+  const visual = isVisualTarget(options.brief.target);
+  const direction = visual ? chooseDirection(options.brief) : undefined;
+
+  if (direction) {
+    logger.info('Design direction chosen', {
+      direction: describeDirection(direction),
+      matched: direction.matched,
+    });
+  }
+
+  const system = [
+    GENERATION_PROMPT,
+    skillGuidanceFor(options.brief.target),
+    ...(direction ? [directionPrompt(direction, options.brief.target)] : []),
+  ].join('\n');
 
   /*
    * Streamed rather than awaited whole. The text is the same either way; what

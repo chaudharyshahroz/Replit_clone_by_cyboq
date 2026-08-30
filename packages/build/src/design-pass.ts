@@ -17,13 +17,22 @@
 import { getProvider, type ModelMessage, type RegisteredModel } from '@reklu/ai';
 import { logger } from '@reklu/shared';
 import type { BuildBrief, BuildTarget } from './brief';
+import {
+  chooseDirection,
+  describeDirection,
+  directionPrompt,
+  isVisualTarget,
+} from './design-intelligence';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
 
-/** Targets where what it looks like *is* what it is. */
-const VISUAL_TARGETS: readonly BuildTarget[] = ['website', 'web_app', 'dashboard', 'mobile_app'];
-
+/**
+ * Targets where what it looks like *is* what it is.
+ *
+ * One list, in design-intelligence: a target that gets a palette is exactly a
+ * target worth a design pass, and two copies would eventually disagree.
+ */
 export function needsDesignPass(target: BuildTarget): boolean {
-  return VISUAL_TARGETS.includes(target);
+  return isVisualTarget(target);
 }
 
 /** Files worth sending to a design pass: the ones that decide how it looks. */
@@ -52,10 +61,12 @@ const DESIGN_PROMPT = [
   '- Emit complete files. A fragment silently truncates the application.',
   '',
   'What to do:',
-  '- Commit to a specific visual direction that suits this particular subject,',
-  '  and carry it through every screen. State it in a comment at the top of the',
-  '  main stylesheet so it can be argued with.',
-  '- Set a real type scale and pair typefaces deliberately. A display face used',
+  '- The design direction below is chosen, not a suggestion: the palette, the',
+  '  typefaces and the style. Carry it through every screen, and state it in a',
+  '  comment at the top of the main stylesheet so it can be argued with. What is',
+  '  left to you is everything the direction does not fix — composition,',
+  '  hierarchy, rhythm, and the one element the page is remembered by.',
+  '- Set a real type scale from the pairing you are given. A display face used',
   '  with restraint and a body face that is comfortable at length.',
   '- Fonts must load. This is the single most common way a generated page fails',
   '  to compile, so treat it as a correctness rule, not a style one:',
@@ -87,6 +98,9 @@ const DESIGN_PROMPT = [
   '',
   'Non-negotiable: readable contrast, visible keyboard focus, labelled controls,',
   'and a layout that holds from 360px upward.',
+  '',
+  'Where the direction and this list disagree, this list wins. A catalogue can',
+  'say a page is a hero and three feature cards; it cannot see the page.',
 ].join('\n');
 
 export interface DesignPassResult {
@@ -134,10 +148,18 @@ export async function runDesignPass(options: {
     { role: 'user', content: [{ type: 'text', text: context }] },
   ];
 
+  const direction = chooseDirection(options.brief);
+  logger.info('Design pass direction', { direction: describeDirection(direction) });
+
   const result = await provider.generate({
     modelIdentifier: options.model.modelIdentifier,
     messages,
-    system: DESIGN_PROMPT,
+    /*
+     * The same direction generation was given. Two calls art-directing
+     * independently produce a page whose stylesheet and components disagree
+     * about what colour the accent is.
+     */
+    system: `${DESIGN_PROMPT}\n${directionPrompt(direction, options.brief.target)}`,
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
     ...(options.signal ? { signal: options.signal } : {}),
   });

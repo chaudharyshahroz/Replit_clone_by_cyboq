@@ -11,7 +11,10 @@ import {
   exportToGitHub,
   fallbackBrief,
   generateBrief,
+  chooseDirection,
+  describeDirection,
   generateFiles,
+  isVisualTarget,
   instrumentForVisualSelection,
   loadTree,
   mergeTree,
@@ -624,6 +627,21 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         });
       }
     }
+  }
+
+  /*
+   * What was chosen, before it is used. A generated site's palette and
+   * typefaces are decisions somebody may want to argue with, and a decision
+   * nobody can see is one nobody can argue with — so the direction goes in the
+   * build log beside the stages, in the words the catalogue uses.
+   */
+  if (isVisualTarget(brief.target)) {
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'note',
+      message: `Design direction: ${describeDirection(chooseDirection(brief))}.`,
+    });
   }
 
   const generated = await generateFiles({

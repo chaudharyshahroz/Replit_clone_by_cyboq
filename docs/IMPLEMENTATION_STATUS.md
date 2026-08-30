@@ -718,6 +718,64 @@ Binary files travel as base64 from the tree down to the tar header.
 Requires `OPENAI_API_KEY` with `IMAGE_PROVIDER=openai`; without it the build
 still completes and each image is reported as not drawn, naming the variable.
 
+### Design direction ✅ — 18 tests
+
+The visual rules Reklu already had are sound and entirely general: pick a type
+scale, use one accent, space on a scale. A model reading them still had to
+invent every specific — which blue, which two typefaces, which weights — and
+inventing is where generated pages went wrong. They came back Inter on white
+with a purple gradient, because that is the average of everything.
+
+`design-intelligence.ts` narrows the decision to a catalogue: 192 product types,
+each with a WCAG-checked sixteen-role palette; 84 visual styles with the CSS
+that implements them; 72 font pairings with the exact Google Fonts URL; 34
+landing patterns; 32 rules that would fail a review; 25 chart choices. The data
+is ui-ux-pro-max-skill under the MIT licence, vendored as CSV under
+`packages/build/vendor/ui-ux-pro-max` with its licence, and compiled to
+`design-data.ts` by `pnpm --filter @reklu/build design:data`. Nothing reads a
+CSV at runtime — a path relative to `import.meta.url` works locally and throws
+in a container.
+
+A brief is matched to a product type by keyword, weighted so a word shared by
+fifty types counts for less than one shared by two, plus a strong bonus for the
+type's own name appearing in the brief. That last part is not cosmetic: without
+it a coffee shop resolved to generic food service, a workout tracker to a
+calorie counter, and "analytics dashboard" to the *smart home* palette, because
+that row happens to list the plain words `analytics` and `dashboard` while the
+analytics row lists only kpi, cohort and attribution. One rule fixed all three.
+
+The tables do not share a vocabulary, which exact lookup hid rather than
+reported: products say "Minimalism", styles say "Minimalism & Swiss Style", and
+71 of 192 products *describe* their landing pattern rather than naming one.
+Styles resolve through parenthesis-stripping and prefix matching, landing
+patterns through keyword overlap. Both are covered by tests that fail if a
+refresh breaks them.
+
+Two font pairings were dropped at generation time: they name Fontshare families
+— Satoshi, General Sans, Clash Display — beside a Google Fonts URL that loads a
+substitute. Told "use Satoshi, load it with this URL", a model produces a page
+that renders in a fallback or invents an import. A font that does not load is
+the failure this table exists to prevent, so an entry causing it is worse than
+no entry.
+
+The direction goes into the generation prompt and the design pass, so two calls
+cannot art-direct independently and disagree about what colour the accent is. An
+API target gets none of it — a background service has no page to put a palette
+on — and `needsDesignPass` and `isVisualTarget` are now one list rather than two
+that could drift. The chosen direction is written to the build log, because a
+decision nobody can see is one nobody can argue with.
+
+Where the catalogue and Reklu's own rules disagree, the prompt says which wins.
+The catalogue's most common landing pattern is a hero and a row of three feature
+cards, which is the exact thing `build-skills.ts` tells the model not to
+produce. The section order is passed as information architecture — which
+sections exist and what each is for — and the prompt states in as many words
+that it is not a layout.
+
+Verified by running the selection, not by reading it. Not verified: whether the
+generated pages are better to look at. That needs a real generation against a
+real model, which costs money and is a judgement call rather than an assertion.
+
 ### Generated pictures in chat ✅ — 2 tests
 
 Asking chat for a picture produced one and then described it: a line reading
