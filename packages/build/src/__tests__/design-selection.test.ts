@@ -267,3 +267,72 @@ describe('targets that have nothing to look at', () => {
     }
   });
 });
+
+describe('briefs as people actually write them', () => {
+  /**
+   * Every case here was found by running the selection over real briefs, and
+   * each one was wrong before the rule beneath it existed.
+   */
+  const cases: readonly [string, string, string][] = [
+    // The user's own first build, misspelling included.
+    [
+      "Let's build a landing page for my business that is coffe shop. Coffino is the name",
+      'Make sure design full website include all pages and section and also include online shop function',
+      'Bakery/Cafe',
+    ],
+    ['Hartley & Cole law firm', 'Practice areas and attorney profiles', 'Legal Services'],
+    ['Bloom florist', 'Order flowers online for delivery', 'Florist/Plant Shop'],
+    ['My personal portfolio', 'Showcase my design work', 'Portfolio/Personal'],
+    ['A blog about hiking', 'Articles and trip reports', 'Magazine/Blog'],
+    ['Dr Patel dental clinic', 'Appointments and treatments', 'Healthcare App'],
+  ];
+
+  it.each(cases)('matches %s', (product, summary, expected) => {
+    expect(matchProduct(brief({ product, summary })).profile.type).toBe(expected);
+  });
+
+  it('ignores words that describe the deliverable, not the subject', () => {
+    /*
+     * "landing" and "page" appear in exactly one of 192 product types, so the
+     * frequency weighting gave them the highest score available: rare in the
+     * catalogue and ubiquitous in briefs is the combination it gets backwards.
+     *
+     * The case that still depends on this is a brief naming no subject at all.
+     * Left in, those words alone clear the threshold and assert Link-in-Bio
+     * Page Builder as a considered choice; removed, the build gets a default
+     * that admits to being one.
+     */
+    const direction = chooseDirection(
+      brief({
+        product: 'A landing page',
+        summary: 'A full responsive website, modern design, all pages and sections',
+      }),
+    );
+
+    expect(direction.matched).toBe(false);
+    expect(direction.product.type).not.toBe('Link-in-Bio Page Builder');
+  });
+
+  it('forgives one typo in a word long enough to be sure about', () => {
+    expect(matchProduct(brief({ product: 'coffe shop', summary: 'a coffe shop' })).profile.type)
+      .toBe('Bakery/Cafe');
+
+    // Two edits is a different word, and a confidently wrong palette is worse
+    // than none: "cofe" could be anything.
+    expect(matchProduct(brief({ product: 'zzzz', summary: 'cofe' })).matchScore ?? 0).toBe(0);
+  });
+
+  it('falls back rather than acting on one stray word', () => {
+    /*
+     * With the threshold off, "a barber shop" scored 1.06 against Gift &
+     * Wishlist and "an online record store" 1.00 against Password Manager —
+     * both on a single word. A default nobody chose is better than a palette
+     * chosen for the wrong product.
+     */
+    const direction = chooseDirection(
+      brief({ product: 'Vinyl Vault', summary: 'An online record store' }),
+    );
+
+    expect(direction.matched).toBe(false);
+  });
+});

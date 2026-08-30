@@ -13,6 +13,7 @@ import {
   generateBrief,
   chooseDirection,
   describeDirection,
+  describeEmptyGeneration,
   generateFiles,
   isVisualTarget,
   instrumentForVisualSelection,
@@ -700,9 +701,19 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
      * and returned, so the one case where the model plainly failed looked
      * identical to success.
      */
-    const detail = generated.rejected.length > 0
-      ? `The model produced no usable files. ${generated.rejected.length} were rejected as unsafe paths.`
-      : 'The model produced no files. Try describing the app in more detail.';
+    /*
+     * What actually happened, not a guess. The old message told everyone to
+     * describe the app in more detail; the briefs this happens to are already
+     * long, and the commonest cause is a model spending its whole output budget
+     * on a plan — for which more detail is the wrong direction.
+     */
+    const detail = describeEmptyGeneration(generated.diagnostics, generated.rejected.length);
+
+    logger.warn('Generation produced no files', {
+      buildId,
+      model: model.key,
+      ...generated.diagnostics,
+    });
 
     await db
       .update(buildProjects)

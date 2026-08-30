@@ -75,7 +75,7 @@ function briefText(brief: BuildBrief): string {
    */
   const pages = brief.pages ?? [];
 
-  return normalise(
+  const words = normalise(
     [
       brief.product,
       brief.summary,
@@ -83,7 +83,145 @@ function briefText(brief: BuildBrief): string {
       ...pages.map((page) => `${page.name} ${page.purpose}`),
       ...(brief.integrations ?? []),
     ].join(' '),
-  );
+  )
+    .split(' ')
+    .filter((word) => word && !DELIVERABLE_WORDS.has(word));
+
+  /* Synonyms are added, never substituted: the original word may match too. */
+  const expanded = [...words];
+  for (const word of words) {
+    const corrected = correct(word);
+    if (corrected) expanded.push(corrected);
+
+    const synonym = SYNONYMS[corrected ?? word];
+    if (synonym) expanded.push(...synonym.split(/[^a-z0-9]+/).filter(Boolean));
+  }
+
+  return ` ${expanded.join(' ')} `;
+}
+
+/**
+ * Words that describe the deliverable rather than the subject.
+ *
+ * These are ignored when matching, and the reason is a failure that shipped:
+ * "landing" and "page" appear in exactly one of the 192 product types, so the
+ * frequency weighting below gave them the *highest* score available — and a
+ * brief opening "let's build a landing page for my coffee shop" resolved to
+ * Link-in-Bio Page Builder. Rare in the catalogue, ubiquitous in briefs, is the
+ * one combination the weighting gets backwards.
+ *
+ * They are safe to drop because the brief's `target` already carries what kind
+ * of thing is being built. This list is only about what it is *for*.
+ */
+const DELIVERABLE_WORDS = new Set([
+  'landing',
+  'page',
+  'pages',
+  'site',
+  'website',
+  'web',
+  'homepage',
+  'section',
+  'sections',
+  'build',
+  'design',
+  'full',
+  'complete',
+  'modern',
+  'responsive',
+  'beautiful',
+  'business',
+  'company',
+  'custom',
+  'online',
+]);
+
+/**
+ * Brief vocabulary the catalogue does not carry.
+ *
+ * Some rows have thin keyword lists — Bakery/Cafe has exactly two, `bakery` and
+ * `cafe` — so an ordinary way of naming that business misses it entirely. These
+ * map words people actually write onto words the catalogue indexes.
+ *
+ * Kept deliberately short. Every entry is a word that appeared in a real brief
+ * and matched nothing; guessing at more would be inventing a thesaurus and
+ * would make the matching harder to reason about, not better.
+ */
+const SYNONYMS: Readonly<Record<string, string>> = {
+  coffee: 'cafe',
+  coffeeshop: 'cafe',
+  espresso: 'cafe',
+  patisserie: 'bakery',
+  bistro: 'restaurant',
+  salon: 'beauty',
+  barbershop: 'beauty',
+  gym: 'fitness',
+  clinic: 'healthcare',
+  dentist: 'healthcare',
+  dental: 'healthcare',
+  store: 'shop',
+};
+
+/**
+ * Every word the catalogue can be matched on.
+ *
+ * Used to forgive a typo: a brief that says "coffe shop" carries the subject in
+ * the one word that is misspelt, and matched nothing at all. The user's own
+ * first build failed this way.
+ */
+const VOCABULARY = new Set<string>([
+  ...PRODUCT_PROFILES.flatMap((profile) => profile.keywords),
+  ...Object.keys(SYNONYMS),
+]);
+
+/**
+ * Whether two words are one edit apart.
+ *
+ * Bounded at one on purpose. Two edits starts matching words that are simply
+ * different — `shop` and `stop`, `cafe` and `case` — and a confidently wrong
+ * palette is worse than no match at all. Short words are not checked for the
+ * same reason: at four characters, one edit is most of the word.
+ */
+function withinOneEdit(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  if (a === b) return true;
+
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+
+  while (i < shorter.length && j < longer.length) {
+    if (shorter[i] === longer[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+
+    edits += 1;
+    if (edits > 1) return false;
+
+    /* Same length means a substitution; different means an insertion. */
+    if (shorter.length === longer.length) i += 1;
+    j += 1;
+  }
+
+  return edits + (longer.length - j) + (shorter.length - i) <= 1;
+}
+
+/** The vocabulary word a misspelt one probably meant, if there is exactly one. */
+function correct(word: string): string | undefined {
+  if (word.length < 5 || VOCABULARY.has(word)) return undefined;
+
+  let found: string | undefined;
+  for (const candidate of VOCABULARY) {
+    if (!withinOneEdit(word, candidate)) continue;
+    /* Ambiguous between two vocabulary words is not a correction, it is a guess. */
+    if (found) return undefined;
+    found = candidate;
+  }
+  return found;
 }
 
 /**
@@ -110,6 +248,18 @@ function keywordWeights(): Map<string, number> {
 }
 
 const WEIGHTS = keywordWeights();
+
+/**
+ * The score below which a match is treated as no match.
+ *
+ * Calibrated by measuring real briefs with the threshold off, not picked. At
+ * 1.5 the cut falls between the wrong answers and the right ones: a barber shop
+ * scored 1.06 against Gift & Wishlist and a record store 1.00 against Password
+ * Manager — both on a single stray word — while a dental clinic scored 1.50
+ * against Healthcare App, which is correct. A real subject scores 3 or more;
+ * the type's own name alone is worth 4.
+ */
+const MINIMUM_SCORE = 1.5;
 
 /** The product types Reklu falls back to when a brief matches nothing. */
 const FALLBACK_TYPE: Readonly<Record<BuildTarget, string>> = {
@@ -164,7 +314,15 @@ export function matchProduct(brief: BuildBrief): { profile: ProductProfile; scor
     }
   }
 
-  if (best) return { profile: best, score: bestScore };
+  /*
+   * A weak match is not a match.
+   *
+   * One generic word scoring alone — "online", "shop" — is noise, and acting on
+   * it hands the build a confident palette chosen for the wrong kind of
+   * product. Below the threshold the target's default is used, and the build
+   * log says the direction was a default rather than a decision.
+   */
+  if (best && bestScore >= MINIMUM_SCORE) return { profile: best, score: bestScore };
 
   const fallbackName = FALLBACK_TYPE[brief.target];
   const fallback =

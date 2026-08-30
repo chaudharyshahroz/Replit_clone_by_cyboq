@@ -10,7 +10,12 @@
  *   - an example in the request is not the scope
  *   - real applications need loading, empty and error states, not a happy path
  */
-import { getProvider, type ModelMessage, type RegisteredModel } from '@reklu/ai';
+import {
+  getProvider,
+  type FinishReason,
+  type ModelMessage,
+  type RegisteredModel,
+} from '@reklu/ai';
 import { sandbox, type SandboxHandle } from '@reklu/sandbox';
 import { logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
@@ -107,6 +112,31 @@ export interface GenerationResult {
   readonly files: readonly GeneratedFile[];
   readonly rejected: readonly { path: string; reason: string }[];
   readonly commentary: string;
+  /**
+   * What the model actually did, kept for the case where it did nothing useful.
+   *
+   * A generation that produces no files used to report "try describing the app
+   * in more detail" — a guess, and usually the wrong advice: the briefs this
+   * happens to are already long, and the commonest cause is a model spending
+   * its whole output budget on a plan and stopping before the first file. The
+   * fix for that is a smaller ask or a bigger model, which is the opposite of
+   * what the message said. None of it was knowable, because the response was
+   * discarded.
+   */
+  readonly diagnostics: GenerationDiagnostics;
+}
+
+export interface GenerationDiagnostics {
+  /** How much the model wrote, in characters. */
+  readonly responseChars: number;
+  /** Whether a code fence appeared at all. */
+  readonly sawFence: boolean;
+  /** Why the model stopped. `length` means it ran out of room. */
+  readonly finishReason: FinishReason;
+  /** Whether a second, corrective attempt was made. */
+  readonly retried: boolean;
+  /** The opening of the response, for a log line a person can read. */
+  readonly preview: string;
 }
 
 /**
@@ -214,6 +244,7 @@ export async function generateFiles(
   let text = '';
   const announced = new Set<string>();
   let narrated = false;
+  let finishReason: FinishReason = 'unknown';
 
   for await (const event of provider.stream({
     modelIdentifier: options.model.modelIdentifier,
@@ -222,6 +253,12 @@ export async function generateFiles(
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
     ...(options.signal ? { signal: options.signal } : {}),
   })) {
+    /*
+     * Why it stopped, which is the difference between "the model refused" and
+     * "the model ran out of room". Both produced the same empty result and the
+     * same wrong advice.
+     */
+    if (event.type === 'finish') finishReason = event.finishReason;
     if (event.type !== 'text-delta') continue;
     text += event.text;
 
@@ -257,7 +294,91 @@ export async function generateFiles(
     }
   }
 
-  const parsed = parseGeneratedFiles(text);
+  let parsed = parseGeneratedFiles(text);
+  let retried = false;
+
+  /*
+   * One corrective attempt when nothing parsed.
+   *
+   * A model that answers a build with a plan and no code has not refused and
+   * has not failed — it has misread the format, and the ordinary human response
+   * is to say so and ask again. That is cheaper than a person retyping their
+   * brief, and it is the fix for the commonest shape of this failure: the
+   * response opens with a long plan, the output budget runs out, and the first
+   * file never arrives.
+   *
+   * Only once. A model that ignores the correction will ignore it twice, and
+   * the second call is the user's money.
+   */
+  if (parsed.files.length === 0 && !options.signal?.aborted) {
+    retried = true;
+    logger.warn('Generation produced no files; asking again for the files alone', {
+      responseChars: text.length,
+      finishReason,
+    });
+
+    /*
+     * Best effort, and never fatal. This is a second chance at a call that has
+     * already failed; if it throws — a rate limit, a provider that streams but
+     * does not answer a plain generate — the honest outcome is the diagnosis of
+     * the first attempt, not an unhandled error that loses the build.
+     */
+    try {
+    const retry = await provider.generate({
+      modelIdentifier: options.model.modelIdentifier,
+      messages: [
+        ...messages,
+        { role: 'assistant', content: [{ type: 'text', text: text.slice(0, 4_000) }] },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: [
+                'That reply contained no files, so nothing was built.',
+                '',
+                'Emit the files now and nothing else. No plan, no explanation, no',
+                'summary — those cost output budget that the files need. Start with',
+                'package.json. Each file is a path comment on its own line followed',
+                'by a fenced block:',
+                '',
+                '// path/to/file.ext',
+                '```language',
+                'file contents',
+                '```',
+                '',
+                'If you cannot fit the whole application, emit the most important',
+                'files complete rather than all of them truncated.',
+              ].join('\n'),
+            },
+          ],
+        },
+      ],
+      system,
+      maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+
+    const second = parseGeneratedFiles(retry?.text ?? '');
+    if (second.files.length > 0) {
+      parsed = second;
+      text = retry.text;
+      finishReason = retry.finishReason ?? 'stop';
+
+      if (options.onFile) {
+        for (const file of second.files) {
+          if (announced.has(file.path)) continue;
+          announced.add(file.path);
+          await options.onFile(file.path);
+        }
+      }
+    }
+    } catch (error) {
+      logger.warn('The second attempt at a generation failed too', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   if (parsed.rejected.length > 0) {
     // Surfaced rather than swallowed: a model emitting `.env` or a traversal
@@ -267,7 +388,68 @@ export async function generateFiles(
     });
   }
 
-  return parsed;
+  return {
+    ...parsed,
+    diagnostics: {
+      responseChars: text.length,
+      sawFence: text.includes('```'),
+      finishReason,
+      retried,
+      preview: text.slice(0, 400),
+    },
+  };
+}
+
+/**
+ * Why a generation produced nothing, in words that point at the fix.
+ *
+ * Each branch names something observed in the response rather than guessed at,
+ * because the advice differs sharply: a model that ran out of room needs a
+ * smaller ask, and a model that wrote prose needs a different model. The old
+ * single message — "try describing the app in more detail" — was the wrong
+ * advice for both.
+ */
+export function describeEmptyGeneration(
+  diagnostics: GenerationDiagnostics,
+  rejected: number,
+): string {
+  if (rejected > 0) {
+    return `The model produced no usable files. ${rejected} were rejected as unsafe paths.`;
+  }
+
+  if (diagnostics.responseChars === 0) {
+    return 'The model returned an empty response. This is usually the provider refusing the request — try another model.';
+  }
+
+  if (diagnostics.finishReason === 'content-filter') {
+    return "The provider's content filter stopped the response. Try another model.";
+  }
+
+  if (diagnostics.finishReason === 'length' && !diagnostics.sawFence) {
+    return (
+      'The model used its whole output budget writing a plan and stopped before the first file. ' +
+      'Ask for less at once — a homepage before the whole site — or choose a model with more output room.'
+    );
+  }
+
+  if (diagnostics.finishReason === 'length') {
+    return (
+      'The model ran out of output room part-way through the first file, so nothing was complete enough to keep. ' +
+      'Ask for fewer pages at once, or choose a model with more output room.'
+    );
+  }
+
+  if (!diagnostics.sawFence) {
+    return (
+      'The model replied in prose and never wrote a file, twice. ' +
+      'This model may not be able to build; try another one.'
+    );
+  }
+
+  return (
+    'The model wrote code but never named a file, so none could be saved. ' +
+    'Try another model.'
+  );
 }
 
 /**

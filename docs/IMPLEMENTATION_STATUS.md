@@ -776,6 +776,61 @@ Verified by running the selection, not by reading it. Not verified: whether the
 generated pages are better to look at. That needs a real generation against a
 real model, which costs money and is a judgement call rather than an assertion.
 
+### When a generation produces nothing ✅ — 11 tests
+
+The message was "The model produced no files. Try describing the app in more
+detail." for every cause — a guess, and usually the opposite of the fix. The
+briefs this happens to are already long, and the commonest cause is a model
+spending its whole 16,000-token output budget on a plan and stopping before the
+first file. More detail makes that worse.
+
+Nothing better could be said because the response was discarded. It is now kept:
+how much the model wrote, whether a code fence ever appeared, and why it stopped.
+`describeEmptyGeneration` turns that into advice that differs by cause — ran out
+of room, replied in prose, tripped a content filter, wrote code without naming a
+file, returned nothing at all.
+
+Before anyone is asked to do anything, Reklu asks once more, with the reply so
+far and an instruction to emit the files alone — no plan, no summary, package.json
+first, and the most important files complete rather than all of them truncated.
+That is what a person would do, and it is cheaper than a customer retyping their
+brief. Only once: a model that ignores the correction will ignore it twice, and
+the second call is their money.
+
+The retry is best-effort and never fatal. A provider that rate-limits it, or
+that streams but does not answer a plain `generate`, used to turn a recoverable
+empty result into an unhandled error that lost the build.
+
+### Matching a brief, corrected ✅ — 12 further tests
+
+The first version shipped with a bug found by running it against the user's own
+failed build. "Let's build a landing page for my business that is coffe shop"
+resolved to **Link-in-Bio Page Builder**.
+
+Three causes, each fixed and each covered by a test that fails without the fix:
+
+- **The frequency weighting ran backwards on deliverable words.** `landing` and
+  `page` appear in exactly one of 192 product types, so they scored the highest
+  of any word available. Rare in the catalogue and ubiquitous in briefs is the
+  one combination inverse-frequency gets wrong. Those words are now ignored —
+  the brief's `target` already says what kind of thing is being built.
+- **The subject was misspelt.** "coffe" matched nothing. One edit is now
+  forgiven for words of five characters or more, against a vocabulary built from
+  the catalogue itself. Bounded at one edit: two starts matching `shop` to
+  `stop`, and a confidently wrong palette is worse than no match.
+- **A single stray word could win.** With the threshold off, a barber shop
+  scored 1.06 against Gift & Wishlist and a record store 1.00 against Password
+  Manager. The cut at 1.5 was measured, not picked: a dental clinic scores 1.50
+  against Healthcare App, which is correct, and a real subject scores 3 or more.
+
+A short synonym table covers rows whose keyword lists are thin — Bakery/Cafe has
+exactly two, `bakery` and `cafe`, so no ordinary way of writing "coffee shop"
+reached it. Every entry is a word that appeared in a real brief and matched
+nothing; it is deliberately not a thesaurus.
+
+Twelve briefs now resolve correctly or fall back honestly, and a fallback says so
+in the build log rather than presenting a default as a decision.
+
 ### Generated pictures in chat ✅ — 2 tests
 
 Asking chat for a picture produced one and then described it: a line reading
