@@ -53,6 +53,7 @@ import {
   repairMissingDependencies,
   repairFontWeights,
   repairClientMetadata,
+  repairPrismaSchemas,
   repairStaticExport,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
@@ -791,7 +792,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * missing line in a config file.
    */
   const resolved = repairClientMetadata(
-    repairStaticExport(repairFontWeights(repairMissingDependencies(repairAliasPaths(merged)))),
+    repairStaticExport(
+      repairFontWeights(repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(merged)))),
+    ),
   );
 
   /*

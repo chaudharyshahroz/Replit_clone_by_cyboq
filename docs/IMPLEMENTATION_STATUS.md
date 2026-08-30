@@ -776,6 +776,42 @@ Verified by running the selection, not by reading it. Not verified: whether the
 generated pages are better to look at. That needs a real generation against a
 real model, which costs money and is a judgement call rather than an assertion.
 
+### A Prisma schema on one line ✅ — 10 tests
+
+Prisma's grammar is line-based. A model that writes
+
+    generator client { provider = "prisma-client-js" }
+    enum Role { CUSTOMER ADMIN }
+
+has written something that does not parse, and it fails in the least helpful way
+available: the parser never sees the block close, so *every following line* is
+reported as "not a valid definition within a generator". One compact line at the
+top of a real build produced twenty errors, the last of which claimed `provider`
+was missing from a block that plainly contains it.
+
+It also fails at the wrong moment. `prisma generate` runs from postinstall, so
+`npm install` exits 1 and the reader is shown "Dependencies failed to install" —
+a message pointing at npm, three layers away from a formatting slip in a schema.
+
+`repair-prisma.ts` reformats the block: same declarations, one to a line.
+Splitting is aware of quotes and parentheses, because `env("DATABASE_URL")` and
+`@db.Decimal(10, 2)` both contain characters that separate declarations
+elsewhere — splitting naively produces a schema that is differently broken.
+Enum members separate on whitespace instead of commas, so that path is taken
+only when every part is a bare name, which keeps `provider = "prisma-client-js"`
+intact.
+
+Verified against the real Prisma CLI, not only against the tests: the repaired
+schema clears all twenty grammar errors, and `prisma generate` completes with no
+`DATABASE_URL` set — which is what the sandbox has.
+
+Two rules were added to the engineering standards alongside it: the line-based
+schema rule, and one that matters more — an application using a database must
+still start without one. The preview has no database server, so a page that
+throws on a missing connection takes down the whole site, including every page
+that never needed the database. The correct behaviour is Reklu's own: report
+"Not configured", naming `DATABASE_URL`.
+
 ### When a generation produces nothing ✅ — 11 tests
 
 The message was "The model produced no files. Try describing the app in more

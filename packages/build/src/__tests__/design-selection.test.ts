@@ -319,7 +319,7 @@ describe('briefs as people actually write them', () => {
 
     // Two edits is a different word, and a confidently wrong palette is worse
     // than none: "cofe" could be anything.
-    expect(matchProduct(brief({ product: 'zzzz', summary: 'cofe' })).matchScore ?? 0).toBe(0);
+    expect(matchProduct(brief({ product: 'zzzz', summary: 'cofe' })).score).toBe(0);
   });
 
   it('falls back rather than acting on one stray word', () => {

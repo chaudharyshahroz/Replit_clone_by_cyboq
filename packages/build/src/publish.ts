@@ -26,6 +26,7 @@ import { repairMissingDependencies } from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
 import { repairStaticExport } from './repair-export';
 import { repairClientMetadata } from './repair-client-metadata';
+import { repairPrismaSchemas } from './repair-prisma';
 
 /** The port a published site listens on inside its container. */
 const SITE_PORT = 3000;
@@ -179,7 +180,9 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
    * a change nobody asked for appearing in the next diff.
    */
   const files = repairClientMetadata(
-    repairStaticExport(repairFontWeights(repairMissingDependencies(repairAliasPaths(stored)))),
+    repairStaticExport(
+      repairFontWeights(repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(stored)))),
+    ),
   );
 
   const corrected = files.filter(
