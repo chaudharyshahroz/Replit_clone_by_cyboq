@@ -64,6 +64,7 @@ import { findStockImage, generateImage } from '@reklu/create';
 import { createWebAdapter, runResearch, SEARCH_PROVIDER_ENV } from '@reklu/research';
 import { getAppContext } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
+import { compileErrorIn } from '@/lib/compile-error';
 import { storage } from '@reklu/storage';
 
 export interface BuildFormState {
@@ -988,6 +989,44 @@ export async function startPreviewAction(
           result.output,
           tree.map((file) => file.path),
         ),
+      };
+    }
+
+    /*
+     * A dev server is a process, not proof that the application compiled.
+     * Next keeps listening and answers with its error page when PostCSS,
+     * webpack, or the route compiler fails. That used to make the first build
+     * look "ready" while the preview was a white 500 page; only a manual click
+     * on "Fix this error" sent the compiler's evidence back to the model.
+     *
+     * Use the same bounded, one-pass repair as the post-generation TypeScript
+     * check. `repairPass` is important: if the model cannot fix the error, the
+     * console and manual repair affordance remain available without creating an
+     * expensive automatic loop.
+     */
+    const devLog = await previewLogs(buildId, workspace.workspaceId);
+    const compileError = compileErrorIn(devLog);
+
+    if (compileError) {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'say',
+        message: 'The preview compiler found an error. Fixing it before opening the preview.',
+      });
+
+      await runGeneration(buildId, {
+        instruction:
+          'The preview compiler reports the following error. Fix its cause and change ' +
+          `nothing else.\n\n${compileError}`,
+        origin: 'auto',
+        repairPass: true,
+      });
+
+      const repairedLog = await previewLogs(buildId, workspace.workspaceId);
+      return {
+        url: result.url,
+        output: repairedLog || devLog || result.output,
       };
     }
 

@@ -135,6 +135,7 @@ export const NEXT_CORRECTNESS: BuildSkill = {
     'Do not set output: "export" in next.config unless the app has no route handlers, no middleware, and no headers, redirects or rewrites. A static export has no server.',
     'Every async server component that reads request data — cookies, headers, searchParams — must be reachable dynamically. Do not force it static.',
     'Import types with `import type`, and never import a server-only module into a client component.',
+    'Every custom Tailwind utility must be backed by tailwind.config. Never use a semantic class such as text-on-primary, including inside @apply, unless that exact colour token is configured.',
   ],
 };
 

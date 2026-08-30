@@ -23,6 +23,33 @@ describe('finding a failure', () => {
       'Unknown weight',
     );
   });
+
+  it('finds a PostCSS failure caused by an undefined Tailwind utility', () => {
+    const log = [
+      './src/app/globals.css:127:5',
+      'Syntax error: The `hover:text-on-primary` class does not exist.',
+    ].join('\n');
+
+    expect(compileErrorIn(log)).toContain('hover:text-on-primary');
+  });
+
+  it('clears an old failure after hot reload compiles the repair', () => {
+    const log = [
+      'Syntax error: The `hover:text-on-primary` class does not exist.',
+      'Compiled / in 161ms (402 modules)',
+    ].join('\n');
+
+    expect(compileErrorIn(log)).toBeNull();
+  });
+
+  it('reports a new failure that occurs after an earlier successful compile', () => {
+    const log = [
+      'Compiled / in 161ms (402 modules)',
+      'Syntax error: The `hover:text-on-primary` class does not exist.',
+    ].join('\n');
+
+    expect(compileErrorIn(log)).toContain('hover:text-on-primary');
+  });
 });
 
 describe('not crying wolf', () => {

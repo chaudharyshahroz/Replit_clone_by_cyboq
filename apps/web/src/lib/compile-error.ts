@@ -15,6 +15,7 @@ const MARKERS = [
   'Unknown weight',
   'Missing weight',
   'SyntaxError',
+  'Syntax error:',
   'Type error:',
 ];
 
@@ -23,9 +24,21 @@ export function compileErrorIn(log: string): string | null {
 
   const index = MARKERS.map((marker) => log.lastIndexOf(marker))
     .filter((position) => position !== -1)
-    .sort((a, b) => a - b)[0];
+    .sort((a, b) => b - a)[0];
 
   if (index === undefined) return null;
+
+  /*
+   * Development-server logs are append-only. Once hot reload compiles a repair,
+   * the old error remains in the file; treating it as current leaves the red
+   * banner up forever and keeps offering to fix code that is already working.
+   */
+  const recoveredAt = [
+    log.lastIndexOf('Compiled successfully'),
+    log.lastIndexOf('compiled successfully'),
+    log.lastIndexOf('Compiled /'),
+  ].sort((a, b) => b - a)[0]!;
+  if (recoveredAt > index) return null;
 
   /*
    * A little before, so the file path above the message comes too, and a bounded
