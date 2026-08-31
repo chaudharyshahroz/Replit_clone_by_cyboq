@@ -68,6 +68,36 @@ describe('a provider rejection', () => {
     expect(error.userMessage).toContain('upstream failed');
   });
 
+  it('recognises the provider wrapper used by the AI adapters', () => {
+    const wrapped = Object.assign(new Error('rate limited'), {
+      name: 'ProviderCallError',
+      providerKey: 'openrouter',
+      statusCode: 429,
+      retryable: true,
+    });
+
+    const error = toRekluError(wrapped);
+    expect(error.code).toBe('PROVIDER_ERROR');
+    expect(error.userMessage).toContain('openrouter');
+    expect(error.retryable).toBe(true);
+  });
+
+  it('preserves the upstream provider explanation through its wrapper', () => {
+    const cause = apiCallError({
+      status: 402,
+      body: JSON.stringify({ error: { message: 'Insufficient credits.' } }),
+    });
+    const wrapped = Object.assign(new Error('wrapped call failed'), {
+      name: 'ProviderCallError',
+      providerKey: 'openrouter',
+      statusCode: 402,
+      retryable: false,
+      cause,
+    });
+
+    expect(toRekluError(wrapped).userMessage).toContain('Insufficient credits');
+  });
+
   it('leaves an ordinary failure as an internal one', () => {
     // Not every error is somebody else's, and claiming otherwise would point
     // the reader away from the logs that do have the answer.

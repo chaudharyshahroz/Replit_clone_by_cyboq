@@ -72,9 +72,9 @@ export interface BuildFormState {
   readonly error?: string;
 }
 
-async function pickModel(requested?: string): Promise<RegisteredModel> {
+async function pickModel(requested?: string, excludeKey?: string): Promise<RegisteredModel> {
   const registry = await loadRegistry();
-  const allowed = selectableModels(registry, undefined);
+  const allowed = selectableModels(registry, undefined).filter((model) => model.key !== excludeKey);
   if (allowed.length === 0) {
     throw errors.notConfigured({
       feature: 'Build',
@@ -88,7 +88,7 @@ async function pickModel(requested?: string): Promise<RegisteredModel> {
    * build is not the place to refuse work over a stale selection.
    */
   return (
-    (requested ? allowed.find((m) => m.key === requested) : undefined) ??
+    (requested && requested !== 'auto' ? allowed.find((m) => m.key === requested) : undefined) ??
     allowed.find((m) => m.bestFor.includes('coding')) ??
     allowed.find((m) => m.bestFor.includes('reasoning')) ??
     allowed[0]!
@@ -296,14 +296,25 @@ export async function generateBuildAction(
   try {
     return await runGeneration(buildId, request);
   } catch (error) {
-    const message = isRekluError(error)
-      ? error.userMessage
-      : 'Generation failed. Nothing was changed.';
+    const normalized = toRekluError(error);
+    const message = normalized.userMessage;
 
     logger.error('Build generation failed', {
       buildId,
-      error: error instanceof Error ? error.message : String(error),
+      error: normalized.message,
+      code: normalized.code,
+      retryable: normalized.retryable,
     });
+
+    const context = await getAppContext().catch(() => undefined);
+    if (context) {
+      await recordStep({
+        buildId,
+        workspaceId: context.workspace.workspaceId,
+        kind: 'say',
+        message,
+      }).catch(() => undefined);
+    }
 
     await db
       .update(buildProjects)
@@ -311,7 +322,12 @@ export async function generateBuildAction(
       .where(eq(buildProjects.id, buildId));
 
     revalidatePath(`/build/${buildId}`);
-    return { ok: false, message, fileCount: 0 };
+    const fileCount = context
+      ? await loadTree(buildId, context.workspace.workspaceId)
+          .then((files) => files.length)
+          .catch(() => 0)
+      : 0;
+    return { ok: false, message, fileCount };
   }
 }
 
@@ -532,7 +548,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     throw errors.notFound('Build project', buildId);
   }
 
-  const model = await pickModel(request.modelKey);
+  let model = await pickModel(request.modelKey);
   /*
    * Typed, not `never`. The cast used to erase the brief entirely, so the
    * target — which decides the stack, the standards and whether a design pass
@@ -648,55 +664,84 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     });
   }
 
-  const generated = await generateFiles({
-    brief,
-    /* The plan leads, because it is the part derived from evidence. */
-    prompt: plan ? `${planToPrompt(plan)}\n\n---\n\n${prompt}` : prompt,
-    images,
-    model,
-    existingFiles: existing,
-    /*
-     * Each stage is written down as it is entered, in the words a reader would
-     * use. The status alone said "generating" for the whole of a two-minute
-     * call, so the screen had nothing to show between pressing the button and
-     * the files appearing — which is indistinguishable from nothing happening.
-     */
-    report: async (stage) => {
-      await db
-        .update(buildProjects)
-        .set({
-          status: stage === 'generating_files' ? 'generating' : 'planning',
-          statusDetail: STAGE_LABELS[stage] ?? null,
-        })
-        .where(eq(buildProjects.id, buildId));
+  const generateWith = (selectedModel: RegisteredModel) =>
+    generateFiles({
+      brief,
+      /* The plan leads, because it is the part derived from evidence. */
+      prompt: plan ? `${planToPrompt(plan)}\n\n---\n\n${prompt}` : prompt,
+      images,
+      model: selectedModel,
+      existingFiles: existing,
+      /*
+       * Each stage is written down as it is entered, in the words a reader would
+       * use. The status alone said "generating" for the whole of a two-minute
+       * call, so the screen had nothing to show between pressing the button and
+       * the files appearing — which is indistinguishable from nothing happening.
+       */
+      report: async (stage) => {
+        await db
+          .update(buildProjects)
+          .set({
+            status: stage === 'generating_files' ? 'generating' : 'planning',
+            statusDetail: STAGE_LABELS[stage] ?? null,
+          })
+          .where(eq(buildProjects.id, buildId));
 
-      await recordStep({
-        buildId,
-        workspaceId: workspace.workspaceId,
-        kind: 'stage',
-        message: STAGE_LABELS[stage] ?? stage,
-      });
-    },
-    /* The model's own words, as it starts writing rather than afterwards. */
-    onNarration: async (text) => {
-      await recordStep({
-        buildId,
-        workspaceId: workspace.workspaceId,
-        kind: 'say',
-        message: text.slice(0, 2_000),
-      });
-    },
-    /* Named as it is written, not listed afterwards. */
-    onFile: async (path) => {
-      await recordStep({
-        buildId,
-        workspaceId: workspace.workspaceId,
-        kind: 'file',
-        message: path,
-        path,
-      });
-    },
-  });
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'stage',
+          message: STAGE_LABELS[stage] ?? stage,
+        });
+      },
+      /* The model's own words, as it starts writing rather than afterwards. */
+      onNarration: async (text) => {
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'say',
+          message: text.slice(0, 2_000),
+        });
+      },
+      /* Named as it is written, not listed afterwards. */
+      onFile: async (path) => {
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'file',
+          message: path,
+          path,
+        });
+      },
+    });
+
+  let generated;
+  try {
+    generated = await generateWith(model);
+  } catch (error) {
+    const normalized = toRekluError(error);
+    const mayFallback = normalized.retryable && (!request.modelKey || request.modelKey === 'auto');
+    if (!mayFallback) throw error;
+
+    const fallback = await pickModel(undefined, model.key).catch(() => undefined);
+    if (!fallback) throw error;
+
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'say',
+      message: `${model.displayName} could not respond. Continuing with ${fallback.displayName}.`,
+    });
+    logger.warn('Build model failed; retrying with fallback', {
+      buildId,
+      failedModel: model.key,
+      fallbackModel: fallback.key,
+      error: normalized.message,
+    });
+
+    model = fallback;
+    generated = await generateWith(model);
+  }
 
   if (generated.files.length === 0) {
     /*

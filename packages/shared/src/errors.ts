@@ -387,11 +387,48 @@ function providerRejection(thrown: unknown): RekluError | undefined {
   });
 }
 
+/**
+ * AI adapters deliberately wrap vendor exceptions so callers can reason about
+ * retryability without depending on an SDK type. Recognise that public shape
+ * here without importing @reklu/ai (which would create a package cycle).
+ */
+function providerCallFailure(thrown: unknown): RekluError | undefined {
+  const error = thrown as {
+    name?: unknown;
+    providerKey?: unknown;
+    statusCode?: unknown;
+    retryable?: unknown;
+    message?: unknown;
+    cause?: unknown;
+  };
+
+  if (error?.name !== 'ProviderCallError' || typeof error.providerKey !== 'string') {
+    return undefined;
+  }
+
+  /* The original AI SDK error has the useful HTTP response and safe advice. */
+  const upstream = providerRejection(error.cause);
+  if (upstream) return upstream;
+
+  const status = typeof error.statusCode === 'number' ? ` (${error.statusCode})` : '';
+  return errors.providerError({
+    provider: error.providerKey,
+    detail: typeof error.message === 'string' ? error.message : 'No detail given',
+    userMessage:
+      `The ${error.providerKey} model provider could not generate this build${status}. ` +
+      'Try Reklu Auto again or choose another model.',
+    retryable: error.retryable === true,
+  });
+}
+
 export function toRekluError(thrown: unknown): RekluError {
   if (isRekluError(thrown)) return thrown;
 
   const rejection = providerRejection(thrown);
   if (rejection) return rejection;
+
+  const providerFailure = providerCallFailure(thrown);
+  if (providerFailure) return providerFailure;
 
   if (thrown instanceof Error) return errors.internal(thrown.message, thrown);
   return errors.internal(`Non-Error thrown: ${String(thrown)}`, thrown);
