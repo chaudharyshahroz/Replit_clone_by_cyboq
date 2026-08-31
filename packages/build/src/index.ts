@@ -9,6 +9,8 @@ export * from './dev-command';
 export * from './build-skills';
 export * from './market-research';
 export * from './design-pass';
+export * from './design-contract';
+export * from './design-quality';
 export * from './design-intelligence';
 export * from './badge';
 export * from './repair-imports';

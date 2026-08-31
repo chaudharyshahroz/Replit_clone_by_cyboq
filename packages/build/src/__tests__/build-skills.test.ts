@@ -64,6 +64,8 @@ describe('the guidance a build receives', () => {
 
   it('tells a website about metadata and a web app about the server boundary', () => {
     expect(skillGuidanceFor('website').toLowerCase()).toContain('meta description');
+    expect(skillGuidanceFor('website').toLowerCase()).toContain('no items yet');
+    expect(skillGuidanceFor('website').toLowerCase()).toContain('blank screen');
     expect(skillGuidanceFor('web_app').toLowerCase()).toContain('server components');
   });
 

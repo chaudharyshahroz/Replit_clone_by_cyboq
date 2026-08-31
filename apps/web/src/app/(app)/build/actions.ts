@@ -12,6 +12,8 @@ import {
   fallbackBrief,
   generateBrief,
   chooseDirection,
+  createDesignContract,
+  auditDesignQuality,
   describeDirection,
   describeEmptyGeneration,
   generateFiles,
@@ -89,6 +91,28 @@ async function pickModel(requested?: string, excludeKeys: readonly string[] = []
     allowed.find((m) => m.bestFor.includes('reasoning')) ??
     allowed[0]!
   );
+}
+
+/**
+ * The builder and design director have different jobs. Prefer a model that can
+ * both reason about composition and safely rewrite React/CSS, while retaining
+ * the selected build model as a guaranteed fallback for small/free registries.
+ */
+async function pickDesignModel(fallback: RegisteredModel): Promise<RegisteredModel> {
+  const registry = await loadRegistry();
+  const allowed = selectableModels(registry, undefined);
+  const capable = allowed.filter(
+    (model) => model.bestFor.includes('coding') || model.bestFor.includes('reasoning'),
+  );
+
+  return [...capable].sort((left, right) => {
+    const score = (model: RegisteredModel) =>
+      (model.bestFor.includes('coding') ? 8 : 0) +
+      (model.supportsVision ? 4 : 0) +
+      (model.supportsReasoning ? 3 : 0) +
+      Math.min(model.maxOutputTokens / 8_000, 2);
+    return score(right) - score(left) || left.sortOrder - right.sortOrder;
+  })[0] ?? fallback;
 }
 
 /** What a person asked for, and everything they pointed at while asking. */
@@ -814,13 +838,61 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         message: STAGE_LABELS.designing ?? 'Designing the interface',
       });
 
-      const designed = await runDesignPass({ brief, files: merged, model });
+      const contract = createDesignContract(brief);
+      const designModel = await pickDesignModel(model).catch(() => model);
+      const designed = await runDesignPass({
+        brief,
+        files: merged,
+        model: designModel,
+        contract,
+      });
       if (designed.files.length > 0) {
         merged = mergeTree(merged, designed.files);
         logger.info('Design pass revised files', {
           buildId,
           changed: designed.changed,
         });
+      }
+
+      /*
+       * A design director needs an acceptance pass. The first rewrite can still
+       * be attractive in source while shipping the exact failures a user sees:
+       * an empty first viewport, “no products yet” as the main sales section,
+       * or no action at all. Run one bounded critic-guided revision; never loop
+       * indefinitely on aesthetic judgment.
+       */
+      const findings = auditDesignQuality(brief, merged);
+      if (findings.length > 0) {
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'stage',
+          message: `Design review found ${findings.length} issue${findings.length === 1 ? '' : 's'}; refining the interface`,
+        });
+
+        const refined = await runDesignPass({
+          brief,
+          files: merged,
+          model: designModel,
+          contract,
+          feedback: findings,
+        });
+        if (refined.files.length > 0) {
+          merged = mergeTree(merged, refined.files);
+          logger.info('Design critic revision updated files', {
+            buildId,
+            changed: refined.changed,
+            findings: findings.map((finding) => finding.code),
+          });
+        }
+
+        const remaining = auditDesignQuality(brief, merged);
+        if (remaining.length > 0) {
+          logger.warn('Design critic findings remain after the bounded revision', {
+            buildId,
+            findings: remaining.map((finding) => finding.code),
+          });
+        }
       }
     } catch (error) {
       /*

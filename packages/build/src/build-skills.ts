@@ -177,6 +177,8 @@ export const BUILD_SKILLS: Readonly<Record<BuildTarget, BuildSkill>> = {
       'Responsive from 360px up. Test the layout at a narrow width, not only wide.',
       'Images carry width, height and alt text so the page does not shift as it loads.',
       'Static rendering wherever the content does not depend on the visitor.',
+      'A generated preview is the finished sales experience, not an empty database: render realistic representative products, testimonials and business details instead of “no items yet” sections.',
+      'The first viewport contains a specific h1, supporting copy, meaningful visual media and one primary action; never ship a navigation bar above an otherwise blank screen.',
     ],
   },
 

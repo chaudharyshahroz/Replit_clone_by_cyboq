@@ -24,6 +24,9 @@ import {
   isVisualTarget,
 } from './design-intelligence';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
+import type { DesignContract } from './design-contract';
+import { designContractPrompt } from './design-contract';
+import { designFeedbackPrompt, type DesignQualityIssue } from './design-quality';
 
 /**
  * Targets where what it looks like *is* what it is.
@@ -123,6 +126,8 @@ export async function runDesignPass(options: {
   readonly brief: BuildBrief;
   readonly files: readonly GeneratedFile[];
   readonly model: RegisteredModel;
+  readonly contract?: DesignContract;
+  readonly feedback?: readonly DesignQualityIssue[];
   readonly signal?: AbortSignal;
 }): Promise<DesignPassResult> {
   const provider = getProvider(options.model.providerKey);
@@ -163,7 +168,12 @@ export async function runDesignPass(options: {
      * independently produce a page whose stylesheet and components disagree
      * about what colour the accent is.
      */
-    system: `${DESIGN_PROMPT}\n${directionPrompt(direction, options.brief.target)}`,
+    system: [
+      DESIGN_PROMPT,
+      directionPrompt(direction, options.brief.target),
+      ...(options.contract ? [designContractPrompt(options.contract)] : []),
+      ...(options.feedback ? [designFeedbackPrompt(options.feedback)] : []),
+    ].join('\n'),
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
     ...(options.signal ? { signal: options.signal } : {}),
   });
