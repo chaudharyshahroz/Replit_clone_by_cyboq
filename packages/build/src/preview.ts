@@ -61,6 +61,17 @@ const MAX_RUNNING_PREVIEWS = 4;
 /** In-process handles, so a preview can be stopped without re-spawning. */
 const running = new Map<string, PreviewHandle>();
 
+/** Files created by package managers rather than stored in the generated tree. */
+const RUNTIME_FILES = new Set(['package-lock.json', 'npm-shrinkwrap.json']);
+
+export function staleProjectFiles(
+  currentFiles: readonly string[],
+  sandboxFiles: readonly string[],
+): readonly string[] {
+  const current = new Set(currentFiles);
+  return sandboxFiles.filter((path) => !current.has(path) && !RUNTIME_FILES.has(path));
+}
+
 /**
  * Destroy any sandbox this build left behind.
  *
@@ -267,6 +278,33 @@ async function reuseRunningSandbox(params: {
     }
 
     await params.report?.('generating_files', 'Updating the running preview');
+
+    /*
+     * A write-only sync leaves renamed and deleted source files behind. When
+     * constants.ts is repaired to constants.tsx, Next resolves the stale .ts
+     * first and reports the same syntax error forever. Mirror the stored tree,
+     * while retaining package-manager state and ignored build/dependency dirs.
+     */
+    const existingPaths = await driver.listFiles(sandboxHandle);
+    const stalePaths = staleProjectFiles(
+      files.map((file) => file.path),
+      existingPaths,
+    );
+    if (stalePaths.length > 0) {
+      const removed = await driver.exec(sandboxHandle, {
+        command: 'rm',
+        args: ['-f', '--', ...stalePaths],
+        timeoutMs: 10_000,
+      });
+      if (removed.exitCode !== 0) {
+        logger.warn('Could not remove stale preview files; rebuilding the sandbox', {
+          buildProjectId: params.buildProjectId,
+          output: (removed.stderr || removed.stdout).slice(-2_000),
+        });
+        return undefined;
+      }
+    }
+
     await driver.writeFiles(
       sandboxHandle,
       await withImageBytes(files),

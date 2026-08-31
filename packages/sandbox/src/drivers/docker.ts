@@ -845,7 +845,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
           '-c',
           // -not -path prunes before descending, so a large node_modules is not
           // walked only to be filtered out afterwards.
-          `cd ${WORKDIR} && find . -type f -not -path './node_modules/*' -not -path './.git/*' | sed 's|^\\./||'`,
+          `cd ${WORKDIR} && find . -type f -not -path './node_modules/*' -not -path './.git/*' -not -path './.next/*' -not -path './dist/*' -not -path './.turbo/*' | sed 's|^\\./||'`,
         ],
       });
 
