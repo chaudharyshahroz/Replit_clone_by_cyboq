@@ -55,6 +55,7 @@ import {
   repairClientMetadata,
   repairPrismaSchemas,
   repairGlobalStyles,
+  repairPreviewCompilation,
   repairStaticExport,
   previewEntryProblem,
 } from '@reklu/build';
@@ -66,7 +67,6 @@ import { findStockImage, generateImage } from '@reklu/create';
 import { createWebAdapter, runResearch, SEARCH_PROVIDER_ENV } from '@reklu/research';
 import { getAppContext } from '@/lib/auth-context';
 import { loadAttachments } from '@/lib/files';
-import { compileErrorIn } from '@/lib/compile-error';
 import { storage } from '@reklu/storage';
 
 export interface BuildFormState {
@@ -1067,7 +1067,7 @@ export async function startPreviewAction(
       }
     }
 
-    const result = await startPreview({
+    let result = await startPreview({
       buildProjectId: buildId,
       workspaceId: workspace.workspaceId,
       report: async (stage) => {
@@ -1088,49 +1088,31 @@ export async function startPreviewAction(
       };
     }
 
-    /*
-     * `next dev` remains alive while webpack/PostCSS serves an error response.
-     * Detect that before the generic startup-failure branch, repair once, then
-     * ask the same sandbox to prove the real page responds successfully.
-     */
-    const devLog = result.output || (await previewLogs(buildId, workspace.workspaceId));
-    const compileError = compileErrorIn(devLog);
+    result = await repairPreviewCompilation({
+      initial: result,
+      readLog: () => previewLogs(buildId, workspace.workspaceId),
+      repair: async (compileError, attempt) => {
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'say',
+          message: `Repairing preview compilation (attempt ${attempt} of 3).`,
+        });
+        await runGeneration(buildId, {
+          instruction:
+            'Fix the current compiler failure using the existing project files. ' +
+            'For missing local imports, find the actual file exporting the symbol; do not invent a path. ' +
+            'For unknown Tailwind utilities, align the utility with the existing theme configuration. ' +
+            'Preserve the design and unrelated files.\n\n' + compileError,
+          origin: 'auto',
+          repairPass: true,
+        });
+      },
+      restart: () => startPreview({ buildProjectId: buildId, workspaceId: workspace.workspaceId }),
+    });
 
-    if (compileError) {
-      await recordStep({
-        buildId,
-        workspaceId: workspace.workspaceId,
-        kind: 'say',
-        message: 'The preview compiler found an error. Fixing it before opening the preview.',
-      });
-
-      await runGeneration(buildId, {
-        instruction:
-          'The preview compiler reports the following error. Fix its cause and change ' +
-          `nothing else.\n\n${compileError}`,
-        origin: 'auto',
-        repairPass: true,
-      });
-
-      const repaired = await startPreview({
-        buildProjectId: buildId,
-        workspaceId: workspace.workspaceId,
-      });
-      const repairedOutput =
-        repaired.output || (await previewLogs(buildId, workspace.workspaceId));
-
-      if (!repaired.ready) {
-        return {
-          url: null,
-          output: repairedOutput,
-          error: describeStartupFailure(
-            repairedOutput,
-            tree.map((file) => file.path),
-          ),
-        };
-      }
-
-      return { url: repaired.url, output: repairedOutput };
+    if (!result.installed) {
+      return { url: null, output: result.output, error: describeInstallFailure(result.output) };
     }
 
     if (!result.ready) {
