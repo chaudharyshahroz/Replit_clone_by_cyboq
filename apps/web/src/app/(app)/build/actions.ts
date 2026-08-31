@@ -73,9 +73,10 @@ export interface BuildFormState {
   readonly error?: string;
 }
 
-async function pickModel(requested?: string, excludeKey?: string): Promise<RegisteredModel> {
+async function pickModel(requested?: string, excludeKeys: readonly string[] = []): Promise<RegisteredModel> {
   const registry = await loadRegistry();
-  const allowed = selectableModels(registry, undefined).filter((model) => model.key !== excludeKey);
+  const excluded = new Set(excludeKeys);
+  const allowed = selectableModels(registry, undefined).filter((model) => !excluded.has(model.key));
   if (allowed.length === 0) {
     throw errors.notConfigured({
       feature: 'Build',
@@ -724,25 +725,40 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     const mayFallback = normalized.retryable && (!request.modelKey || request.modelKey === 'auto');
     if (!mayFallback) throw error;
 
-    const fallback = await pickModel(undefined, model.key).catch(() => undefined);
-    if (!fallback) throw error;
+    const attempted = [model.key];
+    let lastError: unknown = error;
+    let completed = false;
 
-    await recordStep({
-      buildId,
-      workspaceId: workspace.workspaceId,
-      kind: 'say',
-      message: `${model.displayName} could not respond. Continuing with ${fallback.displayName}.`,
-    });
-    logger.warn('Build model failed; retrying with fallback', {
-      buildId,
-      failedModel: model.key,
-      fallbackModel: fallback.key,
-      error: normalized.message,
-    });
-
-    model = fallback;
-    generated = await generateWith(model);
+    /* Free providers are capacity-constrained. Try several distinct coding
+     * models so one overloaded endpoint does not strand an otherwise valid build. */
+    for (let fallbackAttempt = 0; fallbackAttempt < 3; fallbackAttempt++) {
+      const fallback = await pickModel(undefined, attempted).catch(() => undefined);
+      if (!fallback) break;
+      attempted.push(fallback.key);
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'say',
+        message: `${model.displayName} could not respond. Continuing with ${fallback.displayName}.`,
+      });
+      logger.warn('Build model failed; retrying with fallback', {
+        buildId, failedModel: model.key, fallbackModel: fallback.key,
+        error: toRekluError(lastError).message,
+      });
+      model = fallback;
+      try {
+        generated = await generateWith(model);
+        completed = true;
+        break;
+      } catch (fallbackError) {
+        lastError = fallbackError;
+        if (!toRekluError(fallbackError).retryable) throw fallbackError;
+      }
+    }
+    if (!completed) throw lastError;
   }
+
+  if (!generated) throw errors.internal('Build generation returned no result.');
 
   if (generated.files.length === 0) {
     /*

@@ -45,4 +45,15 @@ describe('preview compilation repair', () => {
     });
     expect(repair).not.toHaveBeenCalled();
   });
+
+  it('preserves compiler output when the repair provider fails', async () => {
+    const initial = failed('Syntax error: unknown utility text-on-primary');
+    const result = await repairPreviewCompilation({
+      initial,
+      readLog: async () => '',
+      repair: async () => { throw new Error('Provider returned error'); },
+      restart: async () => ready,
+    });
+    expect(result).toEqual(initial);
+  });
 });

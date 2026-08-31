@@ -18,7 +18,13 @@ export async function repairPreviewCompilation<T extends PreviewState>(options: 
     const output = state.output || (await options.readLog());
     const error = compileErrorIn(output);
     if (!error) return { ...state, output };
-    await options.repair(error, attempt);
+    try {
+      await options.repair(error, attempt);
+    } catch {
+      /* Keep the compiler evidence. A provider outage did not prevent the
+       * preview server from starting and must not replace the actionable error. */
+      return { ...state, output };
+    }
     state = await options.restart();
   }
   return state;
