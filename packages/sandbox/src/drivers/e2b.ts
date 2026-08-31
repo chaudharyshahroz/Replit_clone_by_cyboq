@@ -30,6 +30,9 @@ import {
 /** Working directory inside the microVM. E2B's default user is `user`. */
 const WORKDIR = '/home/user/app';
 
+/** Must match the path read by the build package after a failed startup. */
+const DEV_LOG_PATH = '/tmp/dev-server.log';
+
 /** Never listed back to the UI — noise, and enormous. */
 const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', '.next', 'dist', '.turbo']);
 
@@ -257,7 +260,13 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
        */
       let running: Awaited<ReturnType<typeof sandbox.commands.run>> | undefined;
       if (command) {
-        const line = [command.command, ...command.args].join(' ');
+        /*
+         * Background command handles are process-local and disappear when the
+         * next request reaches another Reklu replica. Persist the output inside
+         * the microVM instead: preview readiness and compiler repair reconnect
+         * later and read this exact file through the sandbox driver.
+         */
+        const line = `${[command.command, ...command.args].join(' ')} > ${DEV_LOG_PATH} 2>&1`;
         try {
           running = await sandbox.commands.run(line, {
             cwd: WORKDIR,
