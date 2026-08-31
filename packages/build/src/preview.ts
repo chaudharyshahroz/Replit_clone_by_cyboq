@@ -30,6 +30,7 @@ import type { GeneratedFile } from './parse';
 import { compileErrorIn } from './compile-log';
 import { previewEntryProblem, previewHealthCheck } from './preview-entry';
 import { repairGlobalStyles } from './repair-styles';
+import { repairJsxExtensions } from './repair-jsx-extension';
 
 /** Previews live on a dedicated range, well away from Reklu's own port. */
 const PORT_RANGE_START = 43_000;
@@ -237,7 +238,7 @@ async function reuseRunningSandbox(params: {
     isIsolated: driver.isIsolated,
   };
 
-  const files = repairGlobalStyles(await loadTree(params.buildProjectId, params.workspaceId));
+  const files = repairJsxExtensions(repairGlobalStyles(await loadTree(params.buildProjectId, params.workspaceId)));
   if (files.length === 0) return undefined;
 
   try {
@@ -612,7 +613,7 @@ export async function startPreview(params: {
 
   if (!project) throw errors.notFound('Build project', params.buildProjectId);
 
-  const files = repairGlobalStyles(await loadTree(params.buildProjectId, params.workspaceId));
+  const files = repairJsxExtensions(repairGlobalStyles(await loadTree(params.buildProjectId, params.workspaceId)));
   if (files.length === 0) {
     throw errors.validation('There is nothing to preview yet. Generate the application first.');
   }

@@ -56,6 +56,7 @@ import {
   repairPrismaSchemas,
   repairGlobalStyles,
   repairPreviewCompilation,
+  repairJsxExtensions,
   repairStaticExport,
   previewEntryProblem,
 } from '@reklu/build';
@@ -855,11 +856,11 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = repairGlobalStyles(repairClientMetadata(
+  const resolved = repairJsxExtensions(repairGlobalStyles(repairClientMetadata(
     repairStaticExport(
       repairFontWeights(repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(merged)))),
     ),
-  ));
+  )));
 
   /*
    * The photographs, drawn from what the page says they show.
