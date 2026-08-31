@@ -80,6 +80,7 @@ export default async function BuildDetailPage({
     speed: model.speed,
     costTier: model.costTier,
     isDevelopmentMock: model.isDevelopmentMock,
+    bestFor: model.bestFor,
   }));
 
   const [files, checkpoints, preview] = await Promise.all([

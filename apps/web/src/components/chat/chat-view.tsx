@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -104,6 +104,7 @@ export interface SelectableModel {
   readonly speed: string;
   readonly costTier: string;
   readonly isDevelopmentMock: boolean;
+  readonly bestFor?: readonly string[];
 }
 
 /** A picture a turn produced, shown in the transcript where it was asked for. */
@@ -364,6 +365,16 @@ export function ChatView({
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [tool, setTool] = useState<ToolKey>('chat');
+  const visibleModels = useMemo(
+    () => (tool === 'build' ? models.filter((model) => model.bestFor?.includes('coding')) : models),
+    [models, tool],
+  );
+
+  useEffect(() => {
+    if (tool === 'build' && modelKey !== 'auto' && !visibleModels.some((model) => model.key === modelKey)) {
+      setModelKey('auto');
+    }
+  }, [modelKey, tool, visibleModels]);
   const [dragging, setDragging] = useState(false);
   const [streamSources, setStreamSources] = useState<readonly CitedSource[]>([]);
   /** The stage the server is currently in, when it reports one. */
@@ -1057,7 +1068,7 @@ export function ChatView({
         */}
         <header className="flex h-12 shrink-0 items-center px-4">
           <ModelSelector
-            models={models}
+            models={visibleModels}
             value={modelKey}
             onChange={setModelKey}
             disabled={streaming}

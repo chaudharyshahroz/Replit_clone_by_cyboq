@@ -51,6 +51,7 @@ export default async function ConversationPage({
     speed: model.speed,
     costTier: model.costTier,
     isDevelopmentMock: model.isDevelopmentMock,
+    bestFor: model.bestFor,
   }));
 
   return (

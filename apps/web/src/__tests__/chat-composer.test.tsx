@@ -27,6 +27,17 @@ const models = [
     speed: 'balanced',
     costTier: 'premium',
     isDevelopmentMock: false,
+    bestFor: ['coding'],
+  },
+  {
+    key: 'prose-only',
+    displayName: 'Prose Only',
+    providerName: 'Example',
+    description: 'Writing model',
+    speed: 'fast',
+    costTier: 'economy',
+    isDevelopmentMock: false,
+    bestFor: ['general'],
   },
 ];
 
@@ -56,6 +67,17 @@ describe('the model selector', () => {
     const trigger = screen.getByRole('button', { name: /Reklu Auto/ });
     expect(container.querySelector('header')?.contains(trigger)).toBe(true);
     expect(trigger.closest('form')).toBeNull();
+  });
+
+  it('shows only coding-capable models while Build is selected', async () => {
+    const user = userEvent.setup();
+    renderChat();
+    await chooseTool(user, 'Build');
+    await user.click(screen.getByRole('button', { name: /Reklu Auto/ }));
+
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('GPT-5')).toBeDefined();
+    expect(within(listbox).queryByText('Prose Only')).toBeNull();
   });
 });
 

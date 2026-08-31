@@ -17,6 +17,7 @@ export * from './repair-fonts';
 export * from './repair-export';
 export * from './repair-client-metadata';
 export * from './repair-prisma';
+export * from './repair-styles';
 export * from './install-args';
 export * from './artwork';
 export * from './publish';
