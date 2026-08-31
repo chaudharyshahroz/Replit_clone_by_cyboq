@@ -928,7 +928,8 @@ export function BuildWorkspace({
                       trigger={
                         <>
                           <span className="max-w-[14rem] truncate">
-                            {routes.find((entry) => entry.path === route)?.label ?? 'Homepage'}
+                            {routes.find((entry) => entry.path === route)?.label ??
+                              (routes.length > 0 ? 'Homepage' : 'No pages')}
                           </span>
                           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} />
                         </>

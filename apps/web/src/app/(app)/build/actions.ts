@@ -55,6 +55,7 @@ import {
   repairClientMetadata,
   repairPrismaSchemas,
   repairStaticExport,
+  previewEntryProblem,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -849,6 +850,40 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     .where(eq(buildProjects.id, buildId));
 
   /*
+   * A partial model response can contain nineteen perfectly valid files and no
+   * route. Saving that as "ready" produces a Next server whose only page is its
+   * framework 404. Repair the runnable shell now, while the generating model
+   * and brief are still available, instead of making Preview discover it later.
+   */
+  const missingEntry = previewEntryProblem(instrumented.files);
+  if (missingEntry) {
+    if (!request.repairPass) {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'say',
+        message: 'The generated files are missing a runnable homepage. Adding it now.',
+      });
+
+      return runGeneration(buildId, {
+        instruction:
+          `${missingEntry}\n\nAdd the missing runnable entry using the existing components and ` +
+          'design. Change nothing unrelated.',
+        origin: 'auto',
+        repairPass: true,
+        modelKey: request.modelKey,
+      });
+    }
+
+    await db
+      .update(buildProjects)
+      .set({ status: 'failed', statusDetail: missingEntry })
+      .where(eq(buildProjects.id, buildId));
+    revalidatePath(`/build/${buildId}`);
+    return { ok: false, message: missingEntry, fileCount: instrumented.files.length };
+  }
+
+  /*
    * Into the running container, not just into the database.
    *
    * This is what makes an edit appear. Reloading the frame was never enough:
@@ -953,9 +988,39 @@ export async function startPreviewAction(
   const { workspace } = await getAppContext();
 
   /* The layout of the tree, which is one of the reasons a server never starts. */
-  const tree = await loadTree(buildId, workspace.workspaceId);
+  let tree = await loadTree(buildId, workspace.workspaceId);
 
   try {
+    /*
+     * Repair an incomplete generated tree before spending time provisioning a
+     * sandbox. A Next process with configs and components but no page starts
+     * perfectly and serves only its own 404 screen — exactly the shape that
+     * used to be reported as a successful preview.
+     */
+    const missingEntry = previewEntryProblem(tree);
+    if (missingEntry) {
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'say',
+        message: 'The generated application has no runnable homepage. Adding it now.',
+      });
+
+      await runGeneration(buildId, {
+        instruction:
+          `${missingEntry}\n\nAdd the missing runnable entry using the existing components and ` +
+          'design. Change nothing unrelated.',
+        origin: 'auto',
+        repairPass: true,
+      });
+
+      tree = await loadTree(buildId, workspace.workspaceId);
+      const stillMissing = previewEntryProblem(tree);
+      if (stillMissing) {
+        return { url: null, output: stillMissing, error: stillMissing };
+      }
+    }
+
     const result = await startPreview({
       buildProjectId: buildId,
       workspaceId: workspace.workspaceId,
@@ -976,35 +1041,13 @@ export async function startPreviewAction(
         error: describeInstallFailure(result.output),
       };
     }
-    if (!result.ready) {
-      /*
-       * A URL to nothing is worse than no URL. The frame renders white and the
-       * proxy answers "Bad Gateway", and neither says which of a dozen things
-       * went wrong — so the reason is named here instead.
-       */
-      return {
-        url: null,
-        output: result.output,
-        error: describeStartupFailure(
-          result.output,
-          tree.map((file) => file.path),
-        ),
-      };
-    }
 
     /*
-     * A dev server is a process, not proof that the application compiled.
-     * Next keeps listening and answers with its error page when PostCSS,
-     * webpack, or the route compiler fails. That used to make the first build
-     * look "ready" while the preview was a white 500 page; only a manual click
-     * on "Fix this error" sent the compiler's evidence back to the model.
-     *
-     * Use the same bounded, one-pass repair as the post-generation TypeScript
-     * check. `repairPass` is important: if the model cannot fix the error, the
-     * console and manual repair affordance remain available without creating an
-     * expensive automatic loop.
+     * `next dev` remains alive while webpack/PostCSS serves an error response.
+     * Detect that before the generic startup-failure branch, repair once, then
+     * ask the same sandbox to prove the real page responds successfully.
      */
-    const devLog = await previewLogs(buildId, workspace.workspaceId);
+    const devLog = result.output || (await previewLogs(buildId, workspace.workspaceId));
     const compileError = compileErrorIn(devLog);
 
     if (compileError) {
@@ -1023,10 +1066,40 @@ export async function startPreviewAction(
         repairPass: true,
       });
 
-      const repairedLog = await previewLogs(buildId, workspace.workspaceId);
+      const repaired = await startPreview({
+        buildProjectId: buildId,
+        workspaceId: workspace.workspaceId,
+      });
+      const repairedOutput =
+        repaired.output || (await previewLogs(buildId, workspace.workspaceId));
+
+      if (!repaired.ready) {
+        return {
+          url: null,
+          output: repairedOutput,
+          error: describeStartupFailure(
+            repairedOutput,
+            tree.map((file) => file.path),
+          ),
+        };
+      }
+
+      return { url: repaired.url, output: repairedOutput };
+    }
+
+    if (!result.ready) {
+      /*
+       * A URL to nothing is worse than no URL. The frame renders white and the
+       * proxy answers "Bad Gateway", and neither says which of a dozen things
+       * went wrong — so the reason is named here instead.
+       */
       return {
-        url: result.url,
-        output: repairedLog || devLog || result.output,
+        url: null,
+        output: result.output,
+        error: describeStartupFailure(
+          result.output,
+          tree.map((file) => file.path),
+        ),
       };
     }
 

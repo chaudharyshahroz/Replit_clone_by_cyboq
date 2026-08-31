@@ -9,7 +9,7 @@
  * deprecation notice would spend a model call and a minute of someone's time
  * on nothing.
  */
-const MARKERS = [
+const FAILURE_MARKERS = [
   'Failed to compile',
   'Module not found',
   'Unknown weight',
@@ -19,31 +19,23 @@ const MARKERS = [
   'Type error:',
 ];
 
+const RECOVERY_MARKERS = ['Compiled successfully', 'compiled successfully', 'Compiled /'];
+
 export function compileErrorIn(log: string): string | null {
   if (!log.trim()) return null;
 
-  const index = MARKERS.map((marker) => log.lastIndexOf(marker))
+  const failedAt = FAILURE_MARKERS.map((marker) => log.lastIndexOf(marker))
     .filter((position) => position !== -1)
     .sort((a, b) => b - a)[0];
 
-  if (index === undefined) return null;
+  if (failedAt === undefined) return null;
 
-  /*
-   * Development-server logs are append-only. Once hot reload compiles a repair,
-   * the old error remains in the file; treating it as current leaves the red
-   * banner up forever and keeps offering to fix code that is already working.
-   */
-  const recoveredAt = [
-    log.lastIndexOf('Compiled successfully'),
-    log.lastIndexOf('compiled successfully'),
-    log.lastIndexOf('Compiled /'),
-  ].sort((a, b) => b - a)[0]!;
-  if (recoveredAt > index) return null;
+  /* A successful hot reload supersedes errors earlier in the append-only log. */
+  const recoveredAt = RECOVERY_MARKERS.map((marker) => log.lastIndexOf(marker)).sort(
+    (a, b) => b - a,
+  )[0]!;
+  if (recoveredAt > failedAt) return null;
 
-  /*
-   * A little before, so the file path above the message comes too, and a bounded
-   * amount after. The model needs the location as much as the complaint.
-   */
-  const from = Math.max(0, index - 400);
+  const from = Math.max(0, failedAt - 400);
   return log.slice(from, from + 1_800).trim();
 }

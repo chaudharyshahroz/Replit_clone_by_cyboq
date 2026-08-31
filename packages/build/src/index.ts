@@ -20,3 +20,4 @@ export * from './repair-prisma';
 export * from './install-args';
 export * from './artwork';
 export * from './publish';
+export * from './preview-entry';

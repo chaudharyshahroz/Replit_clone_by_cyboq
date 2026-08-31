@@ -27,6 +27,8 @@ import { loadTree } from './versions';
 import { NPM_INSTALL_ARGS } from './install-args';
 import { withImageBytes } from './artwork';
 import type { GeneratedFile } from './parse';
+import { compileErrorIn } from './compile-log';
+import { previewEntryProblem, previewHealthCheck } from './preview-entry';
 
 /** Previews live on a dedicated range, well away from Reklu's own port. */
 const PORT_RANGE_START = 43_000;
@@ -291,6 +293,30 @@ async function reuseRunningSandbox(params: {
       }
     }
 
+    const entryProblem = previewEntryProblem(files);
+    if (entryProblem) {
+      return {
+        url: row.previewUrl,
+        port: row.port ?? 0,
+        ready: false,
+        sandboxId: row.id,
+        installed: true,
+        checksPassed: false,
+        output: entryProblem,
+        isIsolated: driver.isIsolated,
+      };
+    }
+
+    const health = previewHealthCheck(files);
+    const ready = await waitForServer(
+      sandboxHandle,
+      row.port ?? 0,
+      health.path,
+      health.requireOk,
+      params.report ?? (() => undefined),
+    );
+    const output = ready ? '' : await readDevLog(sandboxHandle).catch(() => '');
+
     /*
      * Touched, so using a preview keeps it. Without this the deadline is set
      * once at creation and a preview somebody is actively editing is reaped
@@ -309,12 +335,11 @@ async function reuseRunningSandbox(params: {
     return {
       url: row.previewUrl,
       port: row.port ?? 0,
-      /* Reuse only happens after a liveness probe, so it is answering. */
-      ready: true,
+      ready,
       sandboxId: row.id,
       installed: true,
       checksPassed: null,
-      output: '',
+      output,
       isIsolated: driver.isIsolated,
     };
   } catch (error) {
@@ -333,10 +358,9 @@ const READY_TIMEOUT_MS = 90_000;
  * Block until the application answers on its port, or until it has had long
  * enough.
  *
- * Returning anyway on timeout is deliberate. A server that is slow is still
- * worth showing — the frame will fill in when it finishes — whereas refusing to
- * open a preview because compilation took ninety seconds would turn a slow
- * build into a failed one.
+ * A timeout is not readiness. The caller keeps the URL out of the frame and
+ * surfaces the captured process output, rather than presenting a blank proxy or
+ * framework error page as the generated application.
  */
 /**
  * The dev server's own output, from inside the container.
@@ -357,6 +381,8 @@ async function readDevLog(handle: SandboxHandle): Promise<string> {
 async function waitForServer(
   handle: SandboxHandle,
   port: number,
+  path: string,
+  requireOk: boolean,
   report: BuildStageReporter,
 ): Promise<boolean> {
   const driver = sandbox();
@@ -370,18 +396,29 @@ async function waitForServer(
         args: [
           '-e',
           /*
-           * Any answer at all counts, including a 500. The question is whether
-           * something is listening and compiled enough to respond — a server
-           * returning an error page is one the frame can show, and showing it
-           * is how the error becomes visible.
+           * A visual preview is ready only when its actual page succeeds. API
+           * and custom servers may deliberately answer root with a 4xx, which
+           * still proves their process is reachable; a 5xx never counts.
            */
-          `fetch('http://127.0.0.1:${port}/',{signal:AbortSignal.timeout(4000)})` +
-            `.then(()=>process.exit(0)).catch(()=>process.exit(1))`,
+          `fetch('http://127.0.0.1:${port}${path}',{signal:AbortSignal.timeout(4000)})` +
+            `.then(r=>process.exit((r.ok||(${requireOk ? 'false' : 'true'}&&r.status<500))?0:2))` +
+            `.catch(()=>process.exit(1))`,
         ],
         timeoutMs: 8_000,
       });
 
       if (result.exitCode === 0) return true;
+
+      /*
+       * A framework compiler keeps its server alive while serving a 500 error
+       * page. Once the log contains a current compile failure, waiting the rest
+       * of the 90-second startup budget cannot change it; return the evidence so
+       * the automatic repair can act immediately.
+       */
+      if (result.exitCode === 2) {
+        const log = await readDevLog(handle).catch(() => '');
+        if (compileErrorIn(log)) return false;
+      }
     } catch {
       // The container may still be starting; that is what the loop is for.
     }
@@ -456,7 +493,7 @@ export async function syncPreview(params: {
   readonly report?: BuildStageReporter;
 }): Promise<boolean> {
   try {
-    return Boolean(await reuseRunningSandbox(params));
+    return (await reuseRunningSandbox(params))?.ready ?? false;
   } catch (error) {
     /*
      * Never fatal. The generation succeeded and the files are saved; a preview
@@ -579,6 +616,9 @@ export async function startPreview(params: {
     throw errors.validation('There is nothing to preview yet. Generate the application first.');
   }
 
+  const entryProblem = previewEntryProblem(files);
+  if (entryProblem) throw errors.validation(entryProblem);
+
   const report: BuildStageReporter = params.report ?? (() => undefined);
 
   /*
@@ -692,7 +732,14 @@ export async function startPreview(params: {
      * Asked from inside the container, so this is the server answering rather
      * than a proxy or a DNS record that may not have caught up yet.
      */
-    const ready = await waitForServer(materialized.handle, port, report);
+    const health = previewHealthCheck(files);
+    const ready = await waitForServer(
+      materialized.handle,
+      port,
+      health.path,
+      health.requireOk,
+      report,
+    );
 
     /*
      * The dev server's own output, which is where the reason is. Read only on

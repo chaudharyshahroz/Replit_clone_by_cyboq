@@ -16,7 +16,8 @@ export interface SiteRoute {
   readonly label: string;
 }
 
-const PAGE_FILE = /^app\/(.*\/)?page\.(tsx|jsx|ts|js)$/;
+const APP_PAGE_FILE = /^(?:src\/)?app\/(.*\/)?page\.(tsx|jsx|ts|js)$/;
+const PAGES_PAGE_FILE = /^(?:src\/)?pages\/(.*\/)?(?:index|([^/]+))\.(tsx|jsx|ts|js)$/;
 
 /** Turn a directory segment into something worth reading in a menu. */
 function labelFor(path: string): string {
@@ -37,10 +38,13 @@ export function siteRoutes(paths: readonly string[]): readonly SiteRoute[] {
   const routes = new Set<string>();
 
   for (const file of paths) {
-    const match = PAGE_FILE.exec(file);
-    if (!match) continue;
+    const appMatch = APP_PAGE_FILE.exec(file);
+    const pagesMatch = PAGES_PAGE_FILE.exec(file);
+    if (!appMatch && !pagesMatch) continue;
 
-    const segments = (match[1] ?? '')
+    const directory = appMatch?.[1] ?? pagesMatch?.[1] ?? '';
+    const leaf = pagesMatch?.[2];
+    const segments = `${directory}${leaf ?? ''}`
       .split('/')
       .filter((segment) => segment.length > 0)
       /*
@@ -64,11 +68,13 @@ export function siteRoutes(paths: readonly string[]): readonly SiteRoute[] {
     return a.localeCompare(b);
   });
 
-  /*
-   * A single-page application still has one page. Returning nothing would leave
-   * the preview with no address to load at all.
-   */
-  if (sorted.length === 0) return [{ path: '/', label: 'Homepage' }];
+  /* Vite and Expo use entry files rather than Next's page convention. */
+  if (sorted.length === 0) {
+    const hasSinglePageEntry = paths.some(
+      (path) => path === 'index.html' || /^(?:(?:src\/)?app\/index|App)\.(tsx|jsx|ts|js)$/.test(path),
+    );
+    return hasSinglePageEntry ? [{ path: '/', label: 'Homepage' }] : [];
+  }
 
   return sorted.map((path) => ({ path, label: labelFor(path) }));
 }
