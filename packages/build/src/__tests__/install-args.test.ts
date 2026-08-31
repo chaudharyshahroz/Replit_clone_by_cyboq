@@ -150,6 +150,21 @@ describe('describing a preview that never started', () => {
     expect(describeStartupFailure(log, app)).toContain('next/navigation');
   });
 
+  it('distinguishes a running server with an SWC compile failure', () => {
+    const log = [
+      '✓ Ready in 1477ms',
+      './src/components/features/Hero.tsx',
+      'Unexpected token `section`. Expected jsx identifier',
+      'Caused by: Syntax Error',
+      'GET / 500 in 933ms',
+    ].join('\n');
+
+    const described = describeStartupFailure(log, app);
+    expect(described).toMatch(/server started/);
+    expect(described).toMatch(/did not compile/);
+    expect(described).not.toMatch(/never started/);
+  });
+
   it('falls back to the log when it recognises nothing', () => {
     const described = describeStartupFailure('something unfamiliar', app);
     expect(described).toMatch(/never started/);

@@ -33,6 +33,22 @@ describe('finding a failure', () => {
     expect(compileErrorIn(log)).toContain('hover:text-on-primary');
   });
 
+  it('finds the SWC syntax-error format emitted by Next.js', () => {
+    const log = [
+      '✓ Ready in 2.1s',
+      './src/components/features/Hero.tsx',
+      'Error:',
+      '  x Unexpected token `section`. Expected jsx identifier',
+      '    /home/node/app/src/components/features/Hero.tsx:13:1',
+      'Caused by:',
+      '    Syntax Error',
+    ].join('\n');
+
+    const failure = compileErrorIn(log);
+    expect(failure).toContain('Hero.tsx');
+    expect(failure).toContain('Unexpected token `section`');
+  });
+
   it('clears an old failure after hot reload compiles the repair', () => {
     const log = [
       'Syntax error: The `hover:text-on-primary` class does not exist.',

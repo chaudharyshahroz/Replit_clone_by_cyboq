@@ -15,7 +15,9 @@ const FAILURE_MARKERS = [
   'Unknown weight',
   'Missing weight',
   'SyntaxError',
+  'Syntax Error',
   'Syntax error:',
+  'Unexpected token',
   'Type error:',
 ];
 

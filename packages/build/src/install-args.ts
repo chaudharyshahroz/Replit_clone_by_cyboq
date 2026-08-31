@@ -1,3 +1,5 @@
+import { compileErrorIn } from './compile-log';
+
 /**
  * How Reklu installs a generated project's dependencies.
  *
@@ -99,6 +101,16 @@ export function describeInstallFailure(output: string): string {
  * all there is.
  */
 export function describeStartupFailure(log: string, paths: readonly string[]): string {
+  /*
+   * Next remains alive and answers with HTTP 500 when SWC, webpack, or
+   * PostCSS cannot compile the application. Calling that a server which never
+   * started sends someone toward ports and dependencies when the source file
+   * named in the output is the actual problem.
+   */
+  if (compileErrorIn(log)) {
+    return 'The preview server started, but the generated application did not compile. Its compiler output is below.';
+  }
+
   /*
    * A workspace layout, which Reklu cannot run. The dev server is started at
    * the root of the tree, and in a monorepo the application is not there — the
