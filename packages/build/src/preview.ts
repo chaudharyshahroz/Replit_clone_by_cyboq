@@ -29,8 +29,7 @@ import { withImageBytes } from './artwork';
 import type { GeneratedFile } from './parse';
 import { compileErrorIn } from './compile-log';
 import { previewEntryProblem, previewHealthCheck } from './preview-entry';
-import { repairGlobalStyles } from './repair-styles';
-import { repairJsxExtensions } from './repair-jsx-extension';
+import { normalizeGeneratedTree } from './normalize-tree';
 
 /** Previews live on a dedicated range, well away from Reklu's own port. */
 const PORT_RANGE_START = 43_000;
@@ -249,7 +248,7 @@ async function reuseRunningSandbox(params: {
     isIsolated: driver.isIsolated,
   };
 
-  const files = repairJsxExtensions(repairGlobalStyles(await loadTree(params.buildProjectId, params.workspaceId)));
+  const files = normalizeGeneratedTree(await loadTree(params.buildProjectId, params.workspaceId));
   if (files.length === 0) return undefined;
 
   try {
@@ -356,6 +355,24 @@ async function reuseRunningSandbox(params: {
       params.report ?? (() => undefined),
     );
     const output = ready ? '' : await readDevLog(sandboxHandle).catch(() => '');
+
+    // A live container is not proof of a live dev server. Return to the fresh
+    // provisioning path if there is no successful page and no compiler error
+    // for the repair loop to fix (crashed process, changed command, or timeout).
+    if (!ready) {
+      if (!compileErrorIn(output)) return undefined;
+      // Logs survive a crashed process. Do not keep repairing an old compiler
+      // failure when nothing is listening anymore.
+      const reachable = await driver.exec(sandboxHandle, {
+        command: 'node',
+        args: ['-e',
+          `fetch('http://127.0.0.1:${row.port ?? 0}${health.path}',{signal:AbortSignal.timeout(4000)})` +
+          '.then(()=>process.exit(0)).catch(()=>process.exit(1))',
+        ],
+        timeoutMs: 8_000,
+      });
+      if (reachable.exitCode !== 0) return undefined;
+    }
 
     /*
      * Touched, so using a preview keeps it. Without this the deadline is set
@@ -651,7 +668,7 @@ export async function startPreview(params: {
 
   if (!project) throw errors.notFound('Build project', params.buildProjectId);
 
-  const files = repairJsxExtensions(repairGlobalStyles(await loadTree(params.buildProjectId, params.workspaceId)));
+  const files = normalizeGeneratedTree(await loadTree(params.buildProjectId, params.workspaceId));
   if (files.length === 0) {
     throw errors.validation('There is nothing to preview yet. Generate the application first.');
   }

@@ -49,15 +49,8 @@ import {
   removeCustomDomain,
   setCustomDomain,
   unpublishSite,
-  repairAliasPaths,
-  repairMissingDependencies,
-  repairFontWeights,
-  repairClientMetadata,
-  repairPrismaSchemas,
-  repairGlobalStyles,
+  normalizeGeneratedTree,
   repairPreviewCompilation,
-  repairJsxExtensions,
-  repairStaticExport,
   previewEntryProblem,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
@@ -856,11 +849,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = repairJsxExtensions(repairGlobalStyles(repairClientMetadata(
-    repairStaticExport(
-      repairFontWeights(repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(merged)))),
-    ),
-  )));
+  const resolved = normalizeGeneratedTree(merged);
 
   /*
    * The photographs, drawn from what the page says they show.
@@ -870,7 +859,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * still ships: the application is written and working, and what is missing is
    * a photograph.
    */
-  const illustrated = await drawArtwork(
+  const illustrated = request.repairPass
+    ? { files: resolved, generated: 0, failures: [] }
+    : await drawArtwork(
     resolved,
     `${brief.product} — ${brief.summary}`,
     (request, imagePrompt) =>

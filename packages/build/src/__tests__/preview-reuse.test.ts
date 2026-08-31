@@ -20,6 +20,15 @@ import { describe, expect, it } from 'vitest';
 const source = await readFile(new URL('../preview.ts', import.meta.url), 'utf8');
 
 describe('starting a preview', () => {
+  it('rejects reuse when no page responds even if an old compiler error remains', () => {
+    expect(source).toContain('if (!ready) {');
+    expect(source).toContain('if (!compileErrorIn(output)) return undefined;');
+    expect(source).toContain('if (reachable.exitCode !== 0) return undefined;');
+  });
+
+  it('normalizes saved files in both fresh and reuse startup paths', () => {
+    expect(source.match(/normalizeGeneratedTree\(await loadTree/g)).toHaveLength(2);
+  });
   it('tries to reuse the running container before stopping anything', () => {
     const body = source.slice(source.indexOf('export async function startPreview'));
 
