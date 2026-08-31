@@ -12,7 +12,8 @@
  * creates a sandbox is very often not the request that writes files to it, and
  * an in-memory handle would work in development and fail under a second replica.
  */
-import { CommandExitError, Sandbox, TimeoutError } from 'e2b';
+import { CommandExitError, TimeoutError } from 'e2b';
+import { Sandbox } from '@e2b/desktop';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
 import {
@@ -38,7 +39,7 @@ const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', '.next', 'dist', '.
 
 export interface E2bDriverOptions {
   readonly apiKey: string;
-  /** E2B template. `base` carries Node and a standard toolchain. */
+  /** Browser-enabled E2B template. Defaults to the managed desktop template. */
   readonly template?: string | undefined;
 }
 
@@ -98,9 +99,8 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
     async create(sandboxId: string, limits: SandboxLimits): Promise<SandboxHandle> {
       let sandbox: Sandbox;
       try {
-        sandbox = await Sandbox.create({
+        sandbox = await Sandbox.create(options.template ?? 'desktop', {
           apiKey,
-          template: options.template,
           timeoutMs: limits.timeoutMs,
           // Correlates a microVM with a Reklu build when reading E2B's dashboard.
           metadata: { reklu_sandbox_id: sandboxId },
@@ -110,6 +110,7 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
            * reason to hand over secrets.
            */
           envs: isolatedEnv() as Record<string, string>,
+          resolution: [1440, 1000],
         });
         await sandbox.files.makeDir(WORKDIR);
       } catch (error) {
@@ -303,6 +304,24 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
           }
         },
       };
+    },
+
+    async capturePreview(handle: SandboxHandle, port: number) {
+      const sandbox = await connect(handle);
+      try {
+        await sandbox.open(`http://127.0.0.1:${port}/`);
+        await sandbox.wait(2_000);
+        const bytes = await sandbox.screenshot('bytes');
+        const size = await sandbox.getScreenSize();
+        return {
+          mimeType: 'image/png' as const,
+          width: size.width,
+          height: size.height,
+          data: Buffer.from(bytes).toString('base64'),
+        };
+      } catch (error) {
+        wrap('preview capture', error);
+      }
     },
 
     async destroy(handle: SandboxHandle): Promise<void> {

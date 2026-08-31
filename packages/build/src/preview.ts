@@ -19,6 +19,7 @@ import {
   sandboxStatus,
   type PreviewHandle,
   type SandboxHandle,
+  type PreviewScreenshot,
 } from '@reklu/sandbox';
 import { errors, logger, newId } from '@reklu/shared';
 import { devCommandFor, parseManifest } from './dev-command';
@@ -638,6 +639,39 @@ export async function typecheckPreview(params: {
     });
     return undefined;
   }
+}
+
+/** Capture what the browser actually rendered, never by running it on Reklu's host. */
+export async function captureRenderedPreview(params: {
+  readonly buildProjectId: string;
+  readonly workspaceId: string;
+}): Promise<PreviewScreenshot | undefined> {
+  const [row] = await db
+    .select({ id: sandboxes.id, externalId: sandboxes.externalId, port: sandboxes.port })
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.buildProjectId, params.buildProjectId),
+        eq(sandboxes.workspaceId, params.workspaceId),
+        eq(sandboxes.status, 'running'),
+      ),
+    )
+    .limit(1);
+
+  if (!row?.externalId || !row.port) return undefined;
+  const driver = sandbox();
+  if (!driver.capturePreview) return undefined;
+
+  return driver.capturePreview(
+    {
+      id: row.id,
+      driver: driver.name,
+      externalId: row.externalId,
+      limits: DEFAULT_PREVIEW_LIMITS,
+      isIsolated: driver.isIsolated,
+    },
+    row.port,
+  );
 }
 
 export async function startPreview(params: {

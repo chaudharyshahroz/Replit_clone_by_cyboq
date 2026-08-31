@@ -14,13 +14,14 @@
     "clean": "rm -rf .turbo node_modules"
   },
   "dependencies": {
+    "@e2b/desktop": "^2.3.3",
     "@reklu/shared": "workspace:*",
     "e2b": "^2.39.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8",
-    "tsx": "^4.19.2"
+    "vitest": "^2.1.8"
   }
 }

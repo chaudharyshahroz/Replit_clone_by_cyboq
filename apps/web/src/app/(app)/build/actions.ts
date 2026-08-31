@@ -54,6 +54,11 @@ import {
   normalizeGeneratedTree,
   repairPreviewCompilation,
   previewEntryProblem,
+  captureRenderedPreview,
+  reviewRenderedDesign,
+  visualRevisionPrompt,
+  listCheckpoints,
+  restoreCheckpoint,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -113,6 +118,24 @@ async function pickDesignModel(fallback: RegisteredModel): Promise<RegisteredMod
       Math.min(model.maxOutputTokens / 8_000, 2);
     return score(right) - score(left) || left.sortOrder - right.sortOrder;
   })[0] ?? fallback;
+}
+
+async function pickVisionModel(): Promise<RegisteredModel | undefined> {
+  const registry = await loadRegistry();
+  return selectableModels(registry, undefined)
+    .filter(
+      (model) =>
+        model.supportsVision &&
+        model.inputCostPerMillion === 0 &&
+        model.outputCostPerMillion === 0,
+    )
+    .sort((left, right) => {
+      const score = (model: RegisteredModel) =>
+        (model.bestFor.includes('vision') ? 8 : 0) +
+        (model.bestFor.includes('reasoning') ? 4 : 0) +
+        (model.bestFor.includes('coding') ? 2 : 0);
+      return score(right) - score(left) || left.sortOrder - right.sortOrder;
+    })[0];
 }
 
 /** What a person asked for, and everything they pointed at while asking. */
@@ -971,7 +994,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     .set({
       status: 'ready',
       statusDetail: null,
-      codebaseAnalysis: { sourceMap: instrumented.sourceMap },
+      codebaseAnalysis: {
+        ...((project.codebaseAnalysis ?? {}) as Record<string, unknown>),
+        sourceMap: instrumented.sourceMap,
+      },
     })
     .where(eq(buildProjects.id, buildId));
 
@@ -1107,6 +1133,119 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   };
 }
 
+async function visuallyReviewPreview(
+  buildId: string,
+  workspaceId: string,
+): Promise<Awaited<ReturnType<typeof startPreview>> | undefined> {
+  const [project] = await db
+    .select({
+      brief: buildProjects.brief,
+      currentVersionId: buildProjects.currentVersionId,
+      codebaseAnalysis: buildProjects.codebaseAnalysis,
+    })
+    .from(buildProjects)
+    .where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspaceId)))
+    .limit(1);
+
+  if (!project?.currentVersionId) return undefined;
+  const analysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
+  if (analysis.visualReviewedVersionId === project.currentVersionId) return undefined;
+
+  const brief = (project.brief as BuildBrief | null) ?? fallbackBrief('Improve this website.');
+  if (brief.target !== 'website') return undefined;
+
+  const model = await pickVisionModel();
+  const screenshot = model
+    ? await captureRenderedPreview({ buildProjectId: buildId, workspaceId })
+    : undefined;
+  if (!model || !screenshot) return undefined;
+
+  let review = await reviewRenderedDesign({
+    brief,
+    contract: createDesignContract(brief),
+    screenshot,
+    model,
+  });
+
+  await recordStep({
+    buildId,
+    workspaceId,
+    kind: 'note',
+    message: `Visual QA: ${review.score}/100 — ${review.summary || review.verdict}.`,
+  });
+
+  const needsRevision = review.verdict === 'revise' && review.findings.length > 0;
+  let updatedPreview: Awaited<ReturnType<typeof startPreview>> | undefined;
+  if (needsRevision) {
+    const previous = (await listCheckpoints(buildId, workspaceId)).find(
+      (version) => version.id === project.currentVersionId,
+    );
+    await recordStep({
+      buildId,
+      workspaceId,
+      kind: 'say',
+      message: 'The Website Agent found visible layout issues and is applying one focused polish pass.',
+    });
+    await runGeneration(buildId, {
+      instruction: visualRevisionPrompt(review),
+      origin: 'auto',
+      repairPass: true,
+    });
+
+    const revised = await startPreview({ buildProjectId: buildId, workspaceId });
+    updatedPreview = revised;
+    let visuallyRegressed = false;
+    if (revised.installed && revised.ready) {
+      const after = await captureRenderedPreview({ buildProjectId: buildId, workspaceId });
+      if (after) {
+        const secondReview = await reviewRenderedDesign({
+          brief,
+          contract: createDesignContract(brief),
+          screenshot: after,
+          model,
+        });
+        visuallyRegressed = secondReview.score < review.score;
+        if (!visuallyRegressed) review = secondReview;
+      }
+    }
+    if (!revised.installed || !revised.ready || visuallyRegressed) {
+      if (previous) {
+        const { user } = await getAppContext();
+        await restoreCheckpoint({
+          buildProjectId: buildId,
+          workspaceId,
+          userId: user.id,
+          version: previous.version,
+        });
+        updatedPreview = await startPreview({ buildProjectId: buildId, workspaceId });
+      }
+      await recordStep({
+        buildId,
+        workspaceId,
+        kind: 'note',
+        message: 'The visual polish failed validation, so the previous working design was restored.',
+      });
+    }
+  }
+
+  const [latest] = await db
+    .select({ currentVersionId: buildProjects.currentVersionId, codebaseAnalysis: buildProjects.codebaseAnalysis })
+    .from(buildProjects)
+    .where(eq(buildProjects.id, buildId))
+    .limit(1);
+  await db
+    .update(buildProjects)
+    .set({
+      codebaseAnalysis: {
+        ...((latest?.codebaseAnalysis ?? {}) as Record<string, unknown>),
+        visualReviewedVersionId: latest?.currentVersionId,
+        visualReviewScore: review.score,
+      },
+    })
+    .where(eq(buildProjects.id, buildId));
+  return updatedPreview;
+}
+
 /** Start (or restart) the preview for a build. */
 export async function startPreviewAction(
   buildId: string,
@@ -1211,7 +1350,20 @@ export async function startPreviewAction(
       };
     }
 
-    return { url: result.url, output: result.output };
+    try {
+      const revised = await visuallyReviewPreview(buildId, workspace.workspaceId);
+      if (revised) {
+        result = revised;
+      }
+    } catch (error) {
+      logger.warn('Rendered visual review was skipped', { buildId, error });
+    }
+
+    return {
+      url: result.ready ? result.url : null,
+      output: result.output,
+      ...(!result.ready ? { error: describeStartupFailure(result.output, tree.map((file) => file.path)) } : {}),
+    };
   } catch (error) {
     if (isRekluError(error)) return { url: null, output: '', error: error.userMessage };
 

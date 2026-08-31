@@ -11,6 +11,7 @@ export * from './market-research';
 export * from './design-pass';
 export * from './design-contract';
 export * from './design-quality';
+export * from './visual-review';
 export * from './design-intelligence';
 export * from './badge';
 export * from './repair-imports';

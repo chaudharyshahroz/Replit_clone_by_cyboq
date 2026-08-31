@@ -116,6 +116,13 @@ export interface PreviewHandle {
   stop(): Promise<void>;
 }
 
+export interface PreviewScreenshot {
+  readonly mimeType: 'image/png';
+  readonly width: number;
+  readonly height: number;
+  readonly data: string;
+}
+
 export interface SandboxDriver {
   readonly name: SandboxDriverName;
   readonly isIsolated: boolean;
@@ -136,6 +143,8 @@ export interface SandboxDriver {
     port: number,
     command?: PreviewCommand,
   ): Promise<PreviewHandle>;
+  /** Capture the rendered app inside the sandbox. Unsupported drivers omit it. */
+  capturePreview?(handle: SandboxHandle, port: number): Promise<PreviewScreenshot>;
   destroy(handle: SandboxHandle): Promise<void>;
 }
 
