@@ -17,7 +17,7 @@ import {
   type RegisteredModel,
 } from '@reklu/ai';
 import { sandbox, type SandboxHandle } from '@reklu/sandbox';
-import { logger } from '@reklu/shared';
+import { errors, logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
 import { skillGuidanceFor } from './build-skills';
 import {
@@ -95,6 +95,8 @@ export interface GenerateBuildOptions {
   /** Existing tree, for an edit rather than a first generation. */
   readonly existingFiles?: readonly GeneratedFile[];
   readonly signal?: AbortSignal;
+  /** Fail retryably instead of accepting a response that produced no files. */
+  readonly requireFiles?: boolean;
   /**
    * Told what the model said before it started writing.
    *
@@ -167,6 +169,12 @@ export function leadingProse(response: string): string {
   }
 
   return lines.join('\n').trim();
+}
+
+/** The final path whose code fence was cut off by the provider's output limit. */
+export function incompleteFinalFile(response: string): string | undefined {
+  if ((response.match(/```/g)?.length ?? 0) % 2 === 0) return undefined;
+  return parseGeneratedFiles(response).files.at(-1)?.path;
 }
 
 /** Generate or revise the file tree. Does not touch the sandbox. */
@@ -303,6 +311,58 @@ export async function generateFiles(
   let retried = false;
 
   /*
+   * A response that ends inside a file used to be accepted as complete. That
+   * is how `price:` at the final byte became a saved TypeScript module and a
+   * chain of preview repair calls. Complete that one file now, before the tree
+   * is checkpointed or any sandbox is started.
+   */
+  const incompletePath = finishReason === 'length' ? incompleteFinalFile(text) : undefined;
+  if (incompletePath && !options.signal?.aborted) {
+    retried = true;
+    const partial = parsed.files.find((file) => file.path === incompletePath);
+    const completed = await provider.generate({
+      modelIdentifier: options.model.modelIdentifier,
+      messages: [
+        ...messages,
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: text.slice(-8_000) }],
+        },
+        {
+          role: 'user',
+          content: [{
+            type: 'text',
+            text:
+              `The response stopped halfway through ${incompletePath}. Emit that complete file ` +
+              'again, from its first line to its last line, and nothing else. Include its path comment and closing fence.',
+          }],
+        },
+      ],
+      system,
+      maxOutputTokens: Math.min(options.model.maxOutputTokens, 16_000),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    const replacement = parseGeneratedFiles(completed?.text ?? '').files.find(
+      (file) => file.path === incompletePath,
+    );
+    if (!replacement || incompleteFinalFile(completed?.text ?? '')) {
+      throw errors.providerError({
+        provider: options.model.providerKey,
+        model: options.model.modelIdentifier,
+        detail: `Output stopped inside ${incompletePath} and the completion retry did not return a complete file.`,
+        userMessage: 'This model stopped halfway through a file. Reklu Auto is trying another coding model.',
+        retryable: true,
+      });
+    }
+    parsed = {
+      ...parsed,
+      files: parsed.files.map((file) => (file === partial ? replacement : file)),
+    };
+    text = `${text}\n${completed.text}`;
+    finishReason = completed.finishReason ?? 'stop';
+  }
+
+  /*
    * One corrective attempt when nothing parsed.
    *
    * A model that answers a build with a plan and no code has not refused and
@@ -390,6 +450,25 @@ export async function generateFiles(
     // path is worth knowing about.
     logger.warn('Rejected unsafe paths from a generation', {
       rejected: parsed.rejected.map((entry) => entry.path),
+    });
+  }
+
+  if (options.requireFiles && parsed.files.length === 0) {
+    throw errors.providerError({
+      provider: options.model.providerKey,
+      model: options.model.modelIdentifier,
+      detail: describeEmptyGeneration(
+        {
+          responseChars: text.length,
+          sawFence: text.includes('```'),
+          finishReason,
+          retried,
+          preview: text.slice(0, 400),
+        },
+        parsed.rejected.length,
+      ),
+      userMessage: 'This model did not return usable code. Reklu Auto is trying another coding model.',
+      retryable: true,
     });
   }
 

@@ -49,6 +49,12 @@ describe('starting a preview', () => {
     expect(source).toContain('export async function syncPreview');
   });
 
+  it('does not rewrite unchanged configuration files during live sync', () => {
+    expect(source).toContain('RESTART_SENSITIVE_FILES');
+    expect(source).toContain('current === file.content');
+    expect(source).toContain("files.filter((file) => !unchanged.has(file.path))");
+  });
+
   it('does not let a failed preview update lose the generation', () => {
     const body = source.slice(
       source.indexOf('export async function syncPreview'),

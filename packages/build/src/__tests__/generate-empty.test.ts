@@ -19,7 +19,7 @@ const getProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('@reklu/ai', () => ({ getProvider }));
 
-import { describeEmptyGeneration, generateFiles } from '../generate';
+import { describeEmptyGeneration, generateFiles, incompleteFinalFile } from '../generate';
 import type { GenerationDiagnostics } from '../generate';
 import type { BuildBrief } from '../brief';
 
@@ -64,6 +64,22 @@ beforeEach(() => {
 const FILE = ['// package.json', '```json', '{ "name": "coffee" }', '```'].join('\n');
 
 describe('asking again', () => {
+  it('replaces a final file cut off by the output limit before returning the tree', async () => {
+    responds([
+      '// src/lib/menu-data.ts\n```ts\nexport const menu = [{ name: "Veggie", price:',
+    ], 'length');
+    generate.mockResolvedValue({
+      text: '// src/lib/menu-data.ts\n```ts\nexport const menu = [{ name: "Veggie", price: 12 }];\n```',
+      finishReason: 'stop',
+    });
+
+    const result = await generateFiles({ brief, prompt: 'build it', model, report: async () => {} });
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]!.content).toContain('price: 12');
+    expect(incompleteFinalFile(result.files[0]!.content)).toBeUndefined();
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
   it('asks for the files alone when the first reply was all plan', async () => {
     responds(['Here is my plan for the site. First I will build the hero…'], 'length');
     generate.mockResolvedValue({ text: FILE, finishReason: 'stop' });
@@ -184,6 +200,15 @@ describe('saying what went wrong', () => {
 });
 
 describe('when the second attempt fails too', () => {
+  it('raises a retryable provider error when a caller requires usable files', async () => {
+    responds([], 'stop');
+    generate.mockResolvedValue({ text: '', finishReason: 'stop' });
+
+    await expect(
+      generateFiles({ brief, prompt: 'repair it', model, report: async () => {}, requireFiles: true }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR', retryable: true });
+  });
+
   it('reports the first diagnosis rather than throwing away the build', async () => {
     /*
      * The retry is a second chance at a call that already failed. A provider

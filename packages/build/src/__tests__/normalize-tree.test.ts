@@ -18,4 +18,16 @@ describe('shared generated tree normalization', () => {
     expect(JSON.parse(result.find((entry) => entry.path === 'package.json')!.content).dependencies.clsx).toBeDefined();
     expect(normalizeGeneratedTree(result)).toEqual(result);
   });
+
+  it('adds the required Next root layout to an App Router tree', () => {
+    const result = normalizeGeneratedTree([
+      file('package.json', '{"dependencies":{"next":"14.2.3"}}'),
+      file('src/app/page.tsx', 'export default function Page() { return <main />; }'),
+      file('src/app/globals.css', 'body { margin: 0; }'),
+    ]);
+    const layout = result.find((entry) => entry.path === 'src/app/layout.tsx');
+    expect(layout?.content).toContain("import './globals.css'");
+    expect(layout?.content).toContain('<html lang="en">');
+    expect(normalizeGeneratedTree(result)).toEqual(result);
+  });
 });

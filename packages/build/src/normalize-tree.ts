@@ -7,10 +7,11 @@ import { repairStaticExport } from './repair-export';
 import { repairClientMetadata } from './repair-client-metadata';
 import { repairGlobalStyles } from './repair-styles';
 import { repairJsxExtensions } from './repair-jsx-extension';
+import { ensureNextRootLayout } from './repair-next-layout';
 
 /** One repair pipeline for newly generated files and historical saved projects. */
 export function normalizeGeneratedTree(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
-  return repairJsxExtensions(
+  return ensureNextRootLayout(repairJsxExtensions(
     repairGlobalStyles(
       repairClientMetadata(
         repairStaticExport(
@@ -18,5 +19,5 @@ export function normalizeGeneratedTree(files: readonly GeneratedFile[]): readonl
         ),
       ),
     ),
-  );
+  ));
 }

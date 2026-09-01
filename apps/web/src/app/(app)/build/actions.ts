@@ -714,6 +714,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       prompt: plan ? `${planToPrompt(plan)}\n\n---\n\n${prompt}` : prompt,
       images,
       model: selectedModel,
+      requireFiles: true,
       existingFiles: existing,
       /*
        * Each stage is written down as it is entered, in the words a reader would
@@ -885,12 +886,13 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
        * indefinitely on aesthetic judgment.
        */
       const findings = auditDesignQuality(brief, merged);
-      if (findings.length > 0) {
+      const blockingFindings = findings.filter((finding) => finding.severity === 'blocking');
+      if (blockingFindings.length > 0) {
         await recordStep({
           buildId,
           workspaceId: workspace.workspaceId,
           kind: 'stage',
-          message: `Design review found ${findings.length} issue${findings.length === 1 ? '' : 's'}; refining the interface`,
+          message: `Design review found ${blockingFindings.length} blocking issue${blockingFindings.length === 1 ? '' : 's'}; refining the interface`,
         });
 
         const refined = await runDesignPass({
@@ -898,14 +900,14 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           files: merged,
           model: designModel,
           contract,
-          feedback: findings,
+          feedback: blockingFindings,
         });
         if (refined.files.length > 0) {
           merged = mergeTree(merged, refined.files);
           logger.info('Design critic revision updated files', {
             buildId,
             changed: refined.changed,
-            findings: findings.map((finding) => finding.code),
+            findings: blockingFindings.map((finding) => finding.code),
           });
         }
 
@@ -916,6 +918,11 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
             findings: remaining.map((finding) => finding.code),
           });
         }
+      } else if (findings.length > 0) {
+        logger.info('Design review found advisory issues; skipping an extra model pass', {
+          buildId,
+          findings: findings.map((finding) => finding.code),
+        });
       }
     } catch (error) {
       /*

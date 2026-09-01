@@ -7,7 +7,7 @@
  * connection to the file that caused it.
  */
 import { describe, expect, it } from 'vitest';
-import { aliasTargetFor, parseTsconfig, repairAliasPaths } from '../repair-imports';
+import { aliasTargetFor, parseTsconfig, repairAliasPaths, repairLocalImportPaths } from '../repair-imports';
 import type { GeneratedFile } from '../parse';
 
 const file = (path: string, content = ''): GeneratedFile => ({
@@ -97,6 +97,33 @@ describe('repairing the config', () => {
   it('does nothing when there is no tsconfig to repair', () => {
     const files = [layout, file('components/Header.tsx')];
     expect(repairAliasPaths(files)).toEqual(files);
+  });
+});
+
+describe('repairing invented local import paths', () => {
+  it('relocates @/ui/Modal to the one matching component file', () => {
+    const drawer = file(
+      'src/components/cart/CartDrawer.tsx',
+      "import { Modal } from '@/ui/Modal'; import { Button } from '@/ui/Button';",
+    );
+    const result = repairLocalImportPaths([
+      drawer,
+      file('src/components/ui/Modal.tsx', 'export function Modal() {}'),
+      file('src/components/ui/Button.tsx', 'export function Button() {}'),
+    ]);
+    const content = result.find((entry) => entry.path === drawer.path)!.content;
+    expect(content).toContain("from '@/components/ui/Modal'");
+    expect(content).toContain("from '@/components/ui/Button'");
+  });
+
+  it('does not guess when two files share the requested basename', () => {
+    const source = file('src/app/page.tsx', "import Card from '@/ui/Card';");
+    const result = repairLocalImportPaths([
+      source,
+      file('src/components/shop/Card.tsx'),
+      file('src/components/menu/Card.tsx'),
+    ]);
+    expect(result[0]).toBe(source);
   });
 });
 

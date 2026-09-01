@@ -15,6 +15,52 @@
 import type { GeneratedFile } from './parse';
 
 const ALIAS_IMPORT = /(?:from|import)\s*\(?\s*['"]@\/([^'"]+)['"]/g;
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.css', ''];
+
+function resolves(paths: ReadonlySet<string>, reference: string): boolean {
+  return SOURCE_EXTENSIONS.some(
+    (extension) =>
+      paths.has(`${reference}${extension}`) || paths.has(`${reference}/index${extension}`),
+  );
+}
+
+/** Repair a locally invented alias path when the intended file is unambiguous. */
+export function repairLocalImportPaths(
+  files: readonly GeneratedFile[],
+): readonly GeneratedFile[] {
+  const paths = new Set(files.map((file) => file.path));
+  const root = paths.has('src/app/page.tsx') || [...paths].some((path) => path.startsWith('src/'))
+    ? 'src/'
+    : '';
+
+  return files.map((file) => {
+    let content = file.content;
+    for (const match of file.content.matchAll(ALIAS_IMPORT)) {
+      const reference = match[1];
+      if (!reference || resolves(paths, `${root}${reference}`)) continue;
+
+      const candidates = new Set<string>();
+      const componentReference = `components/${reference}`;
+      if (resolves(paths, `${root}${componentReference}`)) candidates.add(componentReference);
+
+      const basename = reference.split('/').pop()?.toLowerCase();
+      if (basename) {
+        for (const path of paths) {
+          const withoutRoot = root && path.startsWith(root) ? path.slice(root.length) : path;
+          const withoutExtension = withoutRoot.replace(/\.(?:tsx?|jsx?|css)$/, '');
+          if (withoutExtension.split('/').pop()?.toLowerCase() === basename) {
+            candidates.add(withoutExtension.replace(/\/index$/, ''));
+          }
+        }
+      }
+
+      if (candidates.size === 1) {
+        content = content.replaceAll(`@/${reference}`, `@/${[...candidates][0]!}`);
+      }
+    }
+    return content === file.content ? file : { ...file, content };
+  });
+}
 
 /**
  * Remove comments, without touching the contents of strings.
@@ -123,11 +169,9 @@ export function aliasTargetFor(files: readonly GeneratedFile[]): string | undefi
   if (referenced.size === 0) return undefined;
 
   const roots = ['', 'src/'];
-  const extensions = ['.ts', '.tsx', '.js', '.jsx', '.css', ''];
-
   for (const root of roots) {
     const resolves = [...referenced].filter((reference) =>
-      extensions.some(
+      SOURCE_EXTENSIONS.some(
         (extension) =>
           paths.has(`${root}${reference}${extension}`) ||
           paths.has(`${root}${reference}/index${extension}`),
@@ -157,14 +201,15 @@ export function aliasTargetFor(files: readonly GeneratedFile[]): string | undefi
 export function repairAliasPaths(
   files: readonly GeneratedFile[],
 ): readonly GeneratedFile[] {
-  const target = aliasTargetFor(files);
-  if (!target) return files;
+  const relocated = repairLocalImportPaths(files);
+  const target = aliasTargetFor(relocated);
+  if (!target) return relocated;
 
-  const tsconfig = files.find((file) => file.path === 'tsconfig.json');
-  if (!tsconfig) return files;
+  const tsconfig = relocated.find((file) => file.path === 'tsconfig.json');
+  if (!tsconfig) return relocated;
 
   const parsed = parseTsconfig(tsconfig.content);
-  if (!parsed) return files;
+  if (!parsed) return relocated;
 
   const compilerOptions = (parsed.compilerOptions ?? {}) as Record<string, unknown>;
   const paths = (compilerOptions.paths ?? {}) as Record<string, unknown>;
@@ -172,7 +217,7 @@ export function repairAliasPaths(
 
   const alreadyCorrect =
     Array.isArray(existing) && existing.length > 0 && existing[0] === target;
-  if (alreadyCorrect && compilerOptions.baseUrl) return files;
+  if (alreadyCorrect && compilerOptions.baseUrl) return relocated;
 
   const repaired = {
     ...parsed,
@@ -184,7 +229,7 @@ export function repairAliasPaths(
     },
   };
 
-  return files.map((file) =>
+  return relocated.map((file) =>
     file.path === 'tsconfig.json'
       ? { ...file, content: `${JSON.stringify(repaired, null, 2)}\n` }
       : file,

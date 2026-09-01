@@ -63,6 +63,17 @@ const running = new Map<string, PreviewHandle>();
 
 /** Files created by package managers rather than stored in the generated tree. */
 const RUNTIME_FILES = new Set(['package-lock.json', 'npm-shrinkwrap.json']);
+const RESTART_SENSITIVE_FILES = new Set([
+  'package.json',
+  'next.config.js',
+  'next.config.mjs',
+  'next.config.ts',
+  'tsconfig.json',
+  'tailwind.config.js',
+  'tailwind.config.ts',
+  'postcss.config.js',
+  'postcss.config.mjs',
+]);
 
 export function staleProjectFiles(
   currentFiles: readonly string[],
@@ -305,9 +316,26 @@ async function reuseRunningSandbox(params: {
       }
     }
 
+    /*
+     * Next restarts its whole process whenever next.config or tsconfig is
+     * touched, even if the bytes are identical. Repair used to rewrite the
+     * entire tree three times, producing three 1.5–2 second restarts before it
+     * could reveal the next compiler error. Compare the handful of restart-
+     * sensitive files and leave identical ones untouched; ordinary source
+     * files still use the fast hot-reload path.
+     */
+    const unchanged = new Set<string>();
+    await Promise.all(
+      files
+        .filter((file) => RESTART_SENSITIVE_FILES.has(file.path) && !file.binary)
+        .map(async (file) => {
+          const current = await driver.readFile(sandboxHandle, file.path).catch(() => undefined);
+          if (current === file.content) unchanged.add(file.path);
+        }),
+    );
     await driver.writeFiles(
       sandboxHandle,
-      await withImageBytes(files),
+      await withImageBytes(files.filter((file) => !unchanged.has(file.path))),
     );
 
     if (needsInstall) {

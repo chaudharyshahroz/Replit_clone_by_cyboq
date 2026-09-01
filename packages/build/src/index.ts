@@ -23,6 +23,7 @@ export * from './repair-prisma';
 export * from './repair-styles';
 export * from './repair-preview';
 export * from './repair-jsx-extension';
+export * from './repair-next-layout';
 export * from './normalize-tree';
 export * from './install-args';
 export * from './artwork';

@@ -192,7 +192,16 @@ export async function runDesignPass(options: {
    * route nothing links to is dead weight in the tree.
    */
   const known = new Set(options.files.map((file) => file.path));
-  const revised = parsed.files.filter((file) => known.has(file.path));
+  let revised = parsed.files.filter((file) => known.has(file.path));
+
+  /* Never replace a working source file with the last half-file from a design
+   * response that exhausted its output budget. The visual pass is optional;
+   * retaining the complete implementation is always the safer result. */
+  if (result.finishReason === 'length' && (result.text.match(/```/g)?.length ?? 0) % 2 === 1) {
+    const incomplete = parsed.files.at(-1)?.path;
+    revised = revised.filter((file) => file.path !== incomplete);
+    logger.warn('Dropped an incomplete file from the design pass', { path: incomplete });
+  }
 
   const invented = parsed.files.length - revised.length;
   if (invented > 0) {
