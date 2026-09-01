@@ -21,6 +21,7 @@ export * from './repair-export';
 export * from './repair-client-metadata';
 export * from './repair-prisma';
 export * from './repair-styles';
+export * from '@reklu/design-intelligence';
 export * from './repair-preview';
 export * from './repair-jsx-extension';
 export * from './repair-next-layout';

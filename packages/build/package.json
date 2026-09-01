@@ -17,6 +17,7 @@
   "dependencies": {
     "@reklu/ai": "workspace:*",
     "@reklu/database": "workspace:*",
+    "@reklu/design-intelligence": "workspace:*",
     "@reklu/integrations": "workspace:*",
     "@reklu/sandbox": "workspace:*",
     "@reklu/shared": "workspace:*",

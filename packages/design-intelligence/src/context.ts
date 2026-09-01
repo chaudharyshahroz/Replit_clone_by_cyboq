@@ -1,0 +1,41 @@
+import type { ProductDesignContext } from './schemas';
+
+export interface ProductInput {
+  readonly product: string;
+  readonly summary: string;
+  readonly target: string;
+  readonly userRoles?: readonly string[];
+  readonly pages?: readonly { readonly name: string; readonly purpose: string }[];
+}
+
+const has = (text: string, pattern: RegExp): boolean => pattern.test(text);
+
+export function understandProduct(input: ProductInput): ProductDesignContext {
+  const text = `${input.product} ${input.summary}`.toLowerCase();
+  const productType = has(text, /restaurant|cafe|bakery|bistro|menu|reservation/)
+    ? 'restaurant' : has(text, /fintech|bank|finance|invest|payment|insurance/)
+      ? 'fintech' : has(text, /developer|api|sdk|devtool|documentation/)
+        ? 'developer_tool' : has(text, /shop|store|commerce|product catalog|checkout/)
+          ? 'commerce' : has(text, /health|clinic|medical|dental|patient/)
+            ? 'healthcare' : input.target === 'dashboard' ? 'dashboard'
+              : input.target === 'web_app' || input.target === 'mobile_app' ? 'application'
+                : has(text, /portfolio|studio|creator|photographer/) ? 'portfolio'
+                  : has(text, /saas|software|platform|ai /) ? 'saas' : 'other';
+
+  const profiles: Record<string, Omit<ProductDesignContext, 'productType' | 'requiredPages' | 'userReferences' | 'competitorReferences' | 'existingBrand' | 'audience'>> = {
+    restaurant: { industry: 'hospitality', primaryGoal: 'Turn appetite into a visit or reservation', primaryCTA: 'Reserve a table', secondaryGoals: ['Explore the menu', 'Find location and hours'], brandPersonality: ['sensory', 'welcoming', 'confident'], visualTone: ['editorial', 'photographic', 'warm'], informationDensity: 'balanced', trustRequirements: ['Current menu', 'Location', 'Opening hours'], conversionGoal: 'Reservation or visit', devicePriority: 'mobile' },
+    fintech: { industry: 'financial technology', primaryGoal: 'Establish trust before asking for commitment', primaryCTA: 'Get started securely', secondaryGoals: ['Understand the product', 'Review safeguards'], brandPersonality: ['precise', 'credible', 'calm'], visualTone: ['structured', 'restrained', 'data-aware'], informationDensity: 'balanced', trustRequirements: ['Security evidence', 'Transparent terms', 'Customer proof'], conversionGoal: 'Qualified signup', devicePriority: 'balanced' },
+    developer_tool: { industry: 'developer tools', primaryGoal: 'Show technical value and shorten time to first success', primaryCTA: 'Start building', secondaryGoals: ['Read documentation', 'Inspect code examples'], brandPersonality: ['technical', 'direct', 'capable'], visualTone: ['developer-focused', 'dense', 'precise'], informationDensity: 'high', trustRequirements: ['Working examples', 'Documentation', 'Reliability evidence'], conversionGoal: 'API or product adoption', devicePriority: 'desktop' },
+    commerce: { industry: 'commerce', primaryGoal: 'Help people discover and confidently buy products', primaryCTA: 'Shop products', secondaryGoals: ['Browse categories', 'Understand delivery and returns'], brandPersonality: ['product-led', 'clear', 'desirable'], visualTone: ['merchandising-first', 'photographic', 'clean'], informationDensity: 'balanced', trustRequirements: ['Pricing', 'Delivery', 'Returns', 'Reviews'], conversionGoal: 'Purchase', devicePriority: 'mobile' },
+    healthcare: { industry: 'healthcare', primaryGoal: 'Help patients find appropriate care with confidence', primaryCTA: 'Book an appointment', secondaryGoals: ['Understand services', 'Meet the care team'], brandPersonality: ['reassuring', 'clear', 'professional'], visualTone: ['calm', 'human', 'accessible'], informationDensity: 'balanced', trustRequirements: ['Credentials', 'Privacy', 'Contact details'], conversionGoal: 'Appointment', devicePriority: 'mobile' },
+    default: { industry: productType.replace('_', ' '), primaryGoal: 'Make the primary product value and next action obvious', primaryCTA: input.target === 'website' ? 'Get started' : 'Continue', secondaryGoals: ['Understand the product', 'Build trust'], brandPersonality: ['clear', 'confident', 'focused'], visualTone: ['intentional', 'modern', 'restrained'], informationDensity: input.target === 'dashboard' ? 'high' : 'balanced', trustRequirements: ['Specific proof', 'Clear expectations'], conversionGoal: input.target === 'website' ? 'Qualified conversion' : 'Task completion', devicePriority: 'balanced' },
+  };
+  const profile = profiles[productType] ?? profiles.default!;
+
+  return {
+    productType, ...profile,
+    audience: input.userRoles?.length ? [...input.userRoles] : ['Prospective users'],
+    requiredPages: input.pages?.length ? [...input.pages] : [{ name: 'Home', purpose: profile.primaryGoal }],
+    userReferences: [], competitorReferences: [], existingBrand: false,
+  };
+}

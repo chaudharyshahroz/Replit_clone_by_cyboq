@@ -59,6 +59,11 @@ import {
   visualRevisionPrompt,
   listCheckpoints,
   restoreCheckpoint,
+  createDesignDNA,
+  createInformationArchitecture,
+  understandProduct,
+  DesignDNASchema,
+  type DesignDNA,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -619,6 +624,44 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   const brief = (project.brief as BuildBrief | null) ?? fallbackBrief(request.instruction);
   const existing = await loadTree(buildId, workspace.workspaceId);
 
+  /*
+   * Design DNA is a project property, not a per-call suggestion. Generate it
+   * once, persist it in the existing project analysis envelope, and reuse it
+   * for every later page and edit. This keeps the rollout backwards compatible
+   * while a dedicated relational design-system model is introduced.
+   */
+  const storedAnalysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
+  const storedDNA = DesignDNASchema.safeParse(storedAnalysis.designDNA);
+  const productContext = understandProduct({
+    product: brief.product,
+    summary: brief.summary,
+    target: brief.target,
+    userRoles: brief.userRoles,
+    pages: brief.pages,
+  });
+  const designDNA: DesignDNA = storedDNA.success ? storedDNA.data : createDesignDNA(productContext);
+  const informationArchitecture = createInformationArchitecture(productContext);
+
+  if (!storedDNA.success) {
+    await db
+      .update(buildProjects)
+      .set({
+        codebaseAnalysis: {
+          ...storedAnalysis,
+          productDesignContext: productContext,
+          designDNA,
+          informationArchitecture,
+        },
+      })
+      .where(eq(buildProjects.id, buildId));
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'stage',
+      message: `Design DNA ready: ${designDNA.visualDirection}`,
+    });
+  }
+
   const { prompt, images } = await composePrompt(
     request,
     project,
@@ -739,6 +782,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       model: selectedModel,
       requireFiles: true,
       existingFiles: existing,
+      designDNA,
       /*
        * Each stage is written down as it is entered, in the words a reader would
        * use. The status alone said "generating" for the whole of a two-minute
@@ -1034,7 +1078,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       status: 'ready',
       statusDetail: null,
       codebaseAnalysis: {
-        ...((project.codebaseAnalysis ?? {}) as Record<string, unknown>),
+        ...storedAnalysis,
+        productDesignContext: productContext,
+        designDNA,
+        informationArchitecture,
         sourceMap: instrumented.sourceMap,
       },
     })

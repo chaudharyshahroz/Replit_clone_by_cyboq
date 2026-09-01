@@ -29,6 +29,7 @@ import {
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import { dependencyInstallCommand } from './install-args';
 import { withImageBytes } from './artwork';
+import { designDNAPrompt, type DesignDNA } from '@reklu/design-intelligence';
 
 export type BuildStage =
   | 'interpreting_product'
@@ -120,6 +121,8 @@ export interface GenerateBuildOptions {
    * named at the moment it is actually written.
    */
   readonly onFile?: BuildFileReporter | undefined;
+  /** Persistent project-wide visual rules. Optional for imported/legacy builds. */
+  readonly designDNA?: DesignDNA | undefined;
 }
 
 export interface GenerationResult {
@@ -254,6 +257,7 @@ export async function generateFiles(
     GENERATION_PROMPT,
     skillGuidanceFor(options.brief.target),
     ...(direction ? [directionPrompt(direction, options.brief.target)] : []),
+    ...(options.designDNA ? [designDNAPrompt(options.designDNA)] : []),
   ].join('\n');
 
   /*

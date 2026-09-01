@@ -1,9 +1,29 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-08-17 (fourteenth increment — M6 integrations)
+**Last updated:** 2026-09-02 (Design Intelligence foundation)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
+
+## Current increment — Design Intelligence + Fast Build foundation 🚧
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Repository Build-flow audit | ✅ | `docs/DESIGN_INTELLIGENCE.md`, `docs/BUILD_PERFORMANCE.md` |
+| First-class `@reklu/design-intelligence` package | ✅ | Product Context, Design DNA, IA, structured critic and bounded-refinement schemas |
+| Persistent project Design DNA | ✅ | Stored in `build_projects.codebase_analysis` and reused by every generation/edit |
+| Business-specific IA defaults | ✅ | Restaurant, developer platform, commerce and general paths covered by tests |
+| Generator consumes persistent DNA | ✅ | `generateFiles({ designDNA })`; Build and web typechecks pass |
+| Structured multi-category screenshot critic | 🚧 | Schema exists; legacy visual reviewer still needs migration |
+| Two-phase Fast Preview / Complete Build | ⬜ | Current bottlenecks and target architecture documented |
+| Durable build worker + performance spans | ⬜ | Existing events are durable; orchestration remains in a server action |
+
+Verification on 2026-09-02:
+
+- `pnpm --filter @reklu/design-intelligence test` → 4 passed
+- `pnpm --filter @reklu/design-intelligence typecheck` → passed
+- `pnpm --filter @reklu/build typecheck` → passed
+- `pnpm --filter @reklu/web typecheck` → passed
 
 ---
 
