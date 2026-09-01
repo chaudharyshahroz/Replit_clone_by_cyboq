@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import {
   describeInstallFailure,
   describeStartupFailure,
+  dependencyInstallCommand,
   NPM_INSTALL_ARGS,
   NPM_INSTALL_ARGS_WITH_DEV,
 } from '../install-args';
@@ -35,6 +36,17 @@ describe('install arguments', () => {
     expect(NPM_INSTALL_ARGS_WITH_DEV).toContain('--legacy-peer-deps');
   });
 
+  it('prefers the prewarmed pnpm store and retains an npm fallback', () => {
+    const preview = dependencyInstallCommand();
+    const production = dependencyInstallCommand(true);
+
+    expect(preview.command).toBe('sh');
+    expect(preview.args.join(' ')).toContain('pnpm install --prefer-offline');
+    expect(preview.args.join(' ')).toContain('--store-dir /home/node/.pnpm-store');
+    expect(preview.args.join(' ')).toContain('npm install');
+    expect(production.args.join(' ')).toContain('--prod=false');
+  });
+
   it('is what every install actually uses', () => {
     /*
      * The failure this replaces was three call sites drifting apart. A constant
@@ -45,7 +57,7 @@ describe('install arguments', () => {
       const installs = source.match(/args: \[[^\]]*'install'[^\]]*\]/g) ?? [];
 
       expect(installs, `${file} builds an install by hand`).toEqual([]);
-      expect(source).toMatch(/NPM_INSTALL_ARGS/);
+      expect(source).toMatch(/dependencyInstallCommand/);
     }
   });
 });

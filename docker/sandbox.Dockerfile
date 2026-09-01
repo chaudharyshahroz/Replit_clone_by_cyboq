@@ -33,17 +33,20 @@ LABEL com.reklu.keep="true"
 USER root
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g pnpm@10.34.5
 USER node
 
 # npm reads its cache from here, and this path is owned by the build user.
 ENV NPM_CONFIG_CACHE=/home/node/.npm
+ENV PNPM_STORE_DIR=/home/node/.pnpm-store
 
 USER node
 WORKDIR /home/node
 
-# Warm the cache by installing the stack a generated app actually uses, then
-# throw the installation away and keep what npm downloaded.
+# Warm pnpm's content-addressable store with the stack generated apps use. A
+# preview can hard-link these package files instead of expanding and copying
+# hundreds of npm tarballs on every cold start.
 #
 # The directory is `warmcache`, not `.warm`: npm takes the package name from the
 # directory it is initialised in, and a name beginning with a dot is invalid — so
@@ -54,7 +57,7 @@ WORKDIR /home/node
 RUN mkdir -p /home/node/warmcache \
   && cd /home/node/warmcache \
   && npm init -y > /dev/null 2>&1 \
-  && npm install --no-audit --no-fund --legacy-peer-deps \
+  && pnpm add --store-dir /home/node/.pnpm-store --prefer-offline \
        next react react-dom \
        tailwindcss postcss autoprefixer \
        typescript @types/node @types/react @types/react-dom \
@@ -63,7 +66,7 @@ RUN mkdir -p /home/node/warmcache \
   && rm -rf /home/node/warmcache \
   # Proof the cache is actually warm. An image that built without downloading
   # anything is the failure this replaces, and it is invisible from outside.
-  && test "$(du -sm /home/node/.npm | cut -f1)" -gt 20
+  && test "$(du -sm /home/node/.pnpm-store | cut -f1)" -gt 20
 
 # Nothing runs by default. The sandbox driver decides what this container does.
 CMD ["sleep", "infinity"]

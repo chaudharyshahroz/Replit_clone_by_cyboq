@@ -20,7 +20,7 @@ import { errors, loadServerEnv, logger, newId, slugify } from '@reklu/shared';
 import { loadTree } from './versions';
 import { withImageBytes } from './artwork';
 import { parseManifest } from './dev-command';
-import { NPM_INSTALL_ARGS_WITH_DEV } from './install-args';
+import { dependencyInstallCommand } from './install-args';
 import { repairAliasPaths } from './repair-imports';
 import { repairMissingDependencies } from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
@@ -232,8 +232,7 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
 
     await input.report?.('Installing dependencies');
     const install = await driver.exec(handle, {
-      command: 'npm',
-      args: [...NPM_INSTALL_ARGS_WITH_DEV],
+      ...dependencyInstallCommand(true),
       timeoutMs: 900_000,
     });
     if (install.exitCode !== 0) {

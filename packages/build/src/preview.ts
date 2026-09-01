@@ -25,7 +25,7 @@ import { errors, logger, newId } from '@reklu/shared';
 import { devCommandFor, parseManifest } from './dev-command';
 import { materialize, type BuildStageReporter } from './generate';
 import { loadTree } from './versions';
-import { NPM_INSTALL_ARGS } from './install-args';
+import { dependencyInstallCommand } from './install-args';
 import { withImageBytes } from './artwork';
 import type { GeneratedFile } from './parse';
 import { previewErrorIn } from './compile-log';
@@ -341,8 +341,7 @@ async function reuseRunningSandbox(params: {
     if (needsInstall) {
       await params.report?.('installing_dependencies');
       const install = await driver.exec(sandboxHandle, {
-        command: 'npm',
-        args: [...NPM_INSTALL_ARGS],
+        ...dependencyInstallCommand(),
         timeoutMs: 600_000,
       });
 
@@ -513,7 +512,8 @@ async function waitForServer(
       await report('starting_preview', 'Waiting for the dev server to compile');
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    /* 1.5 seconds was visible latency after the page was already ready. */
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   logger.warn('Dev server did not answer before the preview opened', { port });

@@ -28,6 +28,7 @@ export const NPM_INSTALL_ARGS: readonly string[] = [
   '--no-audit',
   '--no-fund',
   '--legacy-peer-deps',
+  '--prefer-offline',
 ];
 
 /**
@@ -41,6 +42,35 @@ export const NPM_INSTALL_ARGS_WITH_DEV: readonly string[] = [
   ...NPM_INSTALL_ARGS,
   '--include=dev',
 ];
+
+export interface InstallCommand {
+  command: string;
+  args: string[];
+}
+
+/**
+ * Install from the image's prewarmed pnpm store when it is available.
+ *
+ * npm's cache avoids network downloads, but npm still expands and copies every
+ * package into every new sandbox. pnpm links the same files from a
+ * content-addressable store baked into the image, which removes most of the
+ * cold-preview wait while keeping each project's node_modules isolated.
+ *
+ * The stock node image remains supported: older/self-managed installations
+ * without pnpm transparently fall back to the compatible npm command.
+ */
+export function dependencyInstallCommand(includeDev = false): InstallCommand {
+  const npmArgs = includeDev ? NPM_INSTALL_ARGS_WITH_DEV : NPM_INSTALL_ARGS;
+  const pnpmDev = includeDev ? ' --prod=false' : '';
+  const script =
+    'if command -v pnpm >/dev/null 2>&1; then ' +
+    `exec pnpm install --prefer-offline --no-frozen-lockfile --dangerously-allow-all-builds --store-dir /home/node/.pnpm-store${pnpmDev}; ` +
+    'else ' +
+    `exec npm ${npmArgs.join(' ')}; ` +
+    'fi';
+
+  return { command: 'sh', args: ['-c', script] };
+}
 
 /**
  * What an npm failure was actually about.

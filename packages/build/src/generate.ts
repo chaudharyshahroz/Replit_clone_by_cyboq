@@ -27,7 +27,7 @@ import {
   isVisualTarget,
 } from './design-intelligence';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
-import { NPM_INSTALL_ARGS } from './install-args';
+import { dependencyInstallCommand } from './install-args';
 import { withImageBytes } from './artwork';
 
 export type BuildStage =
@@ -609,9 +609,9 @@ export async function materialize(params: {
   }
 
   await params.report('installing_dependencies');
+  const installCommand = dependencyInstallCommand();
   const install = await driver.exec(handle, {
-    command: 'npm',
-    args: [...NPM_INSTALL_ARGS],
+    ...installCommand,
     /*
      * Installing is the one step that is legitimately slow, and the cost of
      * cutting it short is the whole build. A Next.js tree on a small

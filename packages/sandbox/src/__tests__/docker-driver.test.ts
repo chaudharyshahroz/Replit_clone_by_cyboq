@@ -698,8 +698,9 @@ describe('when the locally built sandbox image is missing', () => {
 
     expect(context).toContain('Dockerfile');
     expect(context).toContain('FROM node:22-bookworm-slim');
-    // The warm npm cache is the reason the image exists at all.
-    expect(context).toContain('npm install');
+    // The warm content-addressable store is the reason the image exists at all.
+    expect(context).toContain('pnpm add');
+    expect(context).toContain('/home/node/.pnpm-store');
     /*
      * The label is what keeps a weekly `docker system prune` from deleting the
      * image again. Rebuilding without it would fix this build and leave the
