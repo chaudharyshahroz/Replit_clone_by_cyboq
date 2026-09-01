@@ -1,5 +1,6 @@
 import type { BuildBrief } from './brief';
 import { chooseDirection, describeDirection } from './design-intelligence';
+import type { SitePlan } from './market-research';
 
 export interface DesignContract {
   readonly concept: string;
@@ -10,7 +11,7 @@ export interface DesignContract {
 }
 
 /** A stable art-direction brief shared by the builder, director and critic. */
-export function createDesignContract(brief: BuildBrief): DesignContract {
+export function createDesignContract(brief: BuildBrief, strategy?: SitePlan): DesignContract {
   const direction = chooseDirection(brief);
   const website = brief.target === 'website';
 
@@ -21,6 +22,9 @@ export function createDesignContract(brief: BuildBrief): DesignContract {
       : `Understand the product's hierarchy and complete its primary task without guessing.`,
     narrative: website
       ? [
+          ...(strategy?.audience
+            ? [`Design first for ${strategy.audience.primary}: ${strategy.audience.intent}`]
+            : []),
           'A specific opening promise with useful supporting copy and one primary action.',
           'Tangible proof: products, services, outcomes, craft, numbers or recognizable details.',
           'A human story or trust signal that belongs to this product.',
@@ -42,6 +46,12 @@ export function createDesignContract(brief: BuildBrief): DesignContract {
         : []),
     ],
     acceptance: [
+      ...(strategy?.conversion
+        ? [
+            `The dominant action is “${strategy.conversion.primaryAction}”; supporting actions are visually quieter.`,
+            ...strategy.conversion.proof.map((item) => `The design makes this proof tangible: ${item}`),
+          ]
+        : []),
       'The first viewport contains meaningful content, a clear heading and an actionable next step.',
       'No section is viewport-height merely to center a small amount of copy.',
       'Typography, spacing, surfaces and interaction states use one coherent token system.',

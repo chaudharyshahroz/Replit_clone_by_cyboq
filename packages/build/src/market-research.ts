@@ -27,8 +27,17 @@ import type { BuildBrief } from './brief';
 
 /** What a site should contain, decided from what comparable sites contain. */
 export const SitePlanSchema = z.object({
+  audience: z
+    .object({
+      primary: z.string().min(1),
+      intent: z.string().min(1),
+      objections: z.array(z.string()).max(6).default([]),
+    })
+    .optional(),
   /** What this kind of site is expected to have, in the words of the trade. */
   conventions: z.array(z.string()).max(8).default([]),
+  /** Observed patterns, never companies invented from model memory. */
+  competitorPatterns: z.array(z.string()).max(8).default([]),
   /** Where the good ones differ from each other, which is where a choice exists. */
   differentiators: z.array(z.string()).max(6).default([]),
   pages: z
@@ -48,7 +57,17 @@ export const SitePlanSchema = z.object({
     palette: z.string().min(1),
     typography: z.string().min(1),
     imagery: z.string().min(1),
+    shape: z.string().optional(),
+    density: z.string().optional(),
+    motion: z.string().optional(),
   }),
+  conversion: z
+    .object({
+      primaryAction: z.string().min(1),
+      supportingActions: z.array(z.string()).max(4).default([]),
+      proof: z.array(z.string()).max(6).default([]),
+    })
+    .optional(),
 });
 
 export type SitePlan = z.infer<typeof SitePlanSchema>;
@@ -69,10 +88,11 @@ export interface BuildResearch {
  */
 export function researchQuestion(brief: BuildBrief): string {
   return [
-    `What do the best ${brief.product} websites contain?`,
-    'Cover the pages they include, the sections on each page in the order they appear,',
-    'what visitors are trying to do on them, and how the strongest examples differ from',
-    'the ordinary ones in layout, tone and imagery.',
+    `Analyze strong, currently active websites comparable to ${brief.product}.`,
+    'Find real business sites rather than template galleries. Compare their audience, visitor intent,',
+    'navigation, pages, section order, primary calls to action, proof, content density, typography,',
+    'imagery, layout patterns, mobile experience and performance choices. Identify conventions worth',
+    'keeping, repeated weaknesses worth avoiding, and a defensible opportunity for this specific site.',
   ].join(' ');
 }
 
@@ -87,6 +107,9 @@ const PLAN_PROMPT = [
   '- Order the sections the way a visitor needs them, not the way a template lists them.',
   '- `theme` describes a feeling and its consequences, not hex codes. The build has its',
   '  own design standards and will choose colours; what it needs from you is direction.',
+  '- `competitorPatterns` must be observable in the supplied research. Do not use model memory.',
+  '- State one primary conversion action. Supporting actions must remain visually secondary.',
+  '- Audience intent and objections must change the section order or content, not decorate the JSON.',
   '- Name no company you did not read about in the research.',
 ].join('\n');
 
@@ -178,7 +201,18 @@ export function planToPrompt(plan: SitePlan): string {
     .join('\n\n');
 
   return [
-    'Research on comparable sites produced this plan. Build it.',
+    'Website Strategist brief — competitor evidence and the user request produced this plan. Build it.',
+    '',
+    plan.audience
+      ? `Audience: ${plan.audience.primary}\nIntent: ${plan.audience.intent}${
+          plan.audience.objections.length
+            ? `\nObjections to resolve: ${plan.audience.objections.join('; ')}`
+            : ''
+        }`
+      : '',
+    plan.conversion
+      ? `Primary conversion: ${plan.conversion.primaryAction}\nSupporting actions: ${plan.conversion.supportingActions.join(', ') || 'none'}\nProof required: ${plan.conversion.proof.join('; ') || 'specific evidence from the brief'}`
+      : '',
     '',
     'Pages and sections, in this order:',
     '',
@@ -188,6 +222,21 @@ export function planToPrompt(plan: SitePlan): string {
     `Colour: ${plan.theme.palette}`,
     `Type: ${plan.theme.typography}`,
     `Imagery: ${plan.theme.imagery}`,
+    plan.theme.shape ? `Shape language: ${plan.theme.shape}` : '',
+    plan.theme.density ? `Density: ${plan.theme.density}` : '',
+    plan.theme.motion ? `Motion: ${plan.theme.motion}` : '',
+    '',
+    'Design-system implementation:',
+    '- Define primitive tokens for the raw palette, spacing, type scale, radii, shadows and motion.',
+    '- Map them to semantic tokens for background, surface, text, primary, accent, border and states.',
+    '- Components consume semantic/component tokens; do not scatter raw values through components.',
+    '- Use one spacing rhythm, one icon family, explicit hover/focus/active/disabled states, and a',
+    '  mobile-first layout that remains composed at 360, 768, 1024 and 1440px.',
+    plan.competitorPatterns.length
+      ? `\nPatterns observed across comparable sites:\n${plan.competitorPatterns
+          .map((item) => `- ${item}`)
+          .join('\n')}`
+      : '',
     plan.differentiators.length
       ? `\nWhere comparable sites are weak, and this one should not be:\n${plan.differentiators
           .map((item) => `- ${item}`)

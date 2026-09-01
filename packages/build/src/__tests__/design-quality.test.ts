@@ -16,6 +16,26 @@ describe('design contract', () => {
     expect(prompt).toContain('no products');
     expect(prompt).toContain('primary action');
   });
+
+  it('carries the strategist conversion decision into design review', () => {
+    const prompt = designContractPrompt(
+      createDesignContract(website, {
+        conventions: [],
+        competitorPatterns: [],
+        differentiators: [],
+        pages: [{ path: '/', name: 'Home', purpose: 'Convert', sections: ['Hero'] }],
+        theme: { mood: 'warm', palette: 'earthy', typography: 'editorial', imagery: 'craft' },
+        conversion: {
+          primaryAction: 'Book a table',
+          supportingActions: ['View menu'],
+          proof: ['Open kitchen'],
+        },
+      }),
+    );
+
+    expect(prompt).toContain('Book a table');
+    expect(prompt).toContain('Open kitchen');
+  });
 });
 
 describe('design quality critic', () => {

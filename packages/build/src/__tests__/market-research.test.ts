@@ -38,13 +38,19 @@ describe('what gets researched', () => {
 
     expect(question).toContain('a neighbourhood coffee shop');
     expect(question).toMatch(/pages|sections/);
-    expect(question).toMatch(/differ/);
+    expect(question).toMatch(/weaknesses|opportunity/);
   });
 });
 
 describe('the plan a build is given', () => {
   const plan = SitePlanSchema.parse({
+    audience: {
+      primary: 'people choosing a nearby cafe for today',
+      intent: 'confirm the menu, atmosphere, location and opening hours quickly',
+      objections: ['unclear prices', 'not knowing whether there is seating'],
+    },
     conventions: ['a menu people can read on the page'],
+    competitorPatterns: ['strong sites expose hours and location before the brand story'],
     differentiators: ['most bury opening hours in a footer'],
     pages: [
       {
@@ -65,6 +71,14 @@ describe('the plan a build is given', () => {
       palette: 'roasted browns against off-white',
       typography: 'a humanist serif for headings',
       imagery: 'photographs of the room and the coffee, never stock smiles',
+      shape: 'warm editorial crops with crisp menu typography',
+      density: 'spacious marketing pages and compact menus',
+      motion: 'subtle image reveals only',
+    },
+    conversion: {
+      primaryAction: 'Get directions',
+      supportingActions: ['Read the menu'],
+      proof: ['house-roasted beans', 'today’s opening hours'],
     },
   });
 
@@ -89,6 +103,15 @@ describe('the plan a build is given', () => {
 
   it('says where comparable sites are weak', () => {
     expect(planToPrompt(plan)).toContain('most bury opening hours in a footer');
+  });
+
+  it('turns audience, conversion and observed patterns into builder instructions', () => {
+    const prompt = planToPrompt(plan);
+    expect(prompt).toContain('people choosing a nearby cafe');
+    expect(prompt).toContain('Primary conversion: Get directions');
+    expect(prompt).toContain('strong sites expose hours');
+    expect(prompt).toContain('primitive tokens');
+    expect(prompt).toContain('semantic tokens');
   });
 });
 

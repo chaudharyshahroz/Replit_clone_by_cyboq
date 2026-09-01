@@ -12,7 +12,7 @@ describe('build Design Director orchestration', () => {
     );
 
     expect(designBlock).toContain('pickDesignModel(model)');
-    expect(designBlock).toContain('createDesignContract(brief)');
+    expect(designBlock).toContain('createDesignContract(brief, plan)');
     expect(designBlock).toContain('auditDesignQuality(brief, merged)');
     expect(designBlock.match(/await runDesignPass\(/g)).toHaveLength(2);
     expect(designBlock).not.toMatch(/while\s*\(|for\s*\(/);

@@ -120,6 +120,25 @@ async function pickDesignModel(fallback: RegisteredModel): Promise<RegisteredMod
   })[0] ?? fallback;
 }
 
+/** A compact reasoning/research model plans the site while the coding model stays focused on code. */
+async function pickStrategyModel(fallback: RegisteredModel): Promise<RegisteredModel> {
+  const registry = await loadRegistry();
+  const allowed = selectableModels(registry, undefined).filter(
+    (candidate) =>
+      candidate.inputCostPerMillion === 0 &&
+      candidate.outputCostPerMillion === 0 &&
+      (candidate.bestFor.includes('research') || candidate.bestFor.includes('reasoning')),
+  );
+
+  return [...allowed].sort((left, right) => {
+    const score = (candidate: RegisteredModel) =>
+      (candidate.bestFor.includes('research') ? 8 : 0) +
+      (candidate.bestFor.includes('reasoning') ? 5 : 0) +
+      Math.min(candidate.contextWindow / 64_000, 2);
+    return score(right) - score(left) || left.sortOrder - right.sortOrder;
+  })[0] ?? fallback;
+}
+
 async function pickVisionModel(): Promise<RegisteredModel | undefined> {
   const registry = await loadRegistry();
   return selectableModels(registry, undefined)
@@ -640,15 +659,19 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         buildId,
         workspaceId: workspace.workspaceId,
         kind: 'stage',
-        message: 'Studying how the best sites in this trade are built',
+        message: 'Website Strategist: researching competitors and customer intent',
       });
 
       try {
+        const strategyModel = await pickStrategyModel(model).catch(() => model);
         const outcome = await runResearch({
           query: researchQuestion(brief),
           mode: 'research',
-          model,
+          model: strategyModel,
           adapters: [web],
+          /* Eight focused sources are enough to establish conventions without
+           * turning every website build into a full deep-research session. */
+          budget: { queries: 2, perQuery: 4, reportTokens: 1_800 },
           report: async (stage) => {
             await recordStep({
               buildId,
@@ -669,14 +692,14 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           });
         }
 
-        plan = await planFromResearch({ brief, report: outcome.report, model });
+        plan = await planFromResearch({ brief, report: outcome.report, model: strategyModel });
 
         if (plan) {
           await recordStep({
             buildId,
             workspaceId: workspace.workspaceId,
             kind: 'stage',
-            message: `Planned ${plan.pages.length} page${plan.pages.length === 1 ? '' : 's'} from ${outcome.sourcesUsed} source${outcome.sourcesUsed === 1 ? '' : 's'}`,
+            message: `Website Strategist planned ${plan.pages.length} page${plan.pages.length === 1 ? '' : 's'} from ${outcome.sourcesUsed} source${outcome.sourcesUsed === 1 ? '' : 's'}`,
           });
         }
       } catch (error) {
@@ -862,7 +885,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         message: STAGE_LABELS.designing ?? 'Designing the interface',
       });
 
-      const contract = createDesignContract(brief);
+      const contract = createDesignContract(brief, plan);
       const designModel = await pickDesignModel(model).catch(() => model);
       const designed = await runDesignPass({
         brief,

@@ -39,6 +39,12 @@ export interface RunResearchOptions {
   /** Checked between stages so a cancelled run stops spending (spec §106). */
   readonly isCancelled?: () => Promise<boolean> | boolean;
   readonly signal?: AbortSignal;
+  /** Optional bounded profile for latency-sensitive embedded research agents. */
+  readonly budget?: {
+    readonly queries?: number;
+    readonly perQuery?: number;
+    readonly reportTokens?: number;
+  };
 }
 
 export class ResearchCancelledError extends Error {
@@ -81,7 +87,9 @@ const PlanSchema = z.object({
   stoppingCondition: z.string().default('Enough evidence to answer the question.'),
 });
 
-const QueriesSchema = z.object({ queries: z.array(z.string().min(2)).max(8) });
+const BlueprintSchema = PlanSchema.extend({
+  queries: z.array(z.string().min(2)).max(8).default([]),
+});
 
 /** Models wrap JSON in fences and prose; recover the object rather than failing. */
 function parseJsonObject(raw: string): unknown {
@@ -101,7 +109,12 @@ function parseJsonObject(raw: string): unknown {
 
 export async function runResearch(options: RunResearchOptions): Promise<ResearchOutcome> {
   const env = loadServerEnv();
-  const limits = MODE_LIMITS[options.mode];
+  const defaults = MODE_LIMITS[options.mode];
+  const limits = {
+    ...defaults,
+    queries: Math.max(1, Math.min(options.budget?.queries ?? defaults.queries, 8)),
+    perQuery: Math.max(1, Math.min(options.budget?.perQuery ?? defaults.perQuery, 20)),
+  };
   const maxSources = env.RESEARCH_MAX_SOURCES;
 
   const provider = getProvider(options.model.providerKey);
@@ -135,18 +148,19 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
 
   // ---- 2. Plan -------------------------------------------------------------
   await options.report('planning');
-  const planRaw = await ask(
+  const blueprintRaw = await ask(
     [
-      'You plan research. Return JSON only:',
-      '{"intent":"…","subQuestions":["…"],"evidenceNeeded":["…"],"stoppingCondition":"…"}',
+      'You plan research and write its search queries. Return JSON only:',
+      '{"intent":"…","subQuestions":["…"],"evidenceNeeded":["…"],"stoppingCondition":"…","queries":["…"]}',
       'Be concrete. Sub-questions must be individually answerable.',
+      `Write at most ${limits.queries} standalone search queries covering different angles.`,
     ].join('\n'),
     `Question: ${options.query}`,
   );
 
-  const parsedPlan = PlanSchema.safeParse(parseJsonObject(planRaw));
-  const plan: ResearchPlan = parsedPlan.success
-    ? parsedPlan.data
+  const parsedBlueprint = BlueprintSchema.safeParse(parseJsonObject(blueprintRaw));
+  const plan: ResearchPlan = parsedBlueprint.success
+    ? parsedBlueprint.data
     : {
         // A malformed plan must not abort the run — proceed with the question
         // itself as the plan and say so.
@@ -155,25 +169,15 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
         evidenceNeeded: [],
         stoppingCondition: 'Enough evidence to answer the question.',
       };
-  if (!parsedPlan.success) logger.warn('Research planner returned an unusable plan');
+  if (!parsedBlueprint.success) logger.warn('Research planner returned an unusable blueprint');
 
   await guard();
 
   // ---- 3. Queries ----------------------------------------------------------
   await options.report('generating_queries');
-  const queriesRaw = await ask(
-    [
-      'You write search queries. Return JSON only: {"queries":["…"]}',
-      `Write at most ${limits.queries} queries covering different angles.`,
-      'Each must be a standalone search query, not a restatement of the question.',
-    ].join('\n'),
-    `Question: ${options.query}\nSub-questions: ${plan.subQuestions.join('; ')}`,
-  );
-
-  const parsedQueries = QueriesSchema.safeParse(parseJsonObject(queriesRaw));
   const queries = (
-    parsedQueries.success && parsedQueries.data.queries.length > 0
-      ? parsedQueries.data.queries
+    parsedBlueprint.success && parsedBlueprint.data.queries.length > 0
+      ? parsedBlueprint.data.queries
       : [options.query]
   ).slice(0, limits.queries);
 
@@ -194,18 +198,21 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
       round > 1 ? `Round ${round}` : `${activeQueries.length} queries`,
     );
 
-    for (const query of activeQueries) {
-      for (const adapter of options.adapters) {
-        if (!adapter.isConfigured()) continue;
-        const results = await adapter.search(query, limits.perQuery);
-        for (const result of results) {
-          // Deduplicate by URL, or by title for local sources.
-          const key = result.url ?? `${result.kind}:${result.title}`;
-          if (seen.has(key)) continue;
-          if (discovered.length >= maxSources) break;
-          seen.add(key);
-          discovered.push(result);
-        }
+    const searches = await Promise.all(
+      activeQueries.flatMap((query) =>
+        options.adapters
+          .filter((adapter) => adapter.isConfigured())
+          .map((adapter) => adapter.search(query, limits.perQuery)),
+      ),
+    );
+    for (const results of searches) {
+      for (const result of results) {
+        // Deduplicate by URL, or by title for local sources.
+        const key = result.url ?? `${result.kind}:${result.title}`;
+        if (seen.has(key)) continue;
+        if (discovered.length >= maxSources) break;
+        seen.add(key);
+        discovered.push(result);
       }
     }
 
@@ -363,7 +370,10 @@ export async function runResearch(options: RunResearchOptions): Promise<Research
       : await ask(
           reportSystem,
           [`Question: ${options.query}`, '', 'Sources:', sourceBlock].join('\n'),
-          REPORT_TOKENS[options.mode],
+          Math.max(
+            300,
+            Math.min(options.budget?.reportTokens ?? REPORT_TOKENS[options.mode], 12_000),
+          ),
         );
 
   // ---- Citation integrity --------------------------------------------------

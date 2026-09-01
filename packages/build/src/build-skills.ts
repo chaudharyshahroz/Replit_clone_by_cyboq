@@ -100,6 +100,7 @@ export const VISUAL_DESIGN: BuildSkill = {
   name: 'Visual design',
   summary: 'Decisions, not defaults.',
   guidance: [
+    'Use a three-layer design system: primitive tokens hold raw values, semantic tokens assign purpose, and component tokens define states. Components consume tokens rather than raw hex, spacing or shadow values.',
     'Pick a type scale and use its extremes. A hero heading should be three to four times the body size, not one-and-a-half — a page where every heading is nearly body-sized reads as unfinished.',
     'Choose two typefaces at most: one for display, one for text. Load only the weights actually used, and only weights the font really publishes.',
     'Build the palette from one accent plus a neutral ramp, and use the accent for one job — the primary action. An accent on every card is the same as no accent.',
@@ -109,6 +110,8 @@ export const VISUAL_DESIGN: BuildSkill = {
     'Contrast: body text at least 4.5:1 against its background, and never grey-on-grey for anything a person has to read.',
     'Constrain running text to roughly 65 characters. Full-width paragraphs on a wide screen are unreadable and are the most common flaw in a generated page.',
     'Anchor the page in the subject: real names, real copy, photographs of the actual thing. A coffee shop page reads as a coffee shop, not as a template with coffee words in it.',
+    'The primary action follows the visitor intent and is visually dominant once per decision point. Do not give every link button styling or make two actions compete at equal weight.',
+    'Use one consistent SVG icon family with one stroke language. Never use emoji as interface iconography.',
     'Motion is optional and must be earned — a considered transition on hover or entry, nothing that moves on its own, and everything behind prefers-reduced-motion.',
   ],
 };
