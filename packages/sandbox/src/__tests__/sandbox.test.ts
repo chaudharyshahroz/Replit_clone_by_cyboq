@@ -330,7 +330,16 @@ describe('e2b driver', () => {
   const apply = (extra: Record<string, string> = {}): void => {
     resetServerEnvCache();
     resetSandboxCache();
-    for (const name of ['SANDBOX_DRIVER', 'E2B_API_KEY', 'BUILD_ENABLED']) delete process.env[name];
+    for (const name of [
+      'SANDBOX_DRIVER',
+      'E2B_API_KEY',
+      'BUILD_ENABLED',
+      'SANDBOX_DOCKER_HOST',
+      'SANDBOX_PREVIEW_HOST',
+      'SANDBOX_PREVIEW_DOMAIN',
+      'SANDBOX_DOCKER_SAME_HOST_ACK',
+      'SANDBOX_DOCKER_RUNTIME',
+    ]) delete process.env[name];
     Object.assign(process.env, env(extra));
   };
 
@@ -390,12 +399,12 @@ describe('e2b driver', () => {
    * than a microVM, so the things that make it defensible — a separate host, a
    * reachable preview name — are required rather than assumed.
    */
-  it('refuses the docker driver without a preview host', () => {
+  it('refuses the docker driver without a preview host or domain', () => {
     apply({
       SANDBOX_DRIVER: 'docker',
       SANDBOX_DOCKER_HOST: 'tcp://10.0.0.5:2375',
     });
-    expect(() => sandbox()).toThrow(/SANDBOX_PREVIEW_HOST/);
+    expect(() => sandbox()).toThrow(/SANDBOX_PREVIEW_DOMAIN.*SANDBOX_PREVIEW_HOST/);
   });
 
   /*
@@ -477,6 +486,23 @@ describe('e2b driver', () => {
       APP_URL: 'https://reklu.app',
     });
     expect(sandboxStatus().available).toBe(true);
+    expect(sandboxStatus().detail).not.toContain('requires SANDBOX_PREVIEW_HOST');
+  });
+
+  it('accepts the documented same-host reverse-proxy configuration without a preview host', () => {
+    apply({
+      SANDBOX_DRIVER: 'docker',
+      SANDBOX_DOCKER_HOST: 'unix:///var/run/docker.sock',
+      SANDBOX_DOCKER_IMAGE: 'reklu-sandbox:latest',
+      SANDBOX_DOCKER_NETWORK: 'reklu-sandbox',
+      SANDBOX_PREVIEW_DOMAIN: 'preview.reklu.app',
+      SANDBOX_PROXY_NETWORK: 'dokploy-network',
+      SANDBOX_DOCKER_SAME_HOST_ACK: 'true',
+      APP_URL: 'https://reklu.app',
+    });
+
+    expect(sandboxStatus()).toMatchObject({ driver: 'docker', available: true, isolated: true });
+    expect(sandbox().name).toBe('docker');
   });
 
   it('names the runtime when a stronger one is configured', () => {

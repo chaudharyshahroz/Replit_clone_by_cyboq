@@ -132,7 +132,7 @@ export function sandboxStatus(): {
   }
 
   if (env.SANDBOX_DRIVER === 'docker') {
-    const configured = Boolean(env.SANDBOX_PREVIEW_HOST);
+    const configured = Boolean(env.SANDBOX_PREVIEW_HOST || env.SANDBOX_PREVIEW_DOMAIN);
     const sameHost =
       env.SANDBOX_DOCKER_HOST.startsWith('unix://') ||
       env.SANDBOX_DOCKER_HOST.includes('localhost') ||
@@ -154,8 +154,8 @@ export function sandboxStatus(): {
           : `Generated code runs in a hardened container on a separate host${
               env.SANDBOX_DOCKER_RUNTIME ? ` under ${env.SANDBOX_DOCKER_RUNTIME}` : ''
             }.`
-        : 'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_HOST — the public hostname or IP ' +
-          'of the sandbox machine, which is where preview URLs point.',
+        : 'SANDBOX_DRIVER=docker requires SANDBOX_PREVIEW_DOMAIN (recommended for reverse-proxy ' +
+          'HTTPS previews) or SANDBOX_PREVIEW_HOST (for published host ports).',
     };
   }
 
