@@ -19,6 +19,21 @@ describe('preview compilation repair', () => {
     expect(repair.mock.calls[1]).toEqual([expect.stringContaining('CartProvider'), 2]);
   });
 
+  it('repairs a runtime failure caused by initializing an unconfigured database', async () => {
+    const repair = vi.fn(async () => {});
+    const result = await repairPreviewCompilation({
+      initial: failed(
+        '⨯ PrismaClientInitializationError: Environment variable not found: DATABASE_URL.\nGET / 500',
+      ),
+      readLog: async () => '',
+      repair,
+      restart: async () => ready,
+    });
+
+    expect(result.ready).toBe(true);
+    expect(repair).toHaveBeenCalledWith(expect.stringContaining('DATABASE_URL'), 1);
+  });
+
   it('caps failed repairs at three attempts', async () => {
     const initial = failed('Syntax Error');
     const repair = vi.fn(async () => {});

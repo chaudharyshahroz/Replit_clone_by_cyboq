@@ -22,7 +22,7 @@ const source = await readFile(new URL('../preview.ts', import.meta.url), 'utf8')
 describe('starting a preview', () => {
   it('rejects reuse when no page responds even if an old compiler error remains', () => {
     expect(source).toContain('if (!ready) {');
-    expect(source).toContain('if (!compileErrorIn(output)) return undefined;');
+    expect(source).toContain('if (!previewErrorIn(output)) return undefined;');
     expect(source).toContain('if (reachable.exitCode !== 0) return undefined;');
   });
 

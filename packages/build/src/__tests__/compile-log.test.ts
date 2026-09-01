@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileErrorIn } from '../compile-log';
+import { compileErrorIn, previewErrorIn, runtimeErrorIn } from '../compile-log';
 
 describe('server-side compiler log detection', () => {
   it('detects a Next.js SWC syntax failure after the server is ready', () => {
@@ -38,5 +38,30 @@ describe('server-side compiler log detection', () => {
     ].join('\n');
 
     expect(compileErrorIn(log)).toBeNull();
+  });
+});
+
+describe('server-side page runtime detection', () => {
+  it('detects a homepage that throws because an integration is not configured', () => {
+    const log = [
+      '✓ Ready in 1.4s',
+      '⨯ PrismaClientInitializationError: Environment variable not found: DATABASE_URL.',
+      '    at async HomePage (./src/app/page.tsx:18:20)',
+      'GET / 500 in 812ms',
+    ].join('\n');
+
+    expect(compileErrorIn(log)).toBeNull();
+    expect(runtimeErrorIn(log)).toContain('DATABASE_URL');
+    expect(previewErrorIn(log)).toContain('HomePage');
+  });
+
+  it('does not keep an old runtime failure after the page answers successfully', () => {
+    const log = [
+      '⨯ TypeError: Cannot read properties of undefined',
+      'GET / 500 in 400ms',
+      'GET / 200 in 92ms',
+    ].join('\n');
+
+    expect(runtimeErrorIn(log)).toBeNull();
   });
 });

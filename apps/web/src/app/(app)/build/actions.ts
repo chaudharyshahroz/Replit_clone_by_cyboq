@@ -1349,9 +1349,11 @@ export async function startPreviewAction(
         });
         await runGeneration(buildId, {
           instruction:
-            'Fix the current compiler failure using the existing project files. ' +
+            'Fix the current preview compiler or page-render failure using the existing project files. ' +
             'For missing local imports, find the actual file exporting the symbol; do not invent a path. ' +
             'For unknown Tailwind utilities, align the utility with the existing theme configuration. ' +
+            'If an external service or database is not configured, do not initialize it while rendering ' +
+            'the marketing homepage. Guard the integration and render realistic preview fixtures instead. ' +
             'Preserve the design and unrelated files.\n\n' + compileError,
           origin: 'auto',
           repairPass: true,

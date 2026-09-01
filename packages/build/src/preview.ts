@@ -28,7 +28,7 @@ import { loadTree } from './versions';
 import { NPM_INSTALL_ARGS } from './install-args';
 import { withImageBytes } from './artwork';
 import type { GeneratedFile } from './parse';
-import { compileErrorIn } from './compile-log';
+import { previewErrorIn } from './compile-log';
 import { previewEntryProblem, previewHealthCheck } from './preview-entry';
 import { normalizeGeneratedTree } from './normalize-tree';
 
@@ -389,7 +389,7 @@ async function reuseRunningSandbox(params: {
     // provisioning path if there is no successful page and no compiler error
     // for the repair loop to fix (crashed process, changed command, or timeout).
     if (!ready) {
-      if (!compileErrorIn(output)) return undefined;
+      if (!previewErrorIn(output)) return undefined;
       // Logs survive a crashed process. Do not keep repairing an old compiler
       // failure when nothing is listening anymore.
       const reachable = await driver.exec(sandboxHandle, {
@@ -496,14 +496,13 @@ async function waitForServer(
       if (result.exitCode === 0) return true;
 
       /*
-       * A framework compiler keeps its server alive while serving a 500 error
-       * page. Once the log contains a current compile failure, waiting the rest
-       * of the 90-second startup budget cannot change it; return the evidence so
-       * the automatic repair can act immediately.
+       * A framework may keep serving a 500, or it may exit after a startup
+       * exception. In both cases the log already contains the actionable code
+       * failure; waiting the rest of the 90-second budget cannot change it.
        */
-      if (result.exitCode === 2) {
+      if (result.exitCode !== 0) {
         const log = await readDevLog(handle).catch(() => '');
-        if (compileErrorIn(log)) return false;
+        if (previewErrorIn(log)) return false;
       }
     } catch {
       // The container may still be starting; that is what the loop is for.

@@ -165,6 +165,19 @@ describe('describing a preview that never started', () => {
     expect(described).not.toMatch(/never started/);
   });
 
+  it('distinguishes a running server whose homepage throws at runtime', () => {
+    const log = [
+      '✓ Ready in 1477ms',
+      '⨯ PrismaClientInitializationError: Environment variable not found: DATABASE_URL.',
+      'GET / 500 in 933ms',
+    ].join('\n');
+
+    const described = describeStartupFailure(log, app);
+    expect(described).toMatch(/server started/);
+    expect(described).toMatch(/failed while rendering/);
+    expect(described).not.toMatch(/never started/);
+  });
+
   it('falls back to the log when it recognises nothing', () => {
     const described = describeStartupFailure('something unfamiliar', app);
     expect(described).toMatch(/never started/);

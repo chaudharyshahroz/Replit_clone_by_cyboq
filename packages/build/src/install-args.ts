@@ -1,4 +1,4 @@
-import { compileErrorIn } from './compile-log';
+import { compileErrorIn, runtimeErrorIn } from './compile-log';
 
 /**
  * How Reklu installs a generated project's dependencies.
@@ -109,6 +109,10 @@ export function describeStartupFailure(log: string, paths: readonly string[]): s
    */
   if (compileErrorIn(log)) {
     return 'The preview server started, but the generated application did not compile. Its compiler output is below.';
+  }
+
+  if (runtimeErrorIn(log)) {
+    return 'The preview server started, but the generated application failed while rendering. Its runtime output is below.';
   }
 
   /*

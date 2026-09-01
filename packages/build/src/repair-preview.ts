@@ -1,4 +1,4 @@
-import { compileErrorIn } from './compile-log';
+import { previewErrorIn } from './compile-log';
 
 interface PreviewState {
   readonly installed: boolean;
@@ -16,7 +16,7 @@ export async function repairPreviewCompilation<T extends PreviewState>(options: 
   let state = options.initial;
   for (let attempt = 1; attempt <= 3 && state.installed && !state.ready; attempt++) {
     const output = state.output || (await options.readLog());
-    const error = compileErrorIn(output);
+    const error = previewErrorIn(output);
     if (!error) return { ...state, output };
     try {
       await options.repair(error, attempt);
