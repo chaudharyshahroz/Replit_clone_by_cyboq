@@ -139,6 +139,7 @@ export const NEXT_CORRECTNESS: BuildSkill = {
     'Every async server component that reads request data — cookies, headers, searchParams — must be reachable dynamically. Do not force it static.',
     'Import types with `import type`, and never import a server-only module into a client component.',
     'Every custom Tailwind utility must be backed by tailwind.config. Never use a semantic class such as text-on-primary, including inside @apply, unless that exact colour token is configured.',
+    'If components use Tailwind utilities, the global stylesheet must load Tailwind: use @tailwind base/components/utilities for Tailwind 3, or @import "tailwindcss" for Tailwind 4. Handwritten global rules do not activate utility classes.',
   ],
 };
 
@@ -182,6 +183,7 @@ export const BUILD_SKILLS: Readonly<Record<BuildTarget, BuildSkill>> = {
       'Static rendering wherever the content does not depend on the visitor.',
       'A generated preview is the finished sales experience, not an empty database: render realistic representative products, testimonials and business details instead of “no items yet” sections.',
       'The first viewport contains a specific h1, supporting copy, meaningful visual media and one primary action; never ship a navigation bar above an otherwise blank screen.',
+      'Treat the rendered page as the artifact: verify utility styles are visibly applied, the hero copy is readable over its media, and no full-screen image can cover the navigation or calls to action.',
     ],
   },
 

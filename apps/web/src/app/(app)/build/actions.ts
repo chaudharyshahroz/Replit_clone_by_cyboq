@@ -902,6 +902,15 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       }
 
       /*
+       * Correct structural styling before judging aesthetics. A design pass can
+       * emit hundreds of Tailwind classes but forget to activate Tailwind in
+       * globals.css; source then looks richly styled while the browser receives
+       * only the handwritten rules. Normalization makes the critic review the
+       * artifact that will actually be previewed.
+       */
+      merged = [...normalizeGeneratedTree(merged)];
+
+      /*
        * A design director needs an acceptance pass. The first rewrite can still
        * be attractive in source while shipping the exact failures a user sees:
        * an empty first viewport, “no products yet” as the main sales section,

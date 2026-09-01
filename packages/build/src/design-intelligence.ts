@@ -154,7 +154,9 @@ const SYNONYMS: Readonly<Record<string, string>> = {
   patisserie: 'bakery',
   bistro: 'restaurant',
   salon: 'beauty',
-  barbershop: 'beauty',
+  /* A barbershop is a local appointment business, not a pastel wellness spa. */
+  barber: 'hyperlocal local neighborhood booking service',
+  barbershop: 'hyperlocal local neighborhood booking service',
   gym: 'fitness',
   clinic: 'healthcare',
   dentist: 'healthcare',

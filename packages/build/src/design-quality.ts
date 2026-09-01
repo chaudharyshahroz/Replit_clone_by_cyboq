@@ -1,5 +1,6 @@
 import type { BuildBrief } from './brief';
 import type { GeneratedFile } from './parse';
+import { tailwindStylesProblem } from './repair-styles';
 
 export type DesignIssueSeverity = 'blocking' | 'warning';
 
@@ -32,6 +33,14 @@ export function auditDesignQuality(
   if (!visual) return [];
 
   const issues: DesignQualityIssue[] = [];
+  const tailwindProblem = tailwindStylesProblem(files);
+  if (tailwindProblem) {
+    issues.push({
+      code: 'tailwind-not-loaded',
+      severity: 'blocking',
+      message: tailwindProblem,
+    });
+  }
   if (!/<h1\b/i.test(visual)) {
     issues.push({
       code: 'missing-primary-heading',

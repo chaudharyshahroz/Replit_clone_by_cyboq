@@ -14,9 +14,22 @@ export interface DesignContract {
 export function createDesignContract(brief: BuildBrief, strategy?: SitePlan): DesignContract {
   const direction = chooseDirection(brief);
   const website = brief.target === 'website';
+  const researchedConcept = strategy
+    ? [
+        strategy.theme.mood,
+        `${strategy.theme.palette} palette`,
+        `${strategy.theme.typography} typography`,
+        `${strategy.theme.imagery} imagery`,
+        strategy.theme.shape,
+        strategy.theme.density,
+        strategy.theme.motion,
+      ].filter(Boolean).join(' · ')
+    : undefined;
 
   return {
-    concept: describeDirection(direction),
+    concept: researchedConcept
+      ? `${researchedConcept}. This research-derived business direction overrides a generic catalogue style where they conflict.`
+      : describeDirection(direction),
     userOutcome: website
       ? `Understand why ${brief.product} is distinctive and reach a meaningful primary action.`
       : `Understand the product's hierarchy and complete its primary task without guessing.`,
@@ -55,6 +68,9 @@ export function createDesignContract(brief: BuildBrief, strategy?: SitePlan): De
       'The first viewport contains meaningful content, a clear heading and an actionable next step.',
       'No section is viewport-height merely to center a small amount of copy.',
       'Typography, spacing, surfaces and interaction states use one coherent token system.',
+      'Primitive, semantic and component tokens form one chain; components do not bypass it with unrelated colors, radii or shadows.',
+      'The compiled stylesheet contains every utility system used by the markup; an HTTP-successful but unstyled page is a failed design.',
+      'Hero text, navigation and the primary action remain visible above imagery at desktop and mobile widths.',
       'The page remains readable and usable at 360px without horizontal overflow.',
       'Text contrast, keyboard focus, labels and reduced-motion behavior are explicit.',
     ],

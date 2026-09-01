@@ -59,6 +59,18 @@ describe('design quality critic', () => {
     expect(issues.some((issue) => issue.code === 'raw-marketing-empty-state')).toBe(true);
   });
 
+  it('rejects utility markup when Tailwind is never loaded', () => {
+    const issues = auditDesignQuality(website, [
+      { path: 'package.json', content: JSON.stringify({ devDependencies: { tailwindcss: '^3.4.0' } }), language: 'json' },
+      page('<main className="flex min-h-screen"><h1>Barboa</h1><img src="/barber.jpg"/><a href="/book">Book</a></main>'),
+      { path: 'src/app/globals.css', content: 'body { margin: 0; }', language: 'css' },
+    ]);
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'tailwind-not-loaded', severity: 'blocking' }),
+    ]));
+  });
+
   it('accepts a composed marketing page with content, action and media', () => {
     const issues = auditDesignQuality(
       website,

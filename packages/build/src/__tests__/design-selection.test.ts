@@ -335,4 +335,13 @@ describe('briefs as people actually write them', () => {
 
     expect(direction.matched).toBe(false);
   });
+
+  it('treats a barbershop as a local appointment business rather than a pink spa', () => {
+    const direction = chooseDirection(
+      brief({ product: 'Barboa', summary: 'A downtown barber shop with online booking' }),
+    );
+
+    expect(direction.product.type).toBe('Hyperlocal Services');
+    expect(direction.product.type).not.toBe('Beauty/Spa/Wellness Service');
+  });
 });
