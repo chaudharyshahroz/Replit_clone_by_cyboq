@@ -17,4 +17,15 @@ describe('E2B preview logging', () => {
       start.indexOf('background: true'),
     );
   });
+
+  it('keeps the Node runtime separate from the browser used for visual review', async () => {
+    const source = await readFile(new URL('../drivers/e2b.ts', import.meta.url), 'utf8');
+    const create = source.slice(source.indexOf('async create'), source.indexOf('async writeFiles'));
+    const capture = source.slice(source.indexOf('async capturePreview'));
+
+    expect(create).toContain('Sandbox.create({');
+    expect(create).not.toContain("DesktopSandbox.create('desktop'");
+    expect(capture).toContain("DesktopSandbox.create('desktop'");
+    expect(capture).toContain('await browser?.kill()');
+  });
 });

@@ -12,8 +12,8 @@
  * creates a sandbox is very often not the request that writes files to it, and
  * an in-memory handle would work in development and fail under a second replica.
  */
-import { CommandExitError, TimeoutError } from 'e2b';
-import { Sandbox } from '@e2b/desktop';
+import { CommandExitError, Sandbox, TimeoutError } from 'e2b';
+import { Sandbox as DesktopSandbox } from '@e2b/desktop';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
 import {
@@ -39,7 +39,7 @@ const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', '.next', 'dist', '.
 
 export interface E2bDriverOptions {
   readonly apiKey: string;
-  /** Browser-enabled E2B template. Defaults to the managed desktop template. */
+  /** Runtime template. The default E2B base image carries Node and package tooling. */
   readonly template?: string | undefined;
 }
 
@@ -99,8 +99,9 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
     async create(sandboxId: string, limits: SandboxLimits): Promise<SandboxHandle> {
       let sandbox: Sandbox;
       try {
-        sandbox = await Sandbox.create(options.template ?? 'desktop', {
+        sandbox = await Sandbox.create({
           apiKey,
+          template: options.template,
           timeoutMs: limits.timeoutMs,
           // Correlates a microVM with a Reklu build when reading E2B's dashboard.
           metadata: { reklu_sandbox_id: sandboxId },
@@ -110,7 +111,6 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
            * reason to hand over secrets.
            */
           envs: isolatedEnv() as Record<string, string>,
-          resolution: [1440, 1000],
         });
         await sandbox.files.makeDir(WORKDIR);
       } catch (error) {
@@ -307,12 +307,26 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
     },
 
     async capturePreview(handle: SandboxHandle, port: number) {
-      const sandbox = await connect(handle);
+      const runtime = await connect(handle);
+      let browser: DesktopSandbox | undefined;
       try {
-        await sandbox.open(`http://127.0.0.1:${port}/`);
-        await sandbox.wait(2_000);
-        const bytes = await sandbox.screenshot('bytes');
-        const size = await sandbox.getScreenSize();
+        /*
+         * Never turn the application runtime into a desktop image. The base
+         * template is the known-good Node environment; a separate, short-lived
+         * desktop microVM observes its public URL and is always destroyed.
+         */
+        const url = `https://${runtime.getHost(port)}`;
+        browser = await DesktopSandbox.create('desktop', {
+          apiKey,
+          timeoutMs: 60_000,
+          resolution: [1440, 1000],
+          metadata: { reklu_preview_capture_for: handle.id },
+          envs: isolatedEnv() as Record<string, string>,
+        });
+        await browser.open(url);
+        await browser.wait(2_000);
+        const bytes = await browser.screenshot('bytes');
+        const size = await browser.getScreenSize();
         return {
           mimeType: 'image/png' as const,
           width: size.width,
@@ -321,6 +335,10 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
         };
       } catch (error) {
         wrap('preview capture', error);
+      } finally {
+        await browser?.kill().catch((error: unknown) => {
+          logger.debug('Preview capture sandbox was already gone', { error });
+        });
       }
     },
 
