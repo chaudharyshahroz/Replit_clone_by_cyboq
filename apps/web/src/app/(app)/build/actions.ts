@@ -66,6 +66,7 @@ import {
   type DesignDNA,
   chooseBuildPath,
   createBuildPerformanceTimeline,
+  unresolvedLocalImports,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -81,7 +82,10 @@ export interface BuildFormState {
   readonly error?: string;
 }
 
-async function pickModel(requested?: string, excludeKeys: readonly string[] = []): Promise<RegisteredModel> {
+async function pickModel(
+  requested?: string,
+  excludeKeys: readonly string[] = [],
+): Promise<RegisteredModel> {
   const registry = await loadRegistry();
   const excluded = new Set(excludeKeys);
   const allowed = selectableModels(registry, undefined).filter((model) => !excluded.has(model.key));
@@ -117,14 +121,16 @@ async function pickDesignModel(fallback: RegisteredModel): Promise<RegisteredMod
     (model) => model.bestFor.includes('coding') || model.bestFor.includes('reasoning'),
   );
 
-  return [...capable].sort((left, right) => {
-    const score = (model: RegisteredModel) =>
-      (model.bestFor.includes('coding') ? 8 : 0) +
-      (model.supportsVision ? 4 : 0) +
-      (model.supportsReasoning ? 3 : 0) +
-      Math.min(model.maxOutputTokens / 8_000, 2);
-    return score(right) - score(left) || left.sortOrder - right.sortOrder;
-  })[0] ?? fallback;
+  return (
+    [...capable].sort((left, right) => {
+      const score = (model: RegisteredModel) =>
+        (model.bestFor.includes('coding') ? 8 : 0) +
+        (model.supportsVision ? 4 : 0) +
+        (model.supportsReasoning ? 3 : 0) +
+        Math.min(model.maxOutputTokens / 8_000, 2);
+      return score(right) - score(left) || left.sortOrder - right.sortOrder;
+    })[0] ?? fallback
+  );
 }
 
 /** A compact reasoning/research model plans the site while the coding model stays focused on code. */
@@ -137,13 +143,15 @@ async function pickStrategyModel(fallback: RegisteredModel): Promise<RegisteredM
       (candidate.bestFor.includes('research') || candidate.bestFor.includes('reasoning')),
   );
 
-  return [...allowed].sort((left, right) => {
-    const score = (candidate: RegisteredModel) =>
-      (candidate.bestFor.includes('research') ? 8 : 0) +
-      (candidate.bestFor.includes('reasoning') ? 5 : 0) +
-      Math.min(candidate.contextWindow / 64_000, 2);
-    return score(right) - score(left) || left.sortOrder - right.sortOrder;
-  })[0] ?? fallback;
+  return (
+    [...allowed].sort((left, right) => {
+      const score = (candidate: RegisteredModel) =>
+        (candidate.bestFor.includes('research') ? 8 : 0) +
+        (candidate.bestFor.includes('reasoning') ? 5 : 0) +
+        Math.min(candidate.contextWindow / 64_000, 2);
+      return score(right) - score(left) || left.sortOrder - right.sortOrder;
+    })[0] ?? fallback
+  );
 }
 
 async function pickVisionModel(): Promise<RegisteredModel | undefined> {
@@ -151,9 +159,7 @@ async function pickVisionModel(): Promise<RegisteredModel | undefined> {
   return selectableModels(registry, undefined)
     .filter(
       (model) =>
-        model.supportsVision &&
-        model.inputCostPerMillion === 0 &&
-        model.outputCostPerMillion === 0,
+        model.supportsVision && model.inputCostPerMillion === 0 && model.outputCostPerMillion === 0,
     )
     .sort((left, right) => {
       const score = (model: RegisteredModel) =>
@@ -339,9 +345,7 @@ export async function buildProgressAction(buildId: string): Promise<BuildProgres
   const [project] = await db
     .select({ status: buildProjects.status, statusDetail: buildProjects.statusDetail })
     .from(buildProjects)
-    .where(
-      and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
-    )
+    .where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)))
     .limit(1);
 
   if (!project) throw errors.notFound('Build project', buildId);
@@ -520,9 +524,12 @@ async function composePrompt(
       }
       if (record.extractedText) {
         sections.push(
-          [`Attached file ${record.filename}:`, '```', record.extractedText.slice(0, 20_000), '```'].join(
-            '\n',
-          ),
+          [
+            `Attached file ${record.filename}:`,
+            '```',
+            record.extractedText.slice(0, 20_000),
+            '```',
+          ].join('\n'),
         );
         continue;
       }
@@ -905,7 +912,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         message: `${model.displayName} could not respond. Continuing with ${fallback.displayName}.`,
       });
       logger.warn('Build model failed; retrying with fallback', {
-        buildId, failedModel: model.key, fallbackModel: fallback.key,
+        buildId,
+        failedModel: model.key,
+        fallbackModel: fallback.key,
         error: toRekluError(lastError).message,
       });
       model = fallback;
@@ -1086,7 +1095,58 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  const resolved = normalizeGeneratedTree(merged);
+  let resolved = normalizeGeneratedTree(merged);
+
+  /*
+   * Design passes can revise a working page into one that imports components
+   * they forgot to emit. Validate the final designed tree as well as the raw
+   * generation, using the same provider-neutral closure check. This also makes
+   * repair requests for historical broken builds self-healing: the existing
+   * missing imports are included in the context and must be closed before a
+   * new checkpoint can be called ready.
+   */
+  const missingAfterDesign = unresolvedLocalImports(resolved);
+  if (missingAfterDesign.length > 0) {
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'say',
+      message: `The generated page references ${missingAfterDesign.length} local file${
+        missingAfterDesign.length === 1 ? '' : 's'
+      } that were not written. Completing them before preview.`,
+    });
+
+    const completed = await generateFiles({
+      brief,
+      prompt: [
+        'Complete this existing application without changing its design.',
+        'These local imports do not resolve:',
+        ...missingAfterDesign.map((entry) => `- ${entry.importer} imports ${entry.reference}`),
+        'Emit only the missing modules or importing files that must be corrected.',
+      ].join('\n'),
+      model,
+      requireFiles: true,
+      existingFiles: resolved,
+      designDNA,
+      report: async (stage) => {
+        await db
+          .update(buildProjects)
+          .set({ status: 'generating', statusDetail: STAGE_LABELS[stage] ?? null })
+          .where(eq(buildProjects.id, buildId));
+      },
+      onFile: async (path) => {
+        await recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'file',
+          message: path,
+          path,
+        });
+      },
+    });
+
+    resolved = normalizeGeneratedTree(mergeTree(resolved, completed.files));
+  }
 
   /*
    * The photographs, drawn from what the page says they show.
@@ -1096,21 +1156,24 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * still ships: the application is written and working, and what is missing is
    * a photograph.
    */
-  const illustrated = request.repairPass || buildPath.path === 'fast'
-    ? { files: resolved, generated: 0, failures: [] }
-    : await drawArtwork(
-    resolved,
-    `${brief.product} — ${brief.summary}`,
-    (request, imagePrompt) =>
-      drawOne(request, imagePrompt, workspace.workspaceId, (message) =>
-        recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
-      ),
-    (message) =>
-      recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
-  );
+  const illustrated =
+    request.repairPass || buildPath.path === 'fast'
+      ? { files: resolved, generated: 0, failures: [] }
+      : await drawArtwork(
+          resolved,
+          `${brief.product} — ${brief.summary}`,
+          (request, imagePrompt) =>
+            drawOne(request, imagePrompt, workspace.workspaceId, (message) =>
+              recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+            ),
+          (message) =>
+            recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+        );
   await performance.mark(
     'assets_completed',
-    buildPath.path === 'fast' ? 'deferred until after first preview' : `${illustrated.generated} generated`,
+    buildPath.path === 'fast'
+      ? 'deferred until after first preview'
+      : `${illustrated.generated} generated`,
   );
 
   for (const failure of illustrated.failures) {
@@ -1338,7 +1401,8 @@ async function visuallyReviewPreview(
       buildId,
       workspaceId,
       kind: 'say',
-      message: 'The Website Agent found visible layout issues and is applying one focused polish pass.',
+      message:
+        'The Website Agent found visible layout issues and is applying one focused polish pass.',
     });
     await runGeneration(buildId, {
       instruction: visualRevisionPrompt(review),
@@ -1377,13 +1441,17 @@ async function visuallyReviewPreview(
         buildId,
         workspaceId,
         kind: 'note',
-        message: 'The visual polish failed validation, so the previous working design was restored.',
+        message:
+          'The visual polish failed validation, so the previous working design was restored.',
       });
     }
   }
 
   const [latest] = await db
-    .select({ currentVersionId: buildProjects.currentVersionId, codebaseAnalysis: buildProjects.codebaseAnalysis })
+    .select({
+      currentVersionId: buildProjects.currentVersionId,
+      codebaseAnalysis: buildProjects.codebaseAnalysis,
+    })
     .from(buildProjects)
     .where(eq(buildProjects.id, buildId))
     .limit(1);
@@ -1448,7 +1516,9 @@ export async function startPreviewAction(
         await recordPersistentPerformance(
           buildId,
           workspace.workspaceId,
-          stage === 'installing_dependencies' ? 'dependency_install_started' : 'dev_server_starting',
+          stage === 'installing_dependencies'
+            ? 'dependency_install_started'
+            : 'dev_server_starting',
         );
         await db
           .update(buildProjects)
@@ -1484,7 +1554,8 @@ export async function startPreviewAction(
             'For unknown Tailwind utilities, align the utility with the existing theme configuration. ' +
             'If an external service or database is not configured, do not initialize it while rendering ' +
             'the marketing homepage. Guard the integration and render realistic preview fixtures instead. ' +
-            'Preserve the design and unrelated files.\n\n' + compileError,
+            'Preserve the design and unrelated files.\n\n' +
+            compileError,
           origin: 'auto',
           repairPass: true,
         });
@@ -1518,12 +1589,7 @@ export async function startPreviewAction(
      * rewrite, restart and second screenshot to the blank-screen wait. Polish
      * is intentionally deferred; a durable background job will own it.
      */
-    await recordPersistentPerformance(
-      buildId,
-      workspace.workspaceId,
-      'first_preview',
-      result.url,
-    );
+    await recordPersistentPerformance(buildId, workspace.workspaceId, 'first_preview', result.url);
     await recordStep({
       buildId,
       workspaceId: workspace.workspaceId,
@@ -1534,7 +1600,14 @@ export async function startPreviewAction(
     return {
       url: result.ready ? result.url : null,
       output: result.output,
-      ...(!result.ready ? { error: describeStartupFailure(result.output, tree.map((file) => file.path)) } : {}),
+      ...(!result.ready
+        ? {
+            error: describeStartupFailure(
+              result.output,
+              tree.map((file) => file.path),
+            ),
+          }
+        : {}),
     };
   } catch (error) {
     if (isRekluError(error)) return { url: null, output: '', error: error.userMessage };
@@ -1593,9 +1666,7 @@ async function runExport(
   const [project] = await db
     .select({ name: buildProjects.name })
     .from(buildProjects)
-    .where(
-      and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
-    )
+    .where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)))
     .limit(1);
 
   if (!project) return { error: 'That build no longer exists.' };
@@ -1776,9 +1847,7 @@ export async function publicationStateAction(buildId: string): Promise<PublishSt
     customDomain: record.customDomain ?? undefined,
     domainStatus: record.domainStatus,
     domainDetail: record.domainDetail ?? undefined,
-    ...(record.customDomain
-      ? { dns: dnsInstructions(record.customDomain, record.slug) }
-      : {}),
+    ...(record.customDomain ? { dns: dnsInstructions(record.customDomain, record.slug) } : {}),
   };
 }
 

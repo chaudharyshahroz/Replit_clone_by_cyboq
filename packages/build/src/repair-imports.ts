@@ -13,6 +13,7 @@
  * get it wrong twice.
  */
 import type { GeneratedFile } from './parse';
+import { posix } from 'node:path';
 
 const ALIAS_IMPORT = /(?:from|import)\s*\(?\s*['"]@\/([^'"]+)['"]/g;
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.css', ''];
@@ -24,14 +25,74 @@ function resolves(paths: ReadonlySet<string>, reference: string): boolean {
   );
 }
 
-/** Repair a locally invented alias path when the intended file is unambiguous. */
-export function repairLocalImportPaths(
+export interface UnresolvedLocalImport {
+  readonly importer: string;
+  readonly reference: string;
+}
+
+/**
+ * Local modules referenced by generated code but absent from the generated
+ * tree.
+ *
+ * Package imports are intentionally ignored: dependency normalization owns
+ * those. This is the structural completeness check for files a model says it
+ * created — the exact class of failure where `page.tsx` imports five sections
+ * and the response ends without emitting any of them.
+ */
+export function unresolvedLocalImports(
   files: readonly GeneratedFile[],
-): readonly GeneratedFile[] {
+): readonly UnresolvedLocalImport[] {
+  const repaired = repairLocalImportPaths(files);
+  const paths = new Set(repaired.map((file) => file.path));
+  const sourceRoot =
+    paths.has('src/app/page.tsx') || [...paths].some((path) => path.startsWith('src/'))
+      ? 'src/'
+      : '';
+  const missing = new Map<string, UnresolvedLocalImport>();
+
+  for (const file of repaired) {
+    if (file.binary || !/\.(?:[cm]?[jt]sx?|css)$/.test(file.path)) continue;
+
+    const references = new Set<string>();
+    for (const pattern of [
+      /\b(?:from\s+|import\s*\(\s*|require\s*\(\s*)['"]([^'"]+)['"]/g,
+      /\bimport\s*['"]([^'"]+)['"]/g,
+    ]) {
+      for (const match of file.content.matchAll(pattern)) {
+        if (match[1]) references.add(match[1]);
+      }
+    }
+
+    for (const original of references) {
+      const reference = original.replace(/[?#].*$/, '');
+      let candidates: readonly string[];
+      if (reference.startsWith('@/')) {
+        const withoutAlias = reference.slice(2);
+        candidates = [
+          ...new Set([`${sourceRoot}${withoutAlias}`, withoutAlias, `src/${withoutAlias}`]),
+        ];
+      } else if (reference.startsWith('./') || reference.startsWith('../')) {
+        candidates = [posix.normalize(posix.join(posix.dirname(file.path), reference))];
+      } else {
+        continue;
+      }
+
+      if (candidates.some((candidate) => resolves(paths, candidate))) continue;
+      const key = `${file.path}\0${original}`;
+      missing.set(key, { importer: file.path, reference: original });
+    }
+  }
+
+  return [...missing.values()];
+}
+
+/** Repair a locally invented alias path when the intended file is unambiguous. */
+export function repairLocalImportPaths(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   const paths = new Set(files.map((file) => file.path));
-  const root = paths.has('src/app/page.tsx') || [...paths].some((path) => path.startsWith('src/'))
-    ? 'src/'
-    : '';
+  const root =
+    paths.has('src/app/page.tsx') || [...paths].some((path) => path.startsWith('src/'))
+      ? 'src/'
+      : '';
 
   return files.map((file) => {
     let content = file.content;
@@ -198,9 +259,7 @@ export function aliasTargetFor(files: readonly GeneratedFile[]): string | undefi
  * is — reformatting a working config would be a change nobody asked for and a
  * diff nobody can read.
  */
-export function repairAliasPaths(
-  files: readonly GeneratedFile[],
-): readonly GeneratedFile[] {
+export function repairAliasPaths(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   const relocated = repairLocalImportPaths(files);
   const target = aliasTargetFor(relocated);
   if (!target) return relocated;
@@ -215,8 +274,7 @@ export function repairAliasPaths(
   const paths = (compilerOptions.paths ?? {}) as Record<string, unknown>;
   const existing = paths['@/*'];
 
-  const alreadyCorrect =
-    Array.isArray(existing) && existing.length > 0 && existing[0] === target;
+  const alreadyCorrect = Array.isArray(existing) && existing.length > 0 && existing[0] === target;
   if (alreadyCorrect && compilerOptions.baseUrl) return relocated;
 
   const repaired = {

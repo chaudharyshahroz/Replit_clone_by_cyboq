@@ -64,16 +64,77 @@ beforeEach(() => {
 const FILE = ['// package.json', '```json', '{ "name": "coffee" }', '```'].join('\n');
 
 describe('asking again', () => {
-  it('replaces a final file cut off by the output limit before returning the tree', async () => {
+  it('requests locally imported files that the model omitted before accepting the tree', async () => {
     responds([
-      '// src/lib/menu-data.ts\n```ts\nexport const menu = [{ name: "Veggie", price:',
-    ], 'length');
+      [
+        '// src/app/page.tsx',
+        '```tsx',
+        "import { Hero } from '@/components/sections/Hero';",
+        'export default function Page() { return <Hero />; }',
+        '```',
+      ].join('\n'),
+    ]);
+    generate.mockResolvedValue({
+      text: [
+        '// src/components/sections/Hero.tsx',
+        '```tsx',
+        'export function Hero() { return <section>Gym</section>; }',
+        '```',
+      ].join('\n'),
+      finishReason: 'stop',
+    });
+
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: async () => {},
+      requireFiles: true,
+    });
+
+    expect(result.files.map((entry) => entry.path)).toEqual([
+      'src/app/page.tsx',
+      'src/components/sections/Hero.tsx',
+    ]);
+    const sent = generate.mock.calls[0]?.[0] as { messages: { content: { text: string }[] }[] };
+    expect(sent.messages.at(-1)?.content[0]?.text).toContain(
+      'src/app/page.tsx imports @/components/sections/Hero',
+    );
+  });
+
+  it('rejects a file tree that remains incomplete after bounded completion attempts', async () => {
+    responds([
+      '// src/app/page.tsx\n```tsx\nimport Missing from "./Missing";\nexport default Missing;\n```',
+    ]);
+    generate.mockResolvedValue({ text: 'No files.', finishReason: 'stop' });
+
+    await expect(
+      generateFiles({
+        brief,
+        prompt: 'build it',
+        model,
+        report: async () => {},
+        requireFiles: true,
+      }),
+    ).rejects.toThrow(/unresolved local imports/i);
+  });
+
+  it('replaces a final file cut off by the output limit before returning the tree', async () => {
+    responds(
+      ['// src/lib/menu-data.ts\n```ts\nexport const menu = [{ name: "Veggie", price:'],
+      'length',
+    );
     generate.mockResolvedValue({
       text: '// src/lib/menu-data.ts\n```ts\nexport const menu = [{ name: "Veggie", price: 12 }];\n```',
       finishReason: 'stop',
     });
 
-    const result = await generateFiles({ brief, prompt: 'build it', model, report: async () => {} });
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: async () => {},
+    });
     expect(result.files).toHaveLength(1);
     expect(result.files[0]!.content).toContain('price: 12');
     expect(incompleteFinalFile(result.files[0]!.content)).toBeUndefined();
@@ -205,7 +266,13 @@ describe('when the second attempt fails too', () => {
     generate.mockResolvedValue({ text: '', finishReason: 'stop' });
 
     await expect(
-      generateFiles({ brief, prompt: 'repair it', model, report: async () => {}, requireFiles: true }),
+      generateFiles({
+        brief,
+        prompt: 'repair it',
+        model,
+        report: async () => {},
+        requireFiles: true,
+      }),
     ).rejects.toMatchObject({ code: 'PROVIDER_ERROR', retryable: true });
   });
 

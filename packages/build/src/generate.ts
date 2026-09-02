@@ -10,12 +10,7 @@
  *   - an example in the request is not the scope
  *   - real applications need loading, empty and error states, not a happy path
  */
-import {
-  getProvider,
-  type FinishReason,
-  type ModelMessage,
-  type RegisteredModel,
-} from '@reklu/ai';
+import { getProvider, type FinishReason, type ModelMessage, type RegisteredModel } from '@reklu/ai';
 import { sandbox, type SandboxHandle } from '@reklu/sandbox';
 import { errors, logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
@@ -30,6 +25,7 @@ import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import { dependencyInstallCommand } from './install-args';
 import { withImageBytes } from './artwork';
 import { designDNAPrompt, type DesignDNA } from '@reklu/design-intelligence';
+import { unresolvedLocalImports } from './repair-imports';
 
 export type BuildStage =
   | 'interpreting_product'
@@ -188,9 +184,7 @@ export function incompleteFinalFile(response: string): string | undefined {
 }
 
 /** Generate or revise the file tree. Does not touch the sandbox. */
-export async function generateFiles(
-  options: GenerateBuildOptions,
-): Promise<GenerationResult> {
+export async function generateFiles(options: GenerateBuildOptions): Promise<GenerationResult> {
   const provider = getProvider(options.model.providerKey);
   if (!provider) {
     throw new Error(`Provider ${options.model.providerKey} is not configured`);
@@ -207,7 +201,8 @@ export async function generateFiles(
       '',
       'Current files (emit only the ones you change):',
       ...options.existingFiles.map(
-        (file) => `\n// ${file.path}\n\`\`\`${file.language}\n${file.content.slice(0, 4_000)}\n\`\`\``,
+        (file) =>
+          `\n// ${file.path}\n\`\`\`${file.language}\n${file.content.slice(0, 4_000)}\n\`\`\``,
       ),
     );
   }
@@ -341,12 +336,14 @@ export async function generateFiles(
         },
         {
           role: 'user',
-          content: [{
-            type: 'text',
-            text:
-              `The response stopped halfway through ${incompletePath}. Emit that complete file ` +
-              'again, from its first line to its last line, and nothing else. Include its path comment and closing fence.',
-          }],
+          content: [
+            {
+              type: 'text',
+              text:
+                `The response stopped halfway through ${incompletePath}. Emit that complete file ` +
+                'again, from its first line to its last line, and nothing else. Include its path comment and closing fence.',
+            },
+          ],
         },
       ],
       system,
@@ -361,7 +358,8 @@ export async function generateFiles(
         provider: options.model.providerKey,
         model: options.model.modelIdentifier,
         detail: `Output stopped inside ${incompletePath} and the completion retry did not return a complete file.`,
-        userMessage: 'This model stopped halfway through a file. Reklu Auto is trying another coding model.',
+        userMessage:
+          'This model stopped halfway through a file. Reklu Auto is trying another coding model.',
         retryable: true,
       });
     }
@@ -400,58 +398,141 @@ export async function generateFiles(
      * the first attempt, not an unhandled error that loses the build.
      */
     try {
-    const retry = await provider.generate({
-      modelIdentifier: options.model.modelIdentifier,
-      messages: [
-        ...messages,
-        { role: 'assistant', content: [{ type: 'text', text: text.slice(0, 4_000) }] },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: [
-                'That reply contained no files, so nothing was built.',
-                '',
-                'Emit the files now and nothing else. No plan, no explanation, no',
-                'summary — those cost output budget that the files need. Start with',
-                'package.json. Each file is a path comment on its own line followed',
-                'by a fenced block:',
-                '',
-                '// path/to/file.ext',
-                '```language',
-                'file contents',
-                '```',
-                '',
-                'If you cannot fit the whole application, emit the most important',
-                'files complete rather than all of them truncated.',
-              ].join('\n'),
-            },
-          ],
-        },
-      ],
-      system,
-      maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+      const retry = await provider.generate({
+        modelIdentifier: options.model.modelIdentifier,
+        messages: [
+          ...messages,
+          { role: 'assistant', content: [{ type: 'text', text: text.slice(0, 4_000) }] },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: [
+                  'That reply contained no files, so nothing was built.',
+                  '',
+                  'Emit the files now and nothing else. No plan, no explanation, no',
+                  'summary — those cost output budget that the files need. Start with',
+                  'package.json. Each file is a path comment on its own line followed',
+                  'by a fenced block:',
+                  '',
+                  '// path/to/file.ext',
+                  '```language',
+                  'file contents',
+                  '```',
+                  '',
+                  'If you cannot fit the whole application, emit the most important',
+                  'files complete rather than all of them truncated.',
+                ].join('\n'),
+              },
+            ],
+          },
+        ],
+        system,
+        maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
 
-    const second = parseGeneratedFiles(retry?.text ?? '');
-    if (second.files.length > 0) {
-      parsed = second;
-      text = retry.text;
-      finishReason = retry.finishReason ?? 'stop';
+      const second = parseGeneratedFiles(retry?.text ?? '');
+      if (second.files.length > 0) {
+        parsed = second;
+        text = retry.text;
+        finishReason = retry.finishReason ?? 'stop';
+
+        if (options.onFile) {
+          for (const file of second.files) {
+            if (announced.has(file.path)) continue;
+            announced.add(file.path);
+            await options.onFile(file.path);
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('The second attempt at a generation failed too', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /*
+   * Close the generated file graph before accepting it.
+   *
+   * Some coding models stop cleanly after writing a homepage whose imports
+   * point at section files they never emitted. The response is syntactically
+   * valid and has files, so the old completeness checks accepted it and the
+   * first request to Next failed with "Module not found". This check is shared
+   * by every provider and asks for only the missing modules, then rechecks the
+   * files those modules import. An incomplete tree never reaches Preview.
+   */
+  if (options.requireFiles && parsed.files.length > 0 && !options.signal?.aborted) {
+    let missing = unresolvedLocalImports(mergeTree(options.existingFiles ?? [], parsed.files));
+
+    for (let attempt = 1; attempt <= 2 && missing.length > 0; attempt++) {
+      retried = true;
+      logger.warn('Generation omitted locally imported files; requesting them', {
+        attempt,
+        missing: missing.map((entry) => `${entry.importer} -> ${entry.reference}`),
+      });
+
+      const completion = await provider.generate({
+        modelIdentifier: options.model.modelIdentifier,
+        messages: [
+          ...messages,
+          { role: 'assistant', content: [{ type: 'text', text: text.slice(-12_000) }] },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: [
+                  'The generated application is incomplete because these local imports have no file:',
+                  ...missing.map((entry) => `- ${entry.importer} imports ${entry.reference}`),
+                  '',
+                  'Emit complete files for every missing local module. If an import is unnecessary,',
+                  'emit the importing file again with that import and its usage removed. Include only',
+                  'new or changed files, using path comments and fenced blocks. No prose. Ensure any',
+                  'new local imports you add also have files in this response.',
+                ].join('\n'),
+              },
+            ],
+          },
+        ],
+        system,
+        maxOutputTokens: Math.min(options.model.maxOutputTokens, 24_000),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+
+      const supplemental = parseGeneratedFiles(completion?.text ?? '');
+      if (supplemental.files.length === 0) break;
+      parsed = {
+        files: mergeTree(parsed.files, supplemental.files),
+        rejected: [...parsed.rejected, ...supplemental.rejected],
+        commentary: parsed.commentary,
+      };
+      text = `${text}\n${completion.text}`;
+      finishReason = completion.finishReason ?? finishReason;
 
       if (options.onFile) {
-        for (const file of second.files) {
+        for (const file of supplemental.files) {
           if (announced.has(file.path)) continue;
           announced.add(file.path);
           await options.onFile(file.path);
         }
       }
+
+      missing = unresolvedLocalImports(mergeTree(options.existingFiles ?? [], parsed.files));
     }
-    } catch (error) {
-      logger.warn('The second attempt at a generation failed too', {
-        error: error instanceof Error ? error.message : String(error),
+
+    if (missing.length > 0) {
+      throw errors.providerError({
+        provider: options.model.providerKey,
+        model: options.model.modelIdentifier,
+        detail: `Generated files still have unresolved local imports: ${missing
+          .map((entry) => `${entry.importer} -> ${entry.reference}`)
+          .join(', ')}`,
+        userMessage:
+          'This model returned an incomplete file tree. Reklu Auto is trying another coding model.',
+        retryable: true,
       });
     }
   }
@@ -478,7 +559,8 @@ export async function generateFiles(
         },
         parsed.rejected.length,
       ),
-      userMessage: 'This model did not return usable code. Reklu Auto is trying another coding model.',
+      userMessage:
+        'This model did not return usable code. Reklu Auto is trying another coding model.',
       retryable: true,
     });
   }
@@ -542,8 +624,7 @@ export function describeEmptyGeneration(
   }
 
   return (
-    'The model wrote code but never named a file, so none could be saved. ' +
-    'Try another model.'
+    'The model wrote code but never named a file, so none could be saved. ' + 'Try another model.'
   );
 }
 

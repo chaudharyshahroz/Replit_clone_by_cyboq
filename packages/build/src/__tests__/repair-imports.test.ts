@@ -7,7 +7,13 @@
  * connection to the file that caused it.
  */
 import { describe, expect, it } from 'vitest';
-import { aliasTargetFor, parseTsconfig, repairAliasPaths, repairLocalImportPaths } from '../repair-imports';
+import {
+  aliasTargetFor,
+  parseTsconfig,
+  repairAliasPaths,
+  repairLocalImportPaths,
+  unresolvedLocalImports,
+} from '../repair-imports';
 import type { GeneratedFile } from '../parse';
 
 const file = (path: string, content = ''): GeneratedFile => ({
@@ -124,6 +130,64 @@ describe('repairing invented local import paths', () => {
       file('src/components/menu/Card.tsx'),
     ]);
     expect(result[0]).toBe(source);
+  });
+});
+
+describe('finding files a model forgot to emit', () => {
+  it('reports every unresolved alias import from a generated homepage', () => {
+    const page = file(
+      'src/app/page.tsx',
+      [
+        "import { Hero } from '@/components/sections/Hero';",
+        "import { About } from '@/components/sections/About';",
+      ].join('\n'),
+    );
+
+    expect(unresolvedLocalImports([page])).toEqual([
+      { importer: 'src/app/page.tsx', reference: '@/components/sections/Hero' },
+      { importer: 'src/app/page.tsx', reference: '@/components/sections/About' },
+    ]);
+  });
+
+  it('accepts alias, relative, index, style and binary targets that exist', () => {
+    const page = file(
+      'src/app/page.tsx',
+      [
+        "import Hero from '@/components/Hero';",
+        "import { data } from '../lib';",
+        "import './page.css';",
+        "import photo from '../../public/hero.png';",
+      ].join('\n'),
+    );
+    const photo = {
+      ...file('public/hero.png'),
+      binary: {
+        storageKey: 'hero',
+        contentType: 'image/png',
+        bytes: 10,
+      },
+    };
+
+    expect(
+      unresolvedLocalImports([
+        page,
+        file('src/components/Hero.tsx'),
+        file('src/lib/index.ts'),
+        file('src/app/page.css'),
+        photo,
+      ]),
+    ).toEqual([]);
+  });
+
+  it('ignores package imports owned by dependency normalization', () => {
+    expect(
+      unresolvedLocalImports([
+        file(
+          'src/app/page.tsx',
+          "import Image from 'next/image'; import { motion } from 'framer-motion';",
+        ),
+      ]),
+    ).toEqual([]);
   });
 });
 
