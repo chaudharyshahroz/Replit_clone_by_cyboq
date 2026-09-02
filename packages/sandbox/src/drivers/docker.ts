@@ -32,6 +32,7 @@
 import { createHash } from 'node:crypto';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
+import { DEV_LOG_PATH } from '../preview-runtime';
 import { createTar, extractTar } from '../tar';
 import { DockerError, demultiplex, dockerRequest, type DockerTarget } from '../docker-api';
 import {
@@ -66,9 +67,6 @@ const UID = 1000;
 const GID = 1000;
 const HOME = '/home/node';
 const WORKDIR = `${HOME}/app`;
-
-/** Where the preview server's output is kept, for the Console tab to read. */
-export const DEV_LOG_PATH = '/tmp/dev-server.log';
 
 export interface DockerDriverOptions {
   readonly host: string;

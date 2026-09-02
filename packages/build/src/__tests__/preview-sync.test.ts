@@ -15,7 +15,13 @@ describe('preview tree synchronization', () => {
     expect(
       staleProjectFiles(
         ['package.json', 'src/app/page.tsx'],
-        ['package.json', 'package-lock.json', 'src/app/page.tsx', 'src/components/Old.tsx'],
+        [
+          'package.json',
+          'package-lock.json',
+          '.reklu-dev-server.log',
+          'src/app/page.tsx',
+          'src/components/Old.tsx',
+        ],
       ),
     ).toEqual(['src/components/Old.tsx']);
   });

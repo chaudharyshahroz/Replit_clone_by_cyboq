@@ -11,7 +11,7 @@ describe('E2B preview logging', () => {
     const source = await readFile(new URL('../drivers/e2b.ts', import.meta.url), 'utf8');
     const start = source.slice(source.indexOf('async startPreview'));
 
-    expect(source).toContain("const DEV_LOG_PATH = '/tmp/dev-server.log'");
+    expect(source).toContain("import { DEV_LOG_PATH } from '../preview-runtime'");
     expect(start).toContain('> ${DEV_LOG_PATH} 2>&1');
     expect(start.indexOf('> ${DEV_LOG_PATH} 2>&1')).toBeLessThan(
       start.indexOf('background: true'),

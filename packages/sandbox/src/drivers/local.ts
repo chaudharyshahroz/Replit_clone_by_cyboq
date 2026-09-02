@@ -11,11 +11,13 @@
  * this cannot reach a deployment.
  */
 import { spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
 import { dirname as pathDirname } from 'node:path';
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { logger } from '@reklu/shared';
 import { isolatedEnv, resolveInside } from '../paths';
+import { DEV_LOG_PATH } from '../preview-runtime';
 import {
   SandboxError,
   type ExecOptions,
@@ -215,6 +217,29 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'] as const,
         detached: true,
+      });
+
+      /*
+       * Always consume both pipes and persist them where the build package
+       * reads preview diagnostics. Leaving these streams unread has two bad
+       * outcomes: the Console has no explanation for a failed startup, and a
+       * chatty compiler eventually fills the OS pipe and blocks the dev server.
+       */
+      const log = createWriteStream(resolveInside(handle.externalId, DEV_LOG_PATH), {
+        flags: 'w',
+      });
+      log.on('error', (error) => {
+        logger.debug('Could not persist local preview output', {
+          sandboxId: handle.id,
+          error,
+        });
+      });
+      child.stdout.pipe(log, { end: false });
+      child.stderr.pipe(log, { end: false });
+      child.once('close', () => log.end());
+      child.once('error', (error) => {
+        log.write(`\nPreview process failed to start: ${error.message}\n`);
+        log.end();
       });
 
       child.unref();

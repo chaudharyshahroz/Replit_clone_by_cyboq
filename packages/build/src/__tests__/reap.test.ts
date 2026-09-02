@@ -18,6 +18,7 @@ const rows: { expired: unknown[]; live: unknown[] } = { expired: [], live: [] };
 const updated: unknown[] = [];
 
 vi.mock('@reklu/sandbox', () => ({
+  DEV_LOG_PATH: '.reklu-dev-server.log',
   sandbox: () => ({ name: 'docker', isIsolated: true, destroy }),
   sandboxStatus: () => ({ available: true, isolated: true, driver: 'docker', detail: '' }),
 }));

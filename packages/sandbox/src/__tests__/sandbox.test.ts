@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadServerEnv, resetServerEnvCache } from '@reklu/shared';
-import { sandbox, sandboxStatus, resetSandboxCache } from '../index';
+import { DEV_LOG_PATH, sandbox, sandboxStatus, resetSandboxCache } from '../index';
 import { createE2bSandboxDriver } from '../drivers/e2b';
 import { createLocalSandboxDriver } from '../drivers/local';
 import { assertSafeRelativePath, isolatedEnv, resolveInside } from '../paths';
@@ -174,6 +174,25 @@ describe('local sandbox driver', () => {
     await writeFile(join(handle.externalId, 'node_modules/pkg/index.js'), 'x');
 
     expect(await driver.listFiles(handle)).toEqual(['src/a.ts']);
+  });
+
+  it('persists preview output for startup diagnostics', async () => {
+    const { driver } = await makeDriver();
+    const handle = await driver.create('sbx_preview_log', DEFAULT_LIMITS);
+    const preview = await driver.startPreview(handle, 43_199, {
+      command: process.execPath,
+      args: ['-e', "console.error('preview-startup-canary')"],
+      env: {},
+    });
+
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const output = await driver.readFile(handle, DEV_LOG_PATH);
+      if (output?.includes('preview-startup-canary')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(await driver.readFile(handle, DEV_LOG_PATH)).toContain('preview-startup-canary');
+    await preview.stop();
   });
 
   describe('exec', () => {

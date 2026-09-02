@@ -16,6 +16,7 @@ import { CommandExitError, Sandbox, TimeoutError } from 'e2b';
 import { Sandbox as DesktopSandbox } from '@e2b/desktop';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
+import { DEV_LOG_PATH } from '../preview-runtime';
 import {
   SandboxError,
   type ExecOptions,
@@ -30,9 +31,6 @@ import {
 
 /** Working directory inside the microVM. E2B's default user is `user`. */
 const WORKDIR = '/home/user/app';
-
-/** Must match the path read by the build package after a failed startup. */
-const DEV_LOG_PATH = '/tmp/dev-server.log';
 
 /** Never listed back to the UI — noise, and enormous. */
 const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', '.next', 'dist', '.turbo']);

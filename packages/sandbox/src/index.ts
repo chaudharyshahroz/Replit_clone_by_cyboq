@@ -7,9 +7,10 @@ import { SandboxError, type SandboxDriver } from './types';
 
 export * from './types';
 export * from './paths';
+export { DEV_LOG_PATH } from './preview-runtime';
 export { createLocalSandboxDriver } from './drivers/local';
 export { createE2bSandboxDriver, e2bDriverFromEnv } from './drivers/e2b';
-export { createDockerSandboxDriver, dockerDriverFromEnv, DEV_LOG_PATH } from './drivers/docker';
+export { createDockerSandboxDriver, dockerDriverFromEnv } from './drivers/docker';
 
 let cached: SandboxDriver | undefined;
 

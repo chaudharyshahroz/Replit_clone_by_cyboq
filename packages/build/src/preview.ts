@@ -62,7 +62,7 @@ const MAX_RUNNING_PREVIEWS = 4;
 const running = new Map<string, PreviewHandle>();
 
 /** Files created by package managers rather than stored in the generated tree. */
-const RUNTIME_FILES = new Set(['package-lock.json', 'npm-shrinkwrap.json']);
+const RUNTIME_FILES = new Set(['package-lock.json', 'npm-shrinkwrap.json', DEV_LOG_PATH]);
 const RESTART_SENSITIVE_FILES = new Set([
   'package.json',
   'next.config.js',
