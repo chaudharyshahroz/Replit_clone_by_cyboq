@@ -866,7 +866,10 @@ export async function startPreview(params: {
     let startupOutput = materialized.output;
     if (!ready) {
       const log = await readDevLog(materialized.handle).catch(() => '');
-      startupOutput = [materialized.output, log].filter(Boolean).join('\n\n');
+      // Once installation succeeded, the dev log is the relevant evidence.
+      // Keeping hundreds of successful package-manager lines ahead of it made
+      // repair prompts noisy and could push the actual startup error out.
+      startupOutput = log || materialized.output;
       logger.warn('The dev server never answered', {
         buildProjectId: params.buildProjectId,
         port,

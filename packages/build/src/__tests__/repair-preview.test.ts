@@ -34,6 +34,21 @@ describe('preview compilation repair', () => {
     expect(repair).toHaveBeenCalledWith(expect.stringContaining('DATABASE_URL'), 1);
   });
 
+  it('repairs a dev-command failure that happens before the server is ready', async () => {
+    const repair = vi.fn(async () => {});
+    const result = await repairPreviewCompilation({
+      initial: failed(
+        "Error: It looks like you're trying to use `tailwindcss` directly as a PostCSS plugin.",
+      ),
+      readLog: async () => '',
+      repair,
+      restart: async () => ready,
+    });
+
+    expect(result.ready).toBe(true);
+    expect(repair).toHaveBeenCalledWith(expect.stringContaining('PostCSS plugin'), 1);
+  });
+
   it('caps failed repairs at three attempts', async () => {
     const initial = failed('Syntax Error');
     const repair = vi.fn(async () => {});

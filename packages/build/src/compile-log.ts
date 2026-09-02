@@ -37,6 +37,22 @@ const RUNTIME_FAILURE_MARKERS = [
   '⨯ ReferenceError:',
 ];
 
+const STARTUP_INFRASTRUCTURE_FAILURES =
+  /EADDRINUSE|ENOSPC|no space left|heap out of memory|JavaScript heap|spawn\s+\S+\s+ENOENT/i;
+
+const STARTUP_FAILURE_MARKERS = [
+  'failed to load config',
+  'failed to resolve import',
+  'error when starting dev server',
+  'npm error Missing script',
+  'command not found',
+  'CssSyntaxError',
+  'ERR_REQUIRE_ESM',
+  'ELIFECYCLE',
+  "trying to use `tailwindcss` directly as a PostCSS plugin",
+  'Cannot apply unknown utility class',
+];
+
 function lastPosition(log: string, markers: readonly string[]): number | undefined {
   return markers
     .map((marker) => log.lastIndexOf(marker))
@@ -83,7 +99,36 @@ export function runtimeErrorIn(log: string): string | null {
   return log.slice(Math.max(0, failedAt - 500), failedAt + 2_500).trim();
 }
 
+/**
+ * A generated-project failure that terminates the dev command before the
+ * framework can emit its normal compiler markers.
+ *
+ * Vite config failures, PostCSS/Tailwind setup errors and missing npm scripts
+ * all take this route. They used to be reported as an unexplained timeout and
+ * were never offered to the automatic repair pass. Host/resource failures are
+ * deliberately excluded because changing generated code cannot repair them.
+ */
+export function startupErrorIn(log: string): string | null {
+  if (!log.trim() || STARTUP_INFRASTRUCTURE_FAILURES.test(log)) return null;
+
+  let failedAt = lastPosition(log, STARTUP_FAILURE_MARKERS);
+
+  const genericErrors = /(?:^|\n)(?:Error(?: \[[A-Z_]+\])?|[A-Za-z]+Error):/g;
+  for (const match of log.matchAll(genericErrors)) {
+    const position = match.index;
+    if (position !== undefined && (failedAt === undefined || position > failedAt)) {
+      failedAt = position;
+    }
+  }
+
+  if (failedAt === undefined) return null;
+  const recoveredAt = lastPosition(log, RECOVERY_MARKERS);
+  if (recoveredAt !== undefined && recoveredAt > failedAt) return null;
+
+  return log.slice(Math.max(0, failedAt - 500), failedAt + 2_500).trim();
+}
+
 /** The actionable compiler or render failure currently blocking a preview. */
 export function previewErrorIn(log: string): string | null {
-  return compileErrorIn(log) ?? runtimeErrorIn(log);
+  return compileErrorIn(log) ?? runtimeErrorIn(log) ?? startupErrorIn(log);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileErrorIn, previewErrorIn, runtimeErrorIn } from '../compile-log';
+import { compileErrorIn, previewErrorIn, runtimeErrorIn, startupErrorIn } from '../compile-log';
 
 describe('server-side compiler log detection', () => {
   it('detects a Next.js SWC syntax failure after the server is ready', () => {
@@ -63,5 +63,32 @@ describe('server-side page runtime detection', () => {
     ].join('\n');
 
     expect(runtimeErrorIn(log)).toBeNull();
+  });
+});
+
+describe('dev-command startup detection', () => {
+  it('detects a Tailwind/PostCSS failure before the page compiles', () => {
+    const log = [
+      '▲ Next.js 15.4.0',
+      "Error: It looks like you're trying to use `tailwindcss` directly as a PostCSS plugin.",
+      '    at compileCss (/app/node_modules/tailwindcss/index.js:12:3)',
+    ].join('\n');
+
+    expect(startupErrorIn(log)).toContain('PostCSS plugin');
+    expect(previewErrorIn(log)).toContain('tailwindcss');
+  });
+
+  it('detects a Vite config crash as repairable generated code', () => {
+    const log = [
+      'failed to load config from /home/node/app/vite.config.ts',
+      'Error [ERR_REQUIRE_ESM]: require() of ES Module is not supported',
+    ].join('\n');
+
+    expect(startupErrorIn(log)).toContain('ERR_REQUIRE_ESM');
+  });
+
+  it('does not send infrastructure failures to code repair', () => {
+    expect(startupErrorIn('Error: listen EADDRINUSE 0.0.0.0:43000')).toBeNull();
+    expect(startupErrorIn('FATAL ERROR: JavaScript heap out of memory')).toBeNull();
   });
 });

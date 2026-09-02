@@ -1,4 +1,4 @@
-import { compileErrorIn, runtimeErrorIn } from './compile-log';
+import { compileErrorIn, runtimeErrorIn, startupErrorIn } from './compile-log';
 
 /**
  * How Reklu installs a generated project's dependencies.
@@ -173,6 +173,10 @@ export function describeStartupFailure(log: string, paths: readonly string[]): s
     return missing
       ? `The preview server never started: it could not find ${missing}.`
       : 'The preview server never started: a module it imports does not exist.';
+  }
+
+  if (startupErrorIn(log)) {
+    return 'The generated application could not start. Its actionable startup error is below.';
   }
 
   return 'The preview server never started. Its output is below.';

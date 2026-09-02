@@ -157,6 +157,12 @@ describe('describing a preview that never started', () => {
     expect(describeStartupFailure('npm error Missing script: "dev"', app)).toMatch(/dev script/);
   });
 
+  it('describes an actionable generated-project startup failure', () => {
+    const log =
+      "Error: It looks like you're trying to use `tailwindcss` directly as a PostCSS plugin.";
+    expect(describeStartupFailure(log, app)).toMatch(/application could not start/);
+  });
+
   it('names a module that could not be found', () => {
     const log = "Error: Cannot find module 'next/navigation'";
     expect(describeStartupFailure(log, app)).toContain('next/navigation');
