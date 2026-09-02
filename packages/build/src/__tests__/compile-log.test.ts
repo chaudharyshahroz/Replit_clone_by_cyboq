@@ -67,6 +67,12 @@ describe('server-side page runtime detection', () => {
 });
 
 describe('dev-command startup detection', () => {
+  it('detects a detached preview process that exited silently', () => {
+    expect(startupErrorIn('REKLU_PREVIEW_EXIT_CODE=1')).toContain(
+      'REKLU_PREVIEW_EXIT_CODE=1',
+    );
+  });
+
   it('detects a Tailwind/PostCSS failure before the page compiles', () => {
     const log = [
       '▲ Next.js 15.4.0',

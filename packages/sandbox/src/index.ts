@@ -7,7 +7,7 @@ import { SandboxError, type SandboxDriver } from './types';
 
 export * from './types';
 export * from './paths';
-export { DEV_LOG_PATH } from './preview-runtime';
+export { DEV_LOG_PATH, PREVIEW_EXIT_MARKER, previewProcessCommand } from './preview-runtime';
 export { createLocalSandboxDriver } from './drivers/local';
 export { createE2bSandboxDriver, e2bDriverFromEnv } from './drivers/e2b';
 export { createDockerSandboxDriver, dockerDriverFromEnv } from './drivers/docker';

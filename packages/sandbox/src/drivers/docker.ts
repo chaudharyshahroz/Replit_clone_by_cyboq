@@ -32,7 +32,7 @@
 import { createHash } from 'node:crypto';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
-import { DEV_LOG_PATH } from '../preview-runtime';
+import { previewProcessCommand } from '../preview-runtime';
 import { createTar, extractTar } from '../tar';
 import { DockerError, demultiplex, dockerRequest, type DockerTarget } from '../docker-api';
 import {
@@ -961,7 +961,7 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
        * browser tab of whoever opened the preview. Reklu had no idea anything
        * was wrong, and the Console tab it offers for exactly this was empty.
        */
-      const line = `${[command.command, ...command.args].join(' ')} > ${DEV_LOG_PATH} 2>&1`;
+      const line = previewProcessCommand(command);
 
       try {
         const createResponse = await dockerRequest(

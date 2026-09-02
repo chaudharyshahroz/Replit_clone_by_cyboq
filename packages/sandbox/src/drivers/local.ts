@@ -17,7 +17,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path';
 import { logger } from '@reklu/shared';
 import { isolatedEnv, resolveInside } from '../paths';
-import { DEV_LOG_PATH } from '../preview-runtime';
+import { DEV_LOG_PATH, PREVIEW_EXIT_MARKER } from '../preview-runtime';
 import {
   SandboxError,
   type ExecOptions,
@@ -236,10 +236,16 @@ export function createLocalSandboxDriver(options: LocalDriverOptions): SandboxDr
       });
       child.stdout.pipe(log, { end: false });
       child.stderr.pipe(log, { end: false });
-      child.once('close', () => log.end());
+      let logEnded = false;
+      child.once('close', (code) => {
+        if (logEnded) return;
+        logEnded = true;
+        log.end(`\n${PREVIEW_EXIT_MARKER}${code ?? 1}\n`);
+      });
       child.once('error', (error) => {
-        log.write(`\nPreview process failed to start: ${error.message}\n`);
-        log.end();
+        if (logEnded) return;
+        logEnded = true;
+        log.end(`\nPreview process failed to start: ${error.message}\n`);
       });
 
       child.unref();

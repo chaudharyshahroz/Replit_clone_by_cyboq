@@ -16,9 +16,10 @@ import { CommandExitError, Sandbox, TimeoutError } from 'e2b';
 import { Sandbox as DesktopSandbox } from '@e2b/desktop';
 import { loadServerEnv, logger } from '@reklu/shared';
 import { assertSafeRelativePath, isolatedEnv } from '../paths';
-import { DEV_LOG_PATH } from '../preview-runtime';
+import { previewProcessCommand } from '../preview-runtime';
 import {
   SandboxError,
+  type CreateOptions,
   type ExecOptions,
   type ExecResult,
   type PreviewCommand,
@@ -94,13 +95,17 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
       return Boolean(loadServerEnv().E2B_API_KEY);
     },
 
-    async create(sandboxId: string, limits: SandboxLimits): Promise<SandboxHandle> {
+    async create(
+      sandboxId: string,
+      limits: SandboxLimits,
+      createOptions?: CreateOptions,
+    ): Promise<SandboxHandle> {
       let sandbox: Sandbox;
       try {
         sandbox = await Sandbox.create({
           apiKey,
           template: options.template,
-          timeoutMs: limits.timeoutMs,
+          timeoutMs: createOptions?.lifetimeMs ?? limits.timeoutMs,
           // Correlates a microVM with a Reklu build when reading E2B's dashboard.
           metadata: { reklu_sandbox_id: sandboxId },
           /**
@@ -265,7 +270,7 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
          * the microVM instead: preview readiness and compiler repair reconnect
          * later and read this exact file through the sandbox driver.
          */
-        const line = `${[command.command, ...command.args].join(' ')} > ${DEV_LOG_PATH} 2>&1`;
+        const line = previewProcessCommand(command);
         try {
           running = await sandbox.commands.run(line, {
             cwd: WORKDIR,

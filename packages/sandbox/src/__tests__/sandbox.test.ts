@@ -187,11 +187,18 @@ describe('local sandbox driver', () => {
 
     for (let attempt = 0; attempt < 20; attempt++) {
       const output = await driver.readFile(handle, DEV_LOG_PATH);
-      if (output?.includes('preview-startup-canary')) break;
+      if (
+        output?.includes('preview-startup-canary') &&
+        output.includes('REKLU_PREVIEW_EXIT_CODE=0')
+      ) {
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    expect(await driver.readFile(handle, DEV_LOG_PATH)).toContain('preview-startup-canary');
+    const output = await driver.readFile(handle, DEV_LOG_PATH);
+    expect(output).toContain('preview-startup-canary');
+    expect(output).toContain('REKLU_PREVIEW_EXIT_CODE=0');
     await preview.stop();
   });
 

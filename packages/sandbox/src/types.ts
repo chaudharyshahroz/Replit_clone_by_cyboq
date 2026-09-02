@@ -95,6 +95,15 @@ export interface CreateOptions {
   readonly publishPort?: number;
 
   /**
+   * How long the sandbox itself must remain available.
+   *
+   * This is distinct from `SandboxLimits.timeoutMs`, which limits an
+   * individual command. Managed runtimes such as E2B otherwise apply that
+   * command timeout to the microVM lifetime as well.
+   */
+  readonly lifetimeMs?: number;
+
+  /**
    * Hostnames a published site answers on, instead of a preview subdomain.
    *
    * Set only when publishing. A preview is addressed by an id nobody types; a

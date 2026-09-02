@@ -11,11 +11,18 @@ describe('E2B preview logging', () => {
     const source = await readFile(new URL('../drivers/e2b.ts', import.meta.url), 'utf8');
     const start = source.slice(source.indexOf('async startPreview'));
 
-    expect(source).toContain("import { DEV_LOG_PATH } from '../preview-runtime'");
-    expect(start).toContain('> ${DEV_LOG_PATH} 2>&1');
-    expect(start.indexOf('> ${DEV_LOG_PATH} 2>&1')).toBeLessThan(
+    expect(source).toContain("import { previewProcessCommand } from '../preview-runtime'");
+    expect(start).toContain('previewProcessCommand(command)');
+    expect(start.indexOf('previewProcessCommand(command)')).toBeLessThan(
       start.indexOf('background: true'),
     );
+  });
+
+  it('uses an explicit managed-sandbox lifetime when the caller supplies one', async () => {
+    const source = await readFile(new URL('../drivers/e2b.ts', import.meta.url), 'utf8');
+    const create = source.slice(source.indexOf('async create'), source.indexOf('async writeFiles'));
+
+    expect(create).toContain('createOptions?.lifetimeMs ?? limits.timeoutMs');
   });
 
   it('keeps the Node runtime separate from the browser used for visual review', async () => {

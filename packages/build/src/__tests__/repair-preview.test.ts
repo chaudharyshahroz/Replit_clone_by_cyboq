@@ -69,10 +69,44 @@ describe('preview compilation repair', () => {
 
   it('does not retry infrastructure failures', async () => {
     const repair = vi.fn(async () => {});
+    const restart = vi.fn(async () => ready);
     await repairPreviewCompilation({
       initial: failed(''), readLog: async () => 'Error: listen EADDRINUSE', repair,
-      restart: async () => ready,
+      restart,
     });
+    expect(repair).not.toHaveBeenCalled();
+    expect(restart).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds once when a detached preview exits without an actionable log', async () => {
+    const repair = vi.fn(async () => {});
+    const restart = vi.fn(async () => ready);
+
+    const result = await repairPreviewCompilation({
+      initial: failed(''),
+      readLog: async () => '',
+      repair,
+      restart,
+    });
+
+    expect(result.ready).toBe(true);
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds once when the only diagnostic is a detached-process exit marker', async () => {
+    const repair = vi.fn(async () => {});
+    const restart = vi.fn(async () => ready);
+
+    const result = await repairPreviewCompilation({
+      initial: failed('REKLU_PREVIEW_EXIT_CODE=1'),
+      readLog: async () => '',
+      repair,
+      restart,
+    });
+
+    expect(result.ready).toBe(true);
+    expect(restart).toHaveBeenCalledTimes(1);
     expect(repair).not.toHaveBeenCalled();
   });
 

@@ -672,6 +672,8 @@ export async function materialize(params: {
    * cannot add one to a running container.
    */
   readonly publishPort?: number;
+  /** Managed sandbox lifetime, independent of any one command timeout. */
+  readonly sandboxLifetimeMs?: number;
 }): Promise<MaterializeResult> {
   const driver = sandbox();
   const limits = params.limits ?? {
@@ -684,7 +686,14 @@ export async function materialize(params: {
   const handle = await driver.create(
     params.sandboxId,
     limits,
-    params.publishPort === undefined ? undefined : { publishPort: params.publishPort },
+    params.publishPort === undefined && params.sandboxLifetimeMs === undefined
+      ? undefined
+      : {
+          ...(params.publishPort === undefined ? {} : { publishPort: params.publishPort }),
+          ...(params.sandboxLifetimeMs === undefined
+            ? {}
+            : { lifetimeMs: params.sandboxLifetimeMs }),
+        },
   );
   await driver.writeFiles(handle, await withImageBytes(params.files));
 

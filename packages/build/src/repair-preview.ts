@@ -14,8 +14,26 @@ export async function repairPreviewCompilation<T extends PreviewState>(options: 
   restart: () => Promise<T>;
 }): Promise<T> {
   let state = options.initial;
+  let output = state.output || (state.installed && !state.ready ? await options.readLog() : '');
+
+  /*
+   * A detached process can fail before its framework prints a compiler error,
+   * and a transient managed-sandbox launch can leave no process output at all.
+   * Rebuild once without spending an AI call. A known host failure is not
+   * retried because new application code cannot create memory, disk or a port.
+   */
+  if (
+    state.installed &&
+    !state.ready &&
+    (!previewErrorIn(output) || /^\s*REKLU_PREVIEW_EXIT_CODE=\d+\s*$/.test(output)) &&
+    !/EADDRINUSE|ENOSPC|no space left|heap out of memory|JavaScript heap/i.test(output)
+  ) {
+    state = await options.restart();
+    output = state.output || (state.installed && !state.ready ? await options.readLog() : '');
+  }
+
   for (let attempt = 1; attempt <= 3 && state.installed && !state.ready; attempt++) {
-    const output = state.output || (await options.readLog());
+    output = state.output || (await options.readLog());
     const error = previewErrorIn(output);
     if (!error) return { ...state, output };
     try {

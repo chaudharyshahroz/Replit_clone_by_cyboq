@@ -29,6 +29,15 @@ describe('starting a preview', () => {
   it('normalizes saved files in both fresh and reuse startup paths', () => {
     expect(source.match(/normalizeGeneratedTree\(await loadTree/g)).toHaveLength(2);
   });
+
+  it('keeps managed preview sandboxes alive for the advertised preview TTL', () => {
+    expect(source).toContain('sandboxLifetimeMs: PREVIEW_TTL_MS');
+  });
+
+  it('does not record a silent or exited preview process as running', () => {
+    expect(source).toContain("const launchFailed = !ready && (processExited || !startupOutput.trim())");
+    expect(source).toContain("status: launchFailed ? 'failed' : 'running'");
+  });
   it('tries to reuse the running container before stopping anything', () => {
     const body = source.slice(source.indexOf('export async function startPreview'));
 

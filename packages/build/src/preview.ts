@@ -801,6 +801,9 @@ export async function startPreview(params: {
       // Fixed at creation for container runtimes; ignored by drivers that do
       // not need it.
       publishPort: port,
+      // E2B otherwise treats the five-minute command timeout as the lifetime
+      // of a preview that Reklu promises to keep for thirty minutes.
+      sandboxLifetimeMs: PREVIEW_TTL_MS,
     });
 
     if (!materialized.installed) {
@@ -877,12 +880,16 @@ export async function startPreview(params: {
       });
     }
 
+    const processExited = /REKLU_PREVIEW_EXIT_CODE=\d+/.test(startupOutput);
+    const launchFailed = !ready && (processExited || !startupOutput.trim());
+
     await db
       .update(sandboxes)
       .set({
-        status: 'running',
+        status: launchFailed ? 'failed' : 'running',
         externalId: materialized.handle.externalId,
         previewUrl: handle.url,
+        errorMessage: launchFailed ? startupOutput.slice(0, 4_000) || 'No preview process output.' : null,
         lastActiveAt: new Date(),
         expiresAt: new Date(Date.now() + PREVIEW_TTL_MS),
       })

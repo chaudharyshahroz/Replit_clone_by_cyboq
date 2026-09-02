@@ -41,6 +41,7 @@ const STARTUP_INFRASTRUCTURE_FAILURES =
   /EADDRINUSE|ENOSPC|no space left|heap out of memory|JavaScript heap|spawn\s+\S+\s+ENOENT/i;
 
 const STARTUP_FAILURE_MARKERS = [
+  'REKLU_PREVIEW_EXIT_CODE=',
   'failed to load config',
   'failed to resolve import',
   'error when starting dev server',
