@@ -304,6 +304,22 @@ describe('previews', () => {
     expect((startCall?.[3] as { json: { Detach: boolean } }).json.Detach).toBe(true);
   });
 
+  it('runs the preview command group as shell syntax', async () => {
+    const handle = await driver.create('sbx_1', DEFAULT_LIMITS);
+    dockerRequest.mockClear();
+
+    await driver.startPreview(handle, 4310, { command: 'npx', args: ['vite'], env: {} });
+
+    const createCall = dockerRequest.mock.calls.find((args) =>
+      String(args[2]).includes('/containers/') && String(args[2]).endsWith('/exec'),
+    );
+    const cmd = (createCall?.[3] as { json: { Cmd: string[] } }).json.Cmd;
+
+    expect(cmd.slice(0, 2)).toEqual(['sh', '-c']);
+    expect(cmd[2]).toMatch(/^\{ 'npx' 'vite'; \}/);
+    expect(cmd[2]).not.toMatch(/^exec\s/);
+  });
+
   it('refuses to start a preview with no command', async () => {
     const handle = await driver.create('sbx_1', DEFAULT_LIMITS);
     await expect(driver.startPreview(handle, 4310)).rejects.toThrow(/command/i);

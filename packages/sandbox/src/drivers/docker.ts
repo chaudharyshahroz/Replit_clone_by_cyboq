@@ -970,7 +970,15 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
           `/containers/${handle.externalId}/exec`,
           {
             json: {
-              Cmd: ['sh', '-c', `exec ${line}`],
+              /*
+               * `line` is a shell command group followed by exit-status
+               * persistence. Prefixing it with `exec` turns the opening `{`
+               * into an argument to the exec builtin (`exec: {: not found`)
+               * instead of shell syntax, so Next never starts and the log is
+               * never created. Docker already detaches this exec instance;
+               * the extra shell-level `exec` is unnecessary.
+               */
+              Cmd: ['sh', '-c', line],
               WorkingDir: WORKDIR,
               Env: Object.entries(isolatedEnv(command.env)).map(
                 ([key, value]) => `${key}=${value}`,
