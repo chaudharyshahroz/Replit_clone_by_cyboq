@@ -16,7 +16,18 @@ listed as complete only if it has been executed and verified, not merely written
 | Generator consumes persistent DNA | ✅ | `generateFiles({ designDNA })`; Build and web typechecks pass |
 | Structured multi-category screenshot critic | 🚧 | Schema exists; legacy visual reviewer still needs migration |
 | Two-phase Fast Preview / Complete Build | ⬜ | Current bottlenecks and target architecture documented |
-| Durable build worker + performance spans | ⬜ | Existing events are durable; orchestration remains in a server action |
+| Durable build worker + performance spans | 🚧 | Exact spans now persist as Build events; orchestration still remains in a server action |
+
+### V2 latency increment — 2026-09-02
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Exact elapsed Build milestones | ✅ | Durable `performance` events from prompt receipt through preview and validation |
+| Fast vs Agentic Build routing | ✅ | Simple sites/compact dashboards bypass deep pre-preview stages; data-backed apps retain them |
+| Visual critic removed from first-preview critical path | ✅ | Preview URL now returns before screenshot/model/refinement work |
+| Blocking asset generation removed from Fast Build | ✅ | Recorded explicitly as deferred rather than hidden behind progress |
+| Supplied visual benchmark capture | 🚧 | Six responsive captures saved; both supplied Replit deployments were inactive placeholders |
+| True two-phase shell compiler | ⬜ | Whole model response still precedes the first executable checkpoint |
 
 Verification on 2026-09-02:
 

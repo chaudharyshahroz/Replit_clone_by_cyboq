@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { loadRegistry, selectableModels, type RegisteredModel } from '@reklu/ai';
 import {
   createCheckpoint,
@@ -64,6 +64,8 @@ import {
   understandProduct,
   DesignDNASchema,
   type DesignDNA,
+  chooseBuildPath,
+  createBuildPerformanceTimeline,
 } from '@reklu/build';
 import { buildEvents, buildProjects, db } from '@reklu/database';
 import { listConnections } from '@reklu/integrations';
@@ -301,6 +303,33 @@ async function recordStep(params: {
   } catch (error) {
     logger.debug('Could not record a build step', { buildId: params.buildId, error });
   }
+}
+
+/** Continue the same elapsed timeline across the generate and preview actions. */
+async function recordPersistentPerformance(
+  buildId: string,
+  workspaceId: string,
+  milestone: string,
+  detail?: string,
+): Promise<void> {
+  const [first] = await db
+    .select({ createdAt: buildEvents.createdAt })
+    .from(buildEvents)
+    .where(and(eq(buildEvents.buildProjectId, buildId), eq(buildEvents.kind, 'performance')))
+    .orderBy(asc(buildEvents.createdAt))
+    .limit(1);
+  const now = new Date();
+  await recordStep({
+    buildId,
+    workspaceId,
+    kind: 'performance',
+    message: JSON.stringify({
+      milestone,
+      elapsedMs: Math.max(0, now.getTime() - (first?.createdAt.getTime() ?? now.getTime())),
+      at: now.toISOString(),
+      ...(detail ? { detail } : {}),
+    }),
+  });
 }
 
 /** What the build is doing right now, for a screen that is watching it. */
@@ -577,6 +606,15 @@ async function drawOne(
 
 async function runGeneration(buildId: string, request: BuildRequest): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
+  const performance = createBuildPerformanceTimeline((mark) =>
+    recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'performance',
+      message: JSON.stringify(mark),
+    }),
+  );
+  await performance.mark('prompt_received', request.origin ?? 'user');
 
   /*
    * What was asked, kept where the answer will appear — and it is the person's
@@ -641,6 +679,16 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   });
   const designDNA: DesignDNA = storedDNA.success ? storedDNA.data : createDesignDNA(productContext);
   const informationArchitecture = createInformationArchitecture(productContext);
+  const buildPath = chooseBuildPath(brief);
+  await performance.mark('product_understood', productContext.productType);
+  await performance.mark('design_ready', designDNA.directionId);
+
+  await recordStep({
+    buildId,
+    workspaceId: workspace.workspaceId,
+    kind: 'note',
+    message: `${buildPath.path === 'fast' ? 'Fast Build' : 'Agentic Build'} path: ${buildPath.reason}`,
+  });
 
   if (!storedDNA.success) {
     await db
@@ -679,7 +727,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    */
   let plan: SitePlan | undefined;
 
-  if (existing.length === 0) {
+  if (existing.length === 0 && buildPath.path === 'agentic') {
     const web = createWebAdapter();
 
     if (!web.isConfigured()) {
@@ -816,6 +864,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       },
       /* Named as it is written, not listed afterwards. */
       onFile: async (path) => {
+        if (!firstFileRecorded) {
+          firstFileRecorded = true;
+          await performance.mark('first_file', path);
+        }
         await recordStep({
           buildId,
           workspaceId: workspace.workspaceId,
@@ -826,6 +878,8 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       },
     });
 
+  let firstFileRecorded = false;
+  await performance.mark('generation_started', model.key);
   let generated;
   try {
     generated = await generateWith(model);
@@ -868,6 +922,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   }
 
   if (!generated) throw errors.internal('Build generation returned no result.');
+  await performance.mark('generation_completed', `${generated.files.length} files`);
 
   if (generated.files.length === 0) {
     /*
@@ -915,7 +970,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    */
   const firstGeneration = existing.length === 0;
 
-  if (firstGeneration && needsDesignPass(brief.target)) {
+  if (firstGeneration && buildPath.path === 'agentic' && needsDesignPass(brief.target)) {
     await db
       .update(buildProjects)
       .set({ status: 'generating', statusDetail: STAGE_LABELS.designing ?? 'Designing' })
@@ -1012,6 +1067,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       });
     }
   }
+  await performance.mark(
+    'design_polish_completed',
+    buildPath.path === 'fast' ? 'deferred until after first preview' : undefined,
+  );
 
   // Spec §35: bake the mapping in at generation time. Retrofitting it later
   // would mean regenerating every existing project.
@@ -1037,7 +1096,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * still ships: the application is written and working, and what is missing is
    * a photograph.
    */
-  const illustrated = request.repairPass
+  const illustrated = request.repairPass || buildPath.path === 'fast'
     ? { files: resolved, generated: 0, failures: [] }
     : await drawArtwork(
     resolved,
@@ -1048,6 +1107,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       ),
     (message) =>
       recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+  );
+  await performance.mark(
+    'assets_completed',
+    buildPath.path === 'fast' ? 'deferred until after first preview' : `${illustrated.generated} generated`,
   );
 
   for (const failure of illustrated.failures) {
@@ -1071,6 +1134,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     changeSummary: generated.commentary.slice(0, 200) || 'Generated files',
     modelKey: model.key,
   });
+  await performance.mark('checkpoint_completed');
 
   await db
     .update(buildProjects)
@@ -1129,6 +1193,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * so it re-served exactly what it had. The change was real, was in the code
    * view, and was nowhere on the screen.
    */
+  await performance.mark('preview_sync_started');
   const running = await syncPreview({
     buildProjectId: buildId,
     workspaceId: workspace.workspaceId,
@@ -1142,6 +1207,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   });
 
   if (running) {
+    await performance.mark('preview_updated', 'running sandbox synchronized');
     await recordStep({
       buildId,
       workspaceId: workspace.workspaceId,
@@ -1175,6 +1241,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         buildProjectId: buildId,
         workspaceId: workspace.workspaceId,
       });
+      await performance.mark('validation_completed', problems ? 'type errors found' : 'passed');
 
       if (problems) {
         await recordStep({
@@ -1209,6 +1276,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       instrumented.files.length === 1 ? '' : 's'
     }.`,
   });
+  await performance.mark('build_completed', `${instrumented.files.length} files`);
 
   return {
     ok: true,
@@ -1337,6 +1405,7 @@ export async function startPreviewAction(
   buildId: string,
 ): Promise<{ url: string | null; output: string; error?: string }> {
   const { workspace } = await getAppContext();
+  await recordPersistentPerformance(buildId, workspace.workspaceId, 'preview_action_started');
 
   /* The layout of the tree, which is one of the reasons a server never starts. */
   let tree = await loadTree(buildId, workspace.workspaceId);
@@ -1376,6 +1445,11 @@ export async function startPreviewAction(
       buildProjectId: buildId,
       workspaceId: workspace.workspaceId,
       report: async (stage) => {
+        await recordPersistentPerformance(
+          buildId,
+          workspace.workspaceId,
+          stage === 'installing_dependencies' ? 'dependency_install_started' : 'dev_server_starting',
+        );
         await db
           .update(buildProjects)
           .set({ status: stage === 'installing_dependencies' ? 'installing' : 'ready' })
@@ -1438,14 +1512,24 @@ export async function startPreviewAction(
       };
     }
 
-    try {
-      const revised = await visuallyReviewPreview(buildId, workspace.workspaceId);
-      if (revised) {
-        result = revised;
-      }
-    } catch (error) {
-      logger.warn('Rendered visual review was skipped', { buildId, error });
-    }
+    /*
+     * First preview is a hard product boundary. Visual review used to run here
+     * before returning the URL, adding a screenshot, vision call, possible
+     * rewrite, restart and second screenshot to the blank-screen wait. Polish
+     * is intentionally deferred; a durable background job will own it.
+     */
+    await recordPersistentPerformance(
+      buildId,
+      workspace.workspaceId,
+      'first_preview',
+      result.url,
+    );
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'note',
+      message: 'Preview ready. Responsive and visual polish are deferred until after first paint.',
+    });
 
     return {
       url: result.ready ? result.url : null,

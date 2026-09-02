@@ -5,6 +5,8 @@ import {
   DesignDNASchema,
   shouldRefine,
   understandProduct,
+  chooseBuildPath,
+  createBuildPerformanceTimeline,
 } from '../index';
 
 describe('product understanding', () => {
@@ -27,6 +29,32 @@ describe('product understanding', () => {
     });
     expect(context.productType).toBe('developer_tool');
     expect(createInformationArchitecture(context)[1]?.patterns).toContain('quickstart steps');
+  });
+});
+
+describe('build path routing', () => {
+  it('keeps a simple marketing site off the agentic path', () => {
+    const decision = chooseBuildPath({ target: 'website', needsAuth: false, needsDatabase: false, pages: [1, 2] });
+    expect(decision.path).toBe('fast');
+    expect(decision.deferUntilPreview).toContain('assets');
+  });
+
+  it('routes data-backed products to the agentic path', () => {
+    expect(chooseBuildPath({ target: 'web_app', needsAuth: true, needsDatabase: true }).path).toBe('agentic');
+  });
+});
+
+describe('performance timeline', () => {
+  it('persists real elapsed milestones from a monotonic clock', async () => {
+    const values = [100, 112, 149];
+    const marks: unknown[] = [];
+    const timeline = createBuildPerformanceTimeline((mark) => { marks.push(mark); }, () => values.shift() ?? 149, () => new Date('2026-09-02T00:00:00Z'));
+    await timeline.mark('prompt_received');
+    await timeline.mark('first_file');
+    expect(marks).toEqual([
+      { milestone: 'prompt_received', elapsedMs: 12, at: '2026-09-02T00:00:00.000Z' },
+      { milestone: 'first_file', elapsedMs: 49, at: '2026-09-02T00:00:00.000Z' },
+    ]);
   });
 });
 
