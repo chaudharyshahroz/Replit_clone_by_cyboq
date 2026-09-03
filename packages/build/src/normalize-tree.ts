@@ -7,7 +7,10 @@ import {
 } from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
 import { repairStaticExport } from './repair-export';
-import { repairClientMetadata } from './repair-client-metadata';
+import {
+  repairClientIconRegistries,
+  repairClientMetadata,
+} from './repair-client-metadata';
 import { repairGlobalStyles } from './repair-styles';
 import { repairJsxExtensions } from './repair-jsx-extension';
 import { ensureNextRootLayout } from './repair-next-layout';
@@ -16,11 +19,13 @@ import { ensureNextRootLayout } from './repair-next-layout';
 export function normalizeGeneratedTree(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   return ensureNextRootLayout(repairJsxExtensions(
     repairGlobalStyles(
-      repairClientMetadata(
-        repairStaticExport(
-          repairFontWeights(
-            repairUnavailableDependencyVersions(
-              repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(files))),
+      repairClientIconRegistries(
+        repairClientMetadata(
+          repairStaticExport(
+            repairFontWeights(
+              repairUnavailableDependencyVersions(
+                repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(files))),
+              ),
             ),
           ),
         ),

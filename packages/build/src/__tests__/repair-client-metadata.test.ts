@@ -7,13 +7,40 @@
  * the directive.
  */
 import { describe, expect, it } from 'vitest';
-import { repairClientMetadata } from '../repair-client-metadata';
+import {
+  repairClientIconRegistries,
+  repairClientMetadata,
+} from '../repair-client-metadata';
 import type { GeneratedFile } from '../parse';
 
 const page = (body: string): GeneratedFile => ({
   path: 'app/menu/page.tsx',
   language: 'tsx',
   content: body,
+});
+
+describe('repairing client icon registries', () => {
+  it('removes an unnecessary client boundary from a pure SVG object', () => {
+    const icons = {
+      path: 'src/components/icons.tsx',
+      language: 'tsx',
+      content: `'use client';\nexport const Icons = { Mail: () => <svg><path /></svg> };\n`,
+    } satisfies GeneratedFile;
+
+    const [repaired] = repairClientIconRegistries([icons]);
+    expect(repaired?.content).not.toContain('use client');
+    expect(repaired?.content).toContain('Icons');
+  });
+
+  it('keeps the boundary when the registry really has client behaviour', () => {
+    const icons = {
+      path: 'src/components/icons.tsx',
+      language: 'tsx',
+      content: `'use client';\nimport { useState } from 'react';\nexport const Icons = { Toggle: () => { const [on] = useState(false); return <svg>{String(on)}</svg>; } };\n`,
+    } satisfies GeneratedFile;
+
+    expect(repairClientIconRegistries([icons])[0]).toBe(icons);
+  });
 });
 
 const CLIENT_PAGE = `'use client';

@@ -28,7 +28,10 @@ import {
 } from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
 import { repairStaticExport } from './repair-export';
-import { repairClientMetadata } from './repair-client-metadata';
+import {
+  repairClientIconRegistries,
+  repairClientMetadata,
+} from './repair-client-metadata';
 import { repairPrismaSchemas } from './repair-prisma';
 
 /** The port a published site listens on inside its container. */
@@ -182,11 +185,13 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
    * request to edit the code, and a repair that silently rewrote files would be
    * a change nobody asked for appearing in the next diff.
    */
-  let files = repairClientMetadata(
-    repairStaticExport(
-      repairFontWeights(
-        repairUnavailableDependencyVersions(
-          repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(stored))),
+  let files = repairClientIconRegistries(
+    repairClientMetadata(
+      repairStaticExport(
+        repairFontWeights(
+          repairUnavailableDependencyVersions(
+            repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(stored))),
+          ),
         ),
       ),
     ),

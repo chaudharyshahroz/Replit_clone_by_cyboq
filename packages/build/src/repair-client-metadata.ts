@@ -61,3 +61,32 @@ export function repairClientMetadata(
     return { ...file, content };
   });
 }
+
+const CLIENT_BEHAVIOUR =
+  /\b(?:useState|useEffect|useLayoutEffect|useReducer|useRef|useContext)\s*\(|\b(?:window|document|localStorage|sessionStorage)\b|\bon(?:Click|Change|Submit|Input|KeyDown|KeyUp|Pointer|Mouse|Touch)\s*=/;
+
+/**
+ * Keep static SVG registries out of the React Client Manifest.
+ *
+ * Next cannot address members of an object exported by a client module as
+ * individual client references (`Icons.Mail`, `Icons.YouTube`). An AI model
+ * commonly marks a pure icon file as client code even though SVG functions do
+ * not need a browser. Removing that unnecessary boundary makes the registry a
+ * normal shared module and fixes both server and client consumers.
+ */
+export function repairClientIconRegistries(
+  files: readonly GeneratedFile[],
+): readonly GeneratedFile[] {
+  return files.map((file) => {
+    if (!/(?:^|\/)icons?\.(?:tsx|jsx)$/.test(file.path)) return file;
+    if (!USE_CLIENT.test(file.content)) return file;
+    if (!/export\s+const\s+Icons\s*=\s*\{/.test(file.content)) return file;
+    if (CLIENT_BEHAVIOUR.test(file.content)) return file;
+
+    const content = file.content.replace(
+      /(^|\n)\s*['"]use client['"];?\s*(?:\n|$)/,
+      '$1',
+    );
+    return content === file.content ? file : { ...file, content };
+  });
+}

@@ -134,6 +134,7 @@ export const NEXT_CORRECTNESS: BuildSkill = {
   guidance: [
     'A file marked "use client" must not export metadata or generateMetadata. Keep the page a server component and move the interactive part into its own "use client" child — that is the fix, not removing the title.',
     'Only add "use client" to the file that actually needs the browser: state, effects, event handlers, or a browser API. A page that merely renders data is a server component.',
+    'A static SVG icon registry must not be marked "use client" and exported as one object such as `Icons.Mail`. Next cannot encode object members as separate Client Manifest references. Keep pure icons server-compatible, or export each client component by name.',
     'Never call a route handler of your own app from a page. At build time there is no server to answer, and the page fails to prerender. Read the data directly instead.',
     'Do not set output: "export" in next.config unless the app has no route handlers, no middleware, and no headers, redirects or rewrites. A static export has no server.',
     'Every async server component that reads request data — cookies, headers, searchParams — must be reachable dynamically. Do not force it static.',
