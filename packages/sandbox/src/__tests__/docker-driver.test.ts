@@ -49,6 +49,16 @@ beforeEach(() => {
 });
 
 describe('how a sandbox container is created', () => {
+  it('keeps a zero-timeout published container alive indefinitely', async () => {
+    await driver.create('site-demo', { ...DEFAULT_LIMITS, timeoutMs: 0 });
+    expect(createdConfig().Cmd).toEqual(['sleep', 'infinity']);
+  });
+
+  it('keeps ordinary preview containers finite', async () => {
+    await driver.create('sbx_1', { ...DEFAULT_LIMITS, timeoutMs: 300_000 });
+    expect(createdConfig().Cmd).toEqual(['sleep', '3900']);
+  });
+
   it('drops every capability', async () => {
     await driver.create('sbx_1', DEFAULT_LIMITS);
     expect(createdConfig().HostConfig.CapDrop).toEqual(['ALL']);

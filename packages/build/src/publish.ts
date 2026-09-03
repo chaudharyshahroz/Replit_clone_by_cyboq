@@ -22,7 +22,10 @@ import { withImageBytes } from './artwork';
 import { parseManifest } from './dev-command';
 import { dependencyInstallCommand } from './install-args';
 import { repairAliasPaths } from './repair-imports';
-import { repairMissingDependencies } from './repair-deps';
+import {
+  repairMissingDependencies,
+  repairUnavailableDependencyVersions,
+} from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
 import { repairStaticExport } from './repair-export';
 import { repairClientMetadata } from './repair-client-metadata';
@@ -179,9 +182,13 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
    * request to edit the code, and a repair that silently rewrote files would be
    * a change nobody asked for appearing in the next diff.
    */
-  const files = repairClientMetadata(
+  let files = repairClientMetadata(
     repairStaticExport(
-      repairFontWeights(repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(stored)))),
+      repairFontWeights(
+        repairUnavailableDependencyVersions(
+          repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(stored))),
+        ),
+      ),
     ),
   );
 
@@ -231,10 +238,30 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
     await driver.writeFiles(handle, await withImageBytes(files));
 
     await input.report?.('Installing dependencies');
-    const install = await driver.exec(handle, {
+    let install = await driver.exec(handle, {
       ...dependencyInstallCommand(true),
       timeoutMs: 900_000,
     });
+    if (install.exitCode !== 0) {
+      const repaired = repairUnavailableDependencyVersions(
+        files,
+        `${install.stdout}\n${install.stderr}`,
+      );
+      if (repaired !== files) {
+        files = repaired;
+        const manifest = files.find((file) => file.path === 'package.json');
+        if (manifest) {
+          logger.warn('Retrying publish after repairing an unavailable dependency version', {
+            buildProjectId: input.buildProjectId,
+          });
+          await driver.writeFiles(handle, await withImageBytes([manifest]));
+          install = await driver.exec(handle, {
+            ...dependencyInstallCommand(true),
+            timeoutMs: 900_000,
+          });
+        }
+      }
+    }
     if (install.exitCode !== 0) {
       const log = install.stderr || install.stdout;
       await db
@@ -327,6 +354,99 @@ export async function currentPublication(
     )
     .limit(1);
   return row;
+}
+
+/**
+ * Restore published sites created by older runtimes or lost across a host
+ * restart.
+ *
+ * Historical Docker site containers used `sleep 3600` as their PID 1, so they
+ * all exited after one hour even though their database rows remained `live`.
+ * Run once when the web process starts: healthy infinity-lived containers are
+ * left untouched, while stopped and legacy finite-lived containers are
+ * republished from their stored build tree at the same stable hostname.
+ */
+export async function restorePublishedSites(): Promise<number> {
+  const records = await db
+    .select()
+    .from(publications)
+    .where(eq(publications.status, 'live'));
+  const driver = sandbox();
+  let restored = 0;
+
+  for (const record of records) {
+    let durable = false;
+    if (record.containerId) {
+      try {
+        const probe = await driver.exec(
+          {
+            id: `site-${record.slug}`,
+            externalId: record.containerId,
+            driver: driver.name,
+            limits: PUBLISHED_LIMITS,
+            isIsolated: driver.isIsolated,
+          },
+          {
+            command: 'sh',
+            args: [
+              '-c',
+              '[ "$(tr "\\000" " " < /proc/1/cmdline)" = "sleep infinity " ]',
+            ],
+            timeoutMs: 10_000,
+          },
+        );
+        if (probe.exitCode === 0) {
+          const server = await driver.exec(
+            {
+              id: `site-${record.slug}`,
+              externalId: record.containerId,
+              driver: driver.name,
+              limits: PUBLISHED_LIMITS,
+              isIsolated: driver.isIsolated,
+            },
+            {
+              command: 'node',
+              args: [
+                '-e',
+                `fetch('http://127.0.0.1:${SITE_PORT}/',{signal:AbortSignal.timeout(4000)})` +
+                  '.then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))',
+              ],
+              timeoutMs: 8_000,
+            },
+          );
+          durable = server.exitCode === 0;
+        }
+      } catch {
+        // A stopped or removed container is exactly what this reconciler heals.
+      }
+    }
+    if (durable) continue;
+
+    /* Claim the row so two web processes cannot rebuild the same site. */
+    const claimed = await db
+      .update(publications)
+      .set({ status: 'publishing', statusDetail: 'Restoring the published site', updatedAt: new Date() })
+      .where(and(eq(publications.id, record.id), eq(publications.status, 'live')))
+      .returning({ id: publications.id });
+    if (claimed.length === 0) continue;
+
+    try {
+      await publishSite({
+        buildProjectId: record.buildProjectId,
+        workspaceId: record.workspaceId,
+      });
+      restored += 1;
+    } catch (error) {
+      logger.error('Could not restore a published site', {
+        buildProjectId: record.buildProjectId,
+        slug: record.slug,
+        error,
+      });
+    }
+  }
+
+  if (restored > 0) logger.info('Restored published sites', { count: restored });
+  return restored;
 }
 
 /** Take a site off the internet, keeping its address for when it comes back. */

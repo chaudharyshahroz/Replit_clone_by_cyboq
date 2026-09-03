@@ -40,6 +40,15 @@ case "$role" in
   web)
     echo "reklu: starting web on port ${PORT:-3000}"
     cd "${REKLU_APP_ROOT:-/app}/apps/web"
+    # Published sites run in sibling Docker containers. Reconcile them in the
+    # background on every deploy so a legacy/stopped container is restored at
+    # its existing URL without delaying Reklu's own health endpoint.
+    tsx="${REKLU_APP_ROOT:-/app}/node_modules/.bin/tsx"
+    if [ -x "$tsx" ]; then
+      "$tsx" src/restore-publications.ts &
+    else
+      echo "reklu: publication reconciler skipped; expected executable not found: $tsx" >&2
+    fi
     run ./node_modules/.bin/next start --port "${PORT:-3000}" --hostname 0.0.0.0
     ;;
 

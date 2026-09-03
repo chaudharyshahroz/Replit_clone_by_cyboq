@@ -30,6 +30,12 @@ describe('starting a preview', () => {
     expect(source.match(/normalizeGeneratedTree\(await loadTree/g)).toHaveLength(2);
   });
 
+  it('reconnects after a web-process restart by probing the real preview server', () => {
+    expect(source).not.toContain('if (!running.has(buildProjectId)) return undefined');
+    expect(source).toContain("fetch('http://127.0.0.1:${row.port}/'");
+    expect(source).toContain('expiresAt: new Date(Date.now() + PREVIEW_TTL_MS)');
+  });
+
   it('keeps managed preview sandboxes alive for the advertised preview TTL', () => {
     expect(source).toContain('sandboxLifetimeMs: PREVIEW_TTL_MS');
   });

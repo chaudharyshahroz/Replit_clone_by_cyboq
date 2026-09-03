@@ -1,7 +1,10 @@
 import type { GeneratedFile } from './parse';
 import { repairPrismaSchemas } from './repair-prisma';
 import { repairAliasPaths } from './repair-imports';
-import { repairMissingDependencies } from './repair-deps';
+import {
+  repairMissingDependencies,
+  repairUnavailableDependencyVersions,
+} from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
 import { repairStaticExport } from './repair-export';
 import { repairClientMetadata } from './repair-client-metadata';
@@ -15,7 +18,11 @@ export function normalizeGeneratedTree(files: readonly GeneratedFile[]): readonl
     repairGlobalStyles(
       repairClientMetadata(
         repairStaticExport(
-          repairFontWeights(repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(files)))),
+          repairFontWeights(
+            repairUnavailableDependencyVersions(
+              repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(files))),
+            ),
+          ),
         ),
       ),
     ),

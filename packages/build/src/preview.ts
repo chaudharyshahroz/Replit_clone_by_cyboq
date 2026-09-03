@@ -1001,7 +1001,12 @@ export async function currentPreview(
   workspaceId: string,
 ): Promise<{ url: string; port: number; isIsolated: boolean } | undefined> {
   const [row] = await db
-    .select({ previewUrl: sandboxes.previewUrl, port: sandboxes.port })
+    .select({
+      id: sandboxes.id,
+      externalId: sandboxes.externalId,
+      previewUrl: sandboxes.previewUrl,
+      port: sandboxes.port,
+    })
     .from(sandboxes)
     .where(
       and(
@@ -1012,15 +1017,49 @@ export async function currentPreview(
     )
     .limit(1);
 
-  if (!row?.previewUrl) return undefined;
+  if (!row?.previewUrl || !row.externalId || !row.port) return undefined;
 
-  // Only report a preview the process actually still holds. A row surviving a
-  // restart would otherwise point at a dead port.
-  if (!running.has(buildProjectId)) return undefined;
+  /*
+   * The container is the source of truth, not this process's memory.
+   *
+   * Closing a browser keeps the container alive, while deploying Reklu clears
+   * the `running` map. Requiring that map hid a healthy preview after either a
+   * server replacement or a request landing on another web process. Verify the
+   * actual dev server instead and reconnect to its stable URL.
+   */
+  const driver = sandbox();
+  try {
+    const reachable = await driver.exec(
+      {
+        id: row.id,
+        externalId: row.externalId,
+        driver: driver.name,
+        limits: DEFAULT_PREVIEW_LIMITS,
+        isIsolated: driver.isIsolated,
+      },
+      {
+        command: 'node',
+        args: [
+          '-e',
+          `fetch('http://127.0.0.1:${row.port}/',{signal:AbortSignal.timeout(4000)})` +
+            '.then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))',
+        ],
+        timeoutMs: 8_000,
+      },
+    );
+    if (reachable.exitCode !== 0) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  await db
+    .update(sandboxes)
+    .set({ lastActiveAt: new Date(), expiresAt: new Date(Date.now() + PREVIEW_TTL_MS) })
+    .where(eq(sandboxes.id, row.id));
 
   return {
     url: row.previewUrl,
     port: row.port ?? 0,
-    isIsolated: sandboxStatus().isolated,
+    isIsolated: driver.isIsolated,
   };
 }

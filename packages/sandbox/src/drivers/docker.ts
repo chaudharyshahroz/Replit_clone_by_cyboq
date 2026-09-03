@@ -697,7 +697,11 @@ export function createDockerSandboxDriver(options: DockerDriverOptions): Sandbox
         // Never root. Capabilities are dropped, but root still writes wherever
         // it has a mount, and plenty of images ship setuid binaries.
         User: `${UID}:${GID}`,
-        Cmd: ['sleep', String(Math.ceil(limits.timeoutMs / 1000) + 3600)],
+        // A zero command timeout means a durable published site. Turning zero
+        // into 3600 made every public link die exactly one hour after publish.
+        Cmd: limits.timeoutMs === 0
+          ? ['sleep', 'infinity']
+          : ['sleep', String(Math.ceil(limits.timeoutMs / 1000) + 3600)],
         Env: Object.entries(isolatedEnv()).map(([key, value]) => `${key}=${value}`),
         Labels: labels,
         ...(publishPort ? { ExposedPorts: { [`${publishPort}/tcp`]: {} } } : {}),

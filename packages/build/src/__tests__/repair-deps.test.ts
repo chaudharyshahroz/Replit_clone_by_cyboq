@@ -7,7 +7,12 @@
  * an invented one is arbitrary code running in the sandbox.
  */
 import { describe, expect, it } from 'vitest';
-import { importedPackages, packageFor, repairMissingDependencies } from '../repair-deps';
+import {
+  importedPackages,
+  packageFor,
+  repairMissingDependencies,
+  repairUnavailableDependencyVersions,
+} from '../repair-deps';
 import type { GeneratedFile } from '../parse';
 
 const file = (path: string, content: string): GeneratedFile => ({
@@ -116,5 +121,30 @@ describe('repairing the manifest', () => {
     const parsed = JSON.parse(result.find((f) => f.path === 'package.json')!.content);
     expect(parsed.name).toBe('demo');
     expect(parsed.scripts.dev).toBe('next dev');
+  });
+});
+
+describe('repairing unavailable dependency versions', () => {
+  it('repairs the confirmed TypeScript version hole before a cold install', () => {
+    const result = repairUnavailableDependencyVersions([
+      manifest({ devDependencies: { typescript: '5.4.0' } }),
+    ]);
+    const parsed = JSON.parse(result[0]!.content);
+    expect(parsed.devDependencies.typescript).toBe('^5.4.0');
+  });
+
+  it('uses package-manager evidence to repair another unavailable exact pin', () => {
+    const result = repairUnavailableDependencyVersions(
+      [manifest({ dependencies: { '@scope/tool': '2.3.0', react: '18.3.1' } })],
+      'ERR_PNPM_NO_MATCHING_VERSION No matching version found for @scope/tool@2.3.0 while fetching it from https://registry.npmjs.org/',
+    );
+    const parsed = JSON.parse(result[0]!.content);
+    expect(parsed.dependencies['@scope/tool']).toBe('^2.3.0');
+    expect(parsed.dependencies.react).toBe('18.3.1');
+  });
+
+  it('does not rewrite tags, ranges, or packages not named by the installer', () => {
+    const files = [manifest({ dependencies: { react: '^18.0.0', next: 'latest' } })];
+    expect(repairUnavailableDependencyVersions(files, 'unrelated failure')).toEqual(files);
   });
 });

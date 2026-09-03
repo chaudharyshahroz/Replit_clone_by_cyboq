@@ -34,6 +34,16 @@ const KNOWN: Readonly<Record<string, string>> = {
   slugify: '^1.6.6',
 };
 
+/**
+ * Exact versions emitted by providers that do not exist in the registry.
+ *
+ * Keep this list deliberately narrow. Valid exact pins are useful and should
+ * stay exact; these are confirmed holes that make every cold preview fail.
+ */
+const KNOWN_UNAVAILABLE: Readonly<Record<string, string>> = {
+  'typescript@5.4.0': '^5.4.0',
+};
+
 const IMPORT = /(?:from\s*['"]|import\s*\(\s*['"]|require\(\s*['"])([^'"]+)['"]/g;
 
 /** The package a specifier belongs to, or nothing if it is not a package. */
@@ -91,6 +101,70 @@ export function repairMissingDependencies(
 
   const repaired = { ...manifest, dependencies };
 
+  return files.map((file) =>
+    file.path === 'package.json'
+      ? { ...file, content: `${JSON.stringify(repaired, null, 2)}\n` }
+      : file,
+  );
+}
+
+/**
+ * Repair a direct dependency version that the package manager proved does not
+ * exist.
+ *
+ * A generated manifest can name a plausible-looking patch release such as
+ * `typescript@5.4.0`. pnpm reports the exact package and version, so recovery
+ * can be deterministic: broaden only that failed exact pin to its compatible
+ * major range and retry once. Unknown packages are never added and valid pins
+ * are never changed speculatively.
+ */
+export function repairUnavailableDependencyVersions(
+  files: readonly GeneratedFile[],
+  installOutput = '',
+): readonly GeneratedFile[] {
+  const manifestFile = files.find((file) => file.path === 'package.json');
+  if (!manifestFile) return files;
+
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(manifestFile.content) as Record<string, unknown>;
+  } catch {
+    return files;
+  }
+
+  const replacements = new Map<string, string>();
+  for (const [key, replacement] of Object.entries(KNOWN_UNAVAILABLE)) {
+    replacements.set(key, replacement);
+  }
+
+  const missingVersion =
+    /No matching version found for ((?:@[^/\s]+\/)?[^@\s]+)@([^\s]+)(?:\s|$)/g;
+  for (const match of installOutput.matchAll(missingVersion)) {
+    const name = match[1];
+    const version = match[2];
+    if (name && version && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+      replacements.set(`${name}@${version}`, `^${version}`);
+    }
+  }
+
+  let changed = false;
+  const repaired = { ...manifest };
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies'] as const) {
+    const original = manifest[field];
+    if (!original || typeof original !== 'object' || Array.isArray(original)) continue;
+
+    const dependencies = { ...(original as Record<string, unknown>) };
+    for (const [name, spec] of Object.entries(dependencies)) {
+      if (typeof spec !== 'string') continue;
+      const replacement = replacements.get(`${name}@${spec}`);
+      if (!replacement) continue;
+      dependencies[name] = replacement;
+      changed = true;
+    }
+    repaired[field] = dependencies;
+  }
+
+  if (!changed) return files;
   return files.map((file) =>
     file.path === 'package.json'
       ? { ...file, content: `${JSON.stringify(repaired, null, 2)}\n` }

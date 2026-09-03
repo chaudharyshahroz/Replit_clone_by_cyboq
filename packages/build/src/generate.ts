@@ -23,6 +23,7 @@ import {
 } from './design-intelligence';
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import { dependencyInstallCommand } from './install-args';
+import { repairUnavailableDependencyVersions } from './repair-deps';
 import { withImageBytes } from './artwork';
 import {
   designDNAPrompt,
@@ -712,7 +713,7 @@ export async function materialize(params: {
 
   await params.report('installing_dependencies');
   const installCommand = dependencyInstallCommand();
-  const install = await driver.exec(handle, {
+  let install = await driver.exec(handle, {
     ...installCommand,
     /*
      * Installing is the one step that is legitimately slow, and the cost of
@@ -723,6 +724,24 @@ export async function materialize(params: {
      */
     timeoutMs: Math.max(limits.timeoutMs, 600_000),
   });
+
+  if (install.exitCode !== 0) {
+    const failedOutput = `${install.stdout}\n${install.stderr}`;
+    const repaired = repairUnavailableDependencyVersions(params.files, failedOutput);
+    if (repaired !== params.files) {
+      const manifest = repaired.find((file) => file.path === 'package.json');
+      if (manifest) {
+        logger.warn('Retrying install after repairing an unavailable dependency version', {
+          sandboxId: params.sandboxId,
+        });
+        await driver.writeFiles(handle, await withImageBytes([manifest]));
+        install = await driver.exec(handle, {
+          ...installCommand,
+          timeoutMs: Math.max(limits.timeoutMs, 600_000),
+        });
+      }
+    }
+  }
 
   if (install.exitCode !== 0) {
     /*
