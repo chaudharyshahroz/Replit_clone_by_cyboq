@@ -14,6 +14,7 @@ import {
   chooseDirection,
   createDesignContract,
   auditDesignQuality,
+  evaluateGenericity,
   describeDirection,
   describeEmptyGeneration,
   generateFiles,
@@ -60,10 +61,13 @@ import {
   listCheckpoints,
   restoreCheckpoint,
   createDesignDNA,
+  createDesignEngineV3,
   createInformationArchitecture,
   understandProduct,
   DesignDNASchema,
+  DesignEngineV3Schema,
   type DesignDNA,
+  type DesignEngineV3,
   chooseBuildPath,
   createBuildPerformanceTimeline,
   unresolvedLocalImports,
@@ -85,14 +89,19 @@ export interface BuildFormState {
 async function pickModel(
   requested?: string,
   excludeKeys: readonly string[] = [],
+  needsVision = false,
 ): Promise<RegisteredModel> {
   const registry = await loadRegistry();
   const excluded = new Set(excludeKeys);
-  const allowed = selectableModels(registry, undefined).filter((model) => !excluded.has(model.key));
+  const allowed = selectableModels(registry, undefined).filter(
+    (model) => !excluded.has(model.key) && (!needsVision || model.supportsVision),
+  );
   if (allowed.length === 0) {
     throw errors.notConfigured({
-      feature: 'Build',
-      requiredEnv: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
+      feature: needsVision ? 'Build image input' : 'Build',
+      requiredEnv: needsVision
+        ? ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_API_KEY']
+        : ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
       docsPath: '/settings',
     });
   }
@@ -660,7 +669,12 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     throw errors.notFound('Build project', buildId);
   }
 
-  let model = await pickModel(request.modelKey);
+  const needsVision = request.fileIds?.length
+    ? (await loadAttachments(workspace.workspaceId, request.fileIds)).some((file) =>
+        file.contentType.startsWith('image/'),
+      )
+    : false;
+  let model = await pickModel(request.modelKey, [], needsVision);
   /*
    * Typed, not `never`. The cast used to erase the brief entirely, so the
    * target — which decides the stack, the standards and whether a design pass
@@ -677,6 +691,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    */
   const storedAnalysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
   const storedDNA = DesignDNASchema.safeParse(storedAnalysis.designDNA);
+  const storedEngineV3 = DesignEngineV3Schema.safeParse(storedAnalysis.designEngineV3);
   const productContext = understandProduct({
     product: brief.product,
     summary: brief.summary,
@@ -685,10 +700,13 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     pages: brief.pages,
   });
   const designDNA: DesignDNA = storedDNA.success ? storedDNA.data : createDesignDNA(productContext);
+  const designEngineV3: DesignEngineV3 = storedEngineV3.success
+    ? storedEngineV3.data
+    : createDesignEngineV3(productContext);
   const informationArchitecture = createInformationArchitecture(productContext);
   const buildPath = chooseBuildPath(brief);
   await performance.mark('product_understood', productContext.productType);
-  await performance.mark('design_ready', designDNA.directionId);
+  await performance.mark('design_ready', designEngineV3.selected.conceptName);
 
   await recordStep({
     buildId,
@@ -697,7 +715,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     message: `${buildPath.path === 'fast' ? 'Fast Build' : 'Agentic Build'} path: ${buildPath.reason}`,
   });
 
-  if (!storedDNA.success) {
+  if (!storedDNA.success || !storedEngineV3.success) {
     await db
       .update(buildProjects)
       .set({
@@ -705,6 +723,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           ...storedAnalysis,
           productDesignContext: productContext,
           designDNA,
+          designEngineV3,
           informationArchitecture,
         },
       })
@@ -713,7 +732,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       buildId,
       workspaceId: workspace.workspaceId,
       kind: 'stage',
-      message: `Design DNA ready: ${designDNA.visualDirection}`,
+      message: `Art direction ready: ${designEngineV3.selected.conceptName} — ${designEngineV3.selected.conceptStatement}`,
     });
   }
 
@@ -838,6 +857,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       requireFiles: true,
       existingFiles: existing,
       designDNA,
+      designEngineV3,
       /*
        * Each stage is written down as it is entered, in the words a reader would
        * use. The status alone said "generating" for the whole of a two-minute
@@ -902,7 +922,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     /* Free providers are capacity-constrained. Try several distinct coding
      * models so one overloaded endpoint does not strand an otherwise valid build. */
     for (let fallbackAttempt = 0; fallbackAttempt < 3; fallbackAttempt++) {
-      const fallback = await pickModel(undefined, attempted).catch(() => undefined);
+      const fallback = await pickModel(undefined, attempted, images.length > 0).catch(() => undefined);
       if (!fallback) break;
       attempted.push(fallback.key);
       await recordStep({
@@ -1000,6 +1020,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         files: merged,
         model: designModel,
         contract,
+        designEngineV3,
       });
       if (designed.files.length > 0) {
         merged = mergeTree(merged, designed.files);
@@ -1040,6 +1061,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           files: merged,
           model: designModel,
           contract,
+          designEngineV3,
           feedback: blockingFindings,
         });
         if (refined.files.length > 0) {
@@ -1075,6 +1097,38 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  if (isVisualTarget(brief.target)) {
+    const genericity = evaluateGenericity(merged);
+    await db
+      .update(buildProjects)
+      .set({
+        codebaseAnalysis: {
+          ...storedAnalysis,
+          productDesignContext: productContext,
+          designDNA,
+          designEngineV3,
+          informationArchitecture,
+          designAnalytics: {
+            directionId: designEngineV3.selected.id,
+            conceptName: designEngineV3.selected.conceptName,
+            displayFont: designEngineV3.recipe.typography.displayFont,
+            paletteStrategy: designEngineV3.selected.paletteDirection,
+            genericityScore: genericity.score,
+            genericityFlags: genericity.genericityIssues.map((issue) => issue.code),
+            rejected: genericity.rejected,
+            evaluatedAt: new Date().toISOString(),
+          },
+        },
+      })
+      .where(eq(buildProjects.id, buildId));
+    logger.info('Design Engine V3 quality analytics', {
+      buildId,
+      direction: designEngineV3.selected.conceptName,
+      genericityScore: genericity.score,
+      rejected: genericity.rejected,
+    });
   }
   await performance.mark(
     'design_polish_completed',

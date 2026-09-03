@@ -27,6 +27,7 @@ import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import type { DesignContract } from './design-contract';
 import { designContractPrompt } from './design-contract';
 import { designFeedbackPrompt, type DesignQualityIssue } from './design-quality';
+import { designEngineV3Prompt, type DesignEngineV3 } from '@reklu/design-intelligence';
 
 /**
  * Targets where what it looks like *is* what it is.
@@ -133,6 +134,7 @@ export async function runDesignPass(options: {
   readonly files: readonly GeneratedFile[];
   readonly model: RegisteredModel;
   readonly contract?: DesignContract;
+  readonly designEngineV3?: DesignEngineV3;
   readonly feedback?: readonly DesignQualityIssue[];
   readonly signal?: AbortSignal;
 }): Promise<DesignPassResult> {
@@ -178,6 +180,7 @@ export async function runDesignPass(options: {
       DESIGN_PROMPT,
       directionPrompt(direction, options.brief.target),
       ...(options.contract ? [designContractPrompt(options.contract)] : []),
+      ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
       ...(options.feedback ? [designFeedbackPrompt(options.feedback)] : []),
     ].join('\n'),
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),

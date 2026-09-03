@@ -24,7 +24,12 @@ import {
 import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import { dependencyInstallCommand } from './install-args';
 import { withImageBytes } from './artwork';
-import { designDNAPrompt, type DesignDNA } from '@reklu/design-intelligence';
+import {
+  designDNAPrompt,
+  designEngineV3Prompt,
+  type DesignDNA,
+  type DesignEngineV3,
+} from '@reklu/design-intelligence';
 import { unresolvedLocalImports } from './repair-imports';
 
 export type BuildStage =
@@ -119,6 +124,8 @@ export interface GenerateBuildOptions {
   readonly onFile?: BuildFileReporter | undefined;
   /** Persistent project-wide visual rules. Optional for imported/legacy builds. */
   readonly designDNA?: DesignDNA | undefined;
+  /** Selected brand, art direction, recipe, and storyboard for Design Engine V3. */
+  readonly designEngineV3?: DesignEngineV3 | undefined;
 }
 
 export interface GenerationResult {
@@ -253,6 +260,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
     skillGuidanceFor(options.brief.target),
     ...(direction ? [directionPrompt(direction, options.brief.target)] : []),
     ...(options.designDNA ? [designDNAPrompt(options.designDNA)] : []),
+    ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
   ].join('\n');
 
   /*

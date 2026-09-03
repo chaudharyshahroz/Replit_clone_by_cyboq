@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fallbackBrief } from '../brief';
 import { createDesignContract, designContractPrompt } from '../design-contract';
-import { auditDesignQuality, designFeedbackPrompt } from '../design-quality';
+import { auditDesignQuality, designFeedbackPrompt, evaluateGenericity } from '../design-quality';
 import type { GeneratedFile } from '../parse';
 
 const website = fallbackBrief('Build a marketing website for Coffino coffee shop');
@@ -86,5 +86,22 @@ describe('design quality critic', () => {
 
     expect(feedback).toContain('[blocking] missing-primary-heading');
     expect(feedback).toContain('[blocking] missing-primary-action');
+  });
+
+  it('rejects emoji, generic copy, fabricated counters, and repeated cards', () => {
+    const files = [page(`
+      <main><h1>Everything You Need to Succeed</h1><img src="/gym.jpg" alt="Gym" />
+      <a href="/join">Join</a><p>10K+ members</p><p>500+ classes</p><div>🔥</div>
+      <Card/><Card/><Card/><Card/></main>
+    `)];
+    const issues = auditDesignQuality(website, files);
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'emoji-ui-icon', severity: 'blocking' }),
+      expect.objectContaining({ code: 'generic-marketing-copy', severity: 'blocking' }),
+      expect.objectContaining({ code: 'fabricated-vanity-counters', severity: 'blocking' }),
+      expect.objectContaining({ code: 'repeated-card-grid', severity: 'blocking' }),
+    ]));
+    expect(evaluateGenericity(files)).toMatchObject({ rejected: true });
+    expect(evaluateGenericity(files).score).toBeGreaterThanOrEqual(35);
   });
 });

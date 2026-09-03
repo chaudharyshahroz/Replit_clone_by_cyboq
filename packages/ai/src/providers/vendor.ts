@@ -151,6 +151,20 @@ function toSdkTools(options: GenerateOptions): Record<string, unknown> | undefin
  * The distinction that matters is retryable vs not: a 429 or 5xx is worth a
  * fallback, an invalid request is not and would just burn budget.
  */
+export function isRetryableProviderFailure(
+  status: number | undefined,
+  message: string,
+): boolean {
+  const modelCapabilityMismatch =
+    (status === 400 || status === 404) &&
+    /(?:no endpoints? found[^.]*image|support image input|vision|multimodal)/i.test(message);
+  return (
+    modelCapabilityMismatch ||
+    status === 429 ||
+    (typeof status === 'number' && status >= 500 && status < 600)
+  );
+}
+
 function toProviderError(key: string, error: unknown): ProviderCallError {
   const anyError = error as { statusCode?: number; status?: number; message?: string; name?: string };
   const status = anyError?.statusCode ?? anyError?.status;
@@ -165,8 +179,14 @@ function toProviderError(key: string, error: unknown): ProviderCallError {
     });
   }
 
-  const retryable =
-    status === 429 || (typeof status === 'number' && status >= 500 && status < 600);
+  /*
+   * OpenRouter returns 404 when a particular model has no endpoint accepting
+   * image parts. The request itself is valid and another vision model can
+   * handle it, so this is retryable by Reklu's model router even though an
+   * ordinary 404 is not. Keeping this distinction here prevents every build
+   * caller from parsing provider prose independently.
+   */
+  const retryable = isRetryableProviderFailure(status, message);
 
   return new ProviderCallError({
     providerKey: key,
