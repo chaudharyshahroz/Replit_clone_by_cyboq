@@ -457,7 +457,14 @@ async function readDevLog(handle: SandboxHandle): Promise<string> {
   const driver = sandbox();
   const result = await driver.exec(handle, {
     command: 'sh',
-    args: ['-c', `tail -c 8000 ${DEV_LOG_PATH} 2>/dev/null || true`],
+    /*
+     * React's server-renderer can append a very long minified stack after the
+     * useful exception. Eight kilobytes then contains only repeated framework
+     * frames and drops the first line that explains the failure. Keep enough
+     * of the tail to preserve that line while remaining below the sandbox's
+     * bounded output budget.
+     */
+    args: ['-c', `tail -c 32000 ${DEV_LOG_PATH} 2>/dev/null || true`],
     timeoutMs: 10_000,
   });
   return (result.stdout || '').trim();
