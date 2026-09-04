@@ -18,6 +18,15 @@ const contentOf = (files: readonly GeneratedFile[], path: string) =>
   files.find((entry) => entry.path === path)!.content;
 
 describe('repairing weights', () => {
+  it('separates Google Fonts italic notation from next/font weights', () => {
+    const source = `import { Instrument_Serif as Serif } from 'next/font/google';\nconst font = Serif({ weight: ['400', '400italic'], subsets: ['latin'] });\nconst label = '400italic';`;
+    const repaired = repairFontWeights([file('src/app/layout.tsx', source)])[0]!.content;
+    expect(repaired).toContain('style: ["normal", "italic"]');
+    expect(repaired).toContain("weight: ['400', '400']");
+    expect(repaired).toContain("const label = '400italic'");
+    expect(repairFontWeights([file('src/app/layout.tsx', repaired)])[0]!.content).toBe(repaired);
+  });
+
   it('turns a variable range into the value the loader takes', () => {
     const result = repairFontWeights([
       file(

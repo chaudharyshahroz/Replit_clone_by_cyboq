@@ -24,6 +24,15 @@ const file = (path: string, content = ''): GeneratedFile => ({
 
 const layout = file('app/layout.tsx', 'import Header from "@/components/Header";');
 
+it('creates a missing tsconfig for an otherwise complete aliased source tree', () => {
+  const files = [file('src/app/page.tsx', 'import Hero from "@/components/Home/Hero";'),
+    file('src/components/Home/Hero.tsx')];
+  const repaired = repairAliasPaths(files);
+  const config = JSON.parse(repaired.find((f) => f.path === 'tsconfig.json')!.content);
+  expect(config.compilerOptions.paths['@/*']).toEqual(['./src/*']);
+  expect(repairAliasPaths(repaired)).toEqual(repaired);
+});
+
 describe('working out where the alias points', () => {
   it('points at the root when the files are at the root', () => {
     expect(aliasTargetFor([layout, file('components/Header.tsx')])).toBe('./*');
@@ -100,9 +109,11 @@ describe('repairing the config', () => {
     expect(config.include).toEqual(['**/*.ts']);
   });
 
-  it('does nothing when there is no tsconfig to repair', () => {
+  it('creates a root alias config when none was generated', () => {
     const files = [layout, file('components/Header.tsx')];
-    expect(repairAliasPaths(files)).toEqual(files);
+    const repaired = repairAliasPaths(files);
+    expect(repaired.slice(0, 2)).toEqual(files);
+    expect(JSON.parse(repaired[2]!.content).compilerOptions.paths['@/*']).toEqual(['./*']);
   });
 });
 

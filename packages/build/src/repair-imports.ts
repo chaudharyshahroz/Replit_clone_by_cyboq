@@ -265,7 +265,19 @@ export function repairAliasPaths(files: readonly GeneratedFile[]): readonly Gene
   if (!target) return relocated;
 
   const tsconfig = relocated.find((file) => file.path === 'tsconfig.json');
-  if (!tsconfig) return relocated;
+  if (!tsconfig) {
+    return [...relocated, {
+      path: 'tsconfig.json', language: 'json',
+      content: `${JSON.stringify({ compilerOptions: {
+        target: 'ES2017', lib: ['dom', 'dom.iterable', 'esnext'],
+        allowJs: true, skipLibCheck: true, strict: true, noEmit: true,
+        esModuleInterop: true, module: 'esnext', moduleResolution: 'bundler',
+        resolveJsonModule: true, isolatedModules: true, jsx: 'preserve',
+        baseUrl: '.', paths: { '@/*': [target] },
+      }, include: ['next-env.d.ts', '**/*.ts', '**/*.tsx', '.next/types/**/*.ts'],
+      exclude: ['node_modules'] }, null, 2)}\n`,
+    }];
+  }
 
   const parsed = parseTsconfig(tsconfig.content);
   if (!parsed) return relocated;
