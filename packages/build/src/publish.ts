@@ -247,11 +247,12 @@ export async function publishSite(input: PublishInput): Promise<PublishResult> {
       ...dependencyInstallCommand(true),
       timeoutMs: 900_000,
     });
-    if (install.exitCode !== 0) {
+    for (let attempt = 0; install.exitCode !== 0 && attempt < 8; attempt++) {
       const repaired = repairUnavailableDependencyVersions(
         files,
         `${install.stdout}\n${install.stderr}`,
       );
+      if (repaired === files) break;
       if (repaired !== files) {
         files = repaired;
         const manifest = files.find((file) => file.path === 'package.json');

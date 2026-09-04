@@ -42,6 +42,8 @@ const KNOWN: Readonly<Record<string, string>> = {
  */
 const KNOWN_UNAVAILABLE: Readonly<Record<string, string>> = {
   'typescript@5.4.0': '^5.4.0',
+  // npm's published 1.x releases stop at 1.5.0, not 1.8.0.
+  'react-swipeable@^1.8.0': '^1.5.0',
 };
 
 const IMPORT = /(?:from\s*['"]|import\s*\(\s*['"]|require\(\s*['"])([^'"]+)['"]/g;
@@ -135,6 +137,11 @@ export function repairUnavailableDependencyVersions(
   const replacements = new Map<string, string>();
   for (const [key, replacement] of Object.entries(KNOWN_UNAVAILABLE)) {
     replacements.set(key, replacement);
+  }
+  // The hook API is not part of the old default-component 1.x API. Only
+  // select the verified modern release when the source actually imports it.
+  if (files.some((file) => /import\s*\{[^}]*\buseSwipeable\b[^}]*\}\s*from\s*['"]react-swipeable['"]/.test(file.content))) {
+    replacements.set('react-swipeable@^1.8.0', '^7.0.2');
   }
 
   const missingVersion =

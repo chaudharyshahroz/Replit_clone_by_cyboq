@@ -1583,6 +1583,9 @@ export async function startPreviewAction(
 
     if (!result.installed) {
       // Dependencies failing is a real, readable failure — not a generic error.
+      await db.update(buildProjects).set({
+        status: 'failed', statusDetail: describeInstallFailure(result.output),
+      }).where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)));
       return {
         url: null,
         output: result.output,
@@ -1618,6 +1621,9 @@ export async function startPreviewAction(
     });
 
     if (!result.installed) {
+      await db.update(buildProjects).set({
+        status: 'failed', statusDetail: describeInstallFailure(result.output),
+      }).where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)));
       return { url: null, output: result.output, error: describeInstallFailure(result.output) };
     }
 

@@ -725,9 +725,12 @@ export async function materialize(params: {
     timeoutMs: Math.max(limits.timeoutMs, 600_000),
   });
 
-  if (install.exitCode !== 0) {
+  let installFiles = params.files;
+  for (let attempt = 0; install.exitCode !== 0 && attempt < 8; attempt++) {
     const failedOutput = `${install.stdout}\n${install.stderr}`;
-    const repaired = repairUnavailableDependencyVersions(params.files, failedOutput);
+    const repaired = repairUnavailableDependencyVersions(installFiles, failedOutput);
+    if (repaired === installFiles) break;
+    installFiles = repaired;
     if (repaired !== params.files) {
       const manifest = repaired.find((file) => file.path === 'package.json');
       if (manifest) {

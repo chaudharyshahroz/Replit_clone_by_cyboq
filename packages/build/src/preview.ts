@@ -346,8 +346,11 @@ async function reuseRunningSandbox(params: {
         timeoutMs: 600_000,
       });
 
-      if (install.exitCode !== 0) {
-        const repaired = repairUnavailableDependencyVersions(files, `${install.stdout}\n${install.stderr}`);
+      let installFiles = files;
+      for (let attempt = 0; install.exitCode !== 0 && attempt < 8; attempt++) {
+        const repaired = repairUnavailableDependencyVersions(installFiles, `${install.stdout}\n${install.stderr}`);
+        if (repaired === installFiles) break;
+        installFiles = repaired;
         if (repaired !== files) {
           const manifest = repaired.find((file) => file.path === 'package.json');
           if (manifest) {

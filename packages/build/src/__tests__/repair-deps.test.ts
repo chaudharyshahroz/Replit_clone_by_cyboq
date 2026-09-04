@@ -125,6 +125,36 @@ describe('repairing the manifest', () => {
 });
 
 describe('repairing unavailable dependency versions', () => {
+  it('repairs the nonexistent swipeable 1.8 range without changing a legacy API', () => {
+    const result = repairUnavailableDependencyVersions([
+      manifest({ dependencies: { 'react-swipeable': '^1.8.0' } }),
+      file('src/Swipe.tsx', "import Swipeable from 'react-swipeable';"),
+    ]);
+    expect(JSON.parse(result[0]!.content).dependencies['react-swipeable']).toBe('^1.5.0');
+  });
+
+  it('uses the hook-compatible release only for a named useSwipeable import', () => {
+    const result = repairUnavailableDependencyVersions([
+      manifest({ dependencies: { 'react-swipeable': '^1.8.0' } }),
+      file('src/Swipe.tsx', "import { useSwipeable } from 'react-swipeable';"),
+    ]);
+    expect(JSON.parse(result[0]!.content).dependencies['react-swipeable']).toBe('^7.0.2');
+    expect(repairUnavailableDependencyVersions(result)).toBe(result);
+  });
+
+  it('preserves earlier repairs when a later install exposes another bad dependency', () => {
+    const first = repairUnavailableDependencyVersions([
+      manifest({ dependencies: { 'react-swipeable': '^1.8.0', '@next-auth/prisma-adapter': '^1.0.25' } }),
+    ]);
+    const second = repairUnavailableDependencyVersions(first,
+      'No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it\n' +
+      'The latest release of @next-auth/prisma-adapter is "1.0.7".');
+    expect(JSON.parse(second[0]!.content).dependencies).toEqual({
+      'react-swipeable': '^1.5.0', '@next-auth/prisma-adapter': '^1.0.7',
+    });
+    expect(repairUnavailableDependencyVersions(second, 'network unavailable')).toBe(second);
+  });
+
   it('repairs an impossible range using the installer-reported same-major release', () => {
     const result = repairUnavailableDependencyVersions(
       [manifest({ dependencies: { '@next-auth/prisma-adapter': '^1.0.25', react: '18.3.1' } })],
