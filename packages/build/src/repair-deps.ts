@@ -142,6 +142,18 @@ export function repairUnavailableDependencyVersions(
   for (const match of installOutput.matchAll(missingVersion)) {
     const name = match[1];
     const version = match[2];
+    if (!name || !version) continue;
+    // pnpm supplies an authoritative release when a model invents a range
+    // whose minimum is above every published release (e.g. ^1.0.25).
+    // Only use it for this exact dependency and never cross a major version.
+    const requested = /^([~^]?)(\d+)\.\d+\.\d+$/.exec(version);
+    const latest = [...installOutput.matchAll(
+      /The latest release of ((?:@[^/\s]+\/)?[^\s]+) is "(\d+\.\d+\.\d+)"/g,
+    )].find((release) => release[1] === name)?.[2];
+    if (requested && latest && latest.split('.')[0] === requested[2]) {
+      replacements.set(`${name}@${version}`, `${requested[1]}${latest}`);
+      continue;
+    }
     if (name && version && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
       replacements.set(`${name}@${version}`, `^${version}`);
     }

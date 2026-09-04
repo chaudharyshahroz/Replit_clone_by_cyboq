@@ -158,8 +158,16 @@ export function isRetryableProviderFailure(
   const modelCapabilityMismatch =
     (status === 400 || status === 404) &&
     /(?:no endpoints? found[^.]*image|support image input|vision|multimodal)/i.test(message);
+  // Streaming can fail after HTTP headers have already reported success.
+  // Classify the error event, not merely its transport's original 200 status.
+  // Do not reinterpret authentication, billing or invalid-request failures.
+  const transientStreamFailure =
+    (status === undefined || (status >= 200 && status < 300)) &&
+    /\b(?:overloaded|temporarily unavailable|service unavailable|rate limit(?:ed| exceeded)?|too many requests|upstream (?:error|timeout)|connection reset|timed out)\b/i.test(message);
   return (
     modelCapabilityMismatch ||
+    transientStreamFailure ||
+    status === 408 ||
     status === 429 ||
     (typeof status === 'number' && status >= 500 && status < 600)
   );

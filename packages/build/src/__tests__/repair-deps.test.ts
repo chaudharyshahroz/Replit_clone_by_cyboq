@@ -125,6 +125,27 @@ describe('repairing the manifest', () => {
 });
 
 describe('repairing unavailable dependency versions', () => {
+  it('repairs an impossible range using the installer-reported same-major release', () => {
+    const result = repairUnavailableDependencyVersions(
+      [manifest({ dependencies: { '@next-auth/prisma-adapter': '^1.0.25', react: '18.3.1' } })],
+      'No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it\n' +
+      'The latest release of @next-auth/prisma-adapter is "1.0.7".',
+    );
+    expect(JSON.parse(result[0]!.content).dependencies).toEqual({
+      '@next-auth/prisma-adapter': '^1.0.7', react: '18.3.1',
+    });
+  });
+
+  it('does not use another package release or cross a major version', () => {
+    const files = [manifest({ dependencies: { '@next-auth/prisma-adapter': '^1.0.25' } })];
+    for (const reported of ['The latest release of other-package is "1.0.7".',
+      'The latest release of @next-auth/prisma-adapter is "2.0.0".']) {
+      expect(repairUnavailableDependencyVersions(files,
+        'No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it\n' + reported,
+      )).toEqual(files);
+    }
+  });
+
   it('repairs the confirmed TypeScript version hole before a cold install', () => {
     const result = repairUnavailableDependencyVersions([
       manifest({ devDependencies: { typescript: '5.4.0' } }),

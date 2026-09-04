@@ -72,6 +72,10 @@ describe('install arguments', () => {
  * has actually happened here.
  */
 describe('describing an install failure', () => {
+  it('names an unavailable pnpm version instead of hiding it behind a generic banner', () => {
+    expect(describeInstallFailure('ERR_PNPM_NO_MATCHING_VERSION No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it'))
+      .toContain('@next-auth/prisma-adapter@^1.0.25 is not available');
+  });
   it('names the package that needed compiling', () => {
     const gyp = [
       'npm error code 1',

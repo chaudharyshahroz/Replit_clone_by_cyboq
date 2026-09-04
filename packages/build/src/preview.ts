@@ -31,6 +31,7 @@ import type { GeneratedFile } from './parse';
 import { previewErrorIn } from './compile-log';
 import { previewEntryProblem, previewHealthCheck } from './preview-entry';
 import { normalizeGeneratedTree } from './normalize-tree';
+import { repairUnavailableDependencyVersions } from './repair-deps';
 
 /** Previews live on a dedicated range, well away from Reklu's own port. */
 const PORT_RANGE_START = 43_000;
@@ -340,10 +341,24 @@ async function reuseRunningSandbox(params: {
 
     if (needsInstall) {
       await params.report?.('installing_dependencies');
-      const install = await driver.exec(sandboxHandle, {
+      let install = await driver.exec(sandboxHandle, {
         ...dependencyInstallCommand(),
         timeoutMs: 600_000,
       });
+
+      if (install.exitCode !== 0) {
+        const repaired = repairUnavailableDependencyVersions(files, `${install.stdout}\n${install.stderr}`);
+        if (repaired !== files) {
+          const manifest = repaired.find((file) => file.path === 'package.json');
+          if (manifest) {
+            await driver.writeFiles(sandboxHandle, await withImageBytes([manifest]));
+            install = await driver.exec(sandboxHandle, {
+              ...dependencyInstallCommand(),
+              timeoutMs: 600_000,
+            });
+          }
+        }
+      }
 
       if (install.exitCode !== 0) {
         /*

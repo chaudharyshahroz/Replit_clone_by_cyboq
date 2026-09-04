@@ -88,6 +88,11 @@ export function describeInstallFailure(output: string): string {
   const generic = 'Dependencies failed to install.';
   if (!output) return generic;
 
+  const unavailable = /No matching version found for ([^\s]+)/.exec(output)?.[1];
+  if (unavailable) {
+    return `Dependencies failed to install: ${unavailable} is not available in the package registry.`;
+  }
+
   /* node-gyp could not find Python, or there were no prebuilt binaries. */
   if (/gyp ERR!|prebuild-install warn install No prebuilt binaries/.test(output)) {
     const pkg = /npm error path .*node_modules\/([^\s/]+)/.exec(output)?.[1];
