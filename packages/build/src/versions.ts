@@ -10,13 +10,7 @@
  * the same rule as artifact versions.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import {
-  buildFiles,
-  buildProjects,
-  buildVersions,
-  db,
-  type BuildVersion,
-} from '@reklu/database';
+import { buildFiles, buildProjects, buildVersions, db, type BuildVersion } from '@reklu/database';
 import { errors, newId } from '@reklu/shared';
 import type { GeneratedFile } from './parse';
 
@@ -32,6 +26,8 @@ export interface CheckpointInput {
   /** Whether the generated tree actually built. */
   readonly checksPassed?: boolean | null;
   readonly checkOutput?: string | null;
+  /** Background work must never replace a version edited while it was running. */
+  readonly expectedVersionId?: string;
 }
 
 export interface Checkpoint {
@@ -55,7 +51,7 @@ export async function createCheckpoint(input: CheckpointInput): Promise<Checkpoi
   const versionId = newId('buildVersion');
 
   const changedPaths = await db.transaction(async (tx) => {
-    const [project] = await tx
+    const projectQuery = tx
       .select({ id: buildProjects.id, currentVersionId: buildProjects.currentVersionId })
       .from(buildProjects)
       .where(
@@ -65,8 +61,12 @@ export async function createCheckpoint(input: CheckpointInput): Promise<Checkpoi
         ),
       )
       .limit(1);
+    const [project] = await (input.expectedVersionId ? projectQuery.for('update') : projectQuery);
 
     if (!project) throw errors.notFound('Build project', input.buildProjectId);
+    if (input.expectedVersionId && project.currentVersionId !== input.expectedVersionId) {
+      throw errors.validation('This design job was superseded by a newer project version.');
+    }
 
     // Compare against the previous tree so the changed-file list is real
     // rather than "everything the model happened to emit".
@@ -175,9 +175,7 @@ export async function loadTree(
     const [project] = await db
       .select({ currentVersionId: buildProjects.currentVersionId })
       .from(buildProjects)
-      .where(
-        and(eq(buildProjects.id, buildProjectId), eq(buildProjects.workspaceId, workspaceId)),
-      )
+      .where(and(eq(buildProjects.id, buildProjectId), eq(buildProjects.workspaceId, workspaceId)))
       .limit(1);
     targetVersionId = project?.currentVersionId ?? undefined;
   }
@@ -195,10 +193,7 @@ export async function loadTree(
     })
     .from(buildFiles)
     .where(
-      and(
-        eq(buildFiles.buildVersionId, targetVersionId),
-        eq(buildFiles.workspaceId, workspaceId),
-      ),
+      and(eq(buildFiles.buildVersionId, targetVersionId), eq(buildFiles.workspaceId, workspaceId)),
     )
     .orderBy(buildFiles.path);
 

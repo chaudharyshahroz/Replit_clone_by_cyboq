@@ -1604,3 +1604,61 @@ cost two deploy cycles. Recreate the volume, or keep the original value.
    runs eighteen vitest instances at once; on a constrained host they die and
    turbo reports a test failure. `npx turbo run test --force --concurrency=4`
    is the reliable local invocation — all 18 packages pass under it.
+
+---
+
+# Reklu Design Engine V4 implementation status
+
+Updated 2026-09-04. This is a foundation implementation, not completion of the full master specification. Coffino is a regression case; no customer project was rewritten for the benchmark.
+
+## DONE — implemented and locally tested
+
+- One versioned V4 contract replaces competing catalogue/DNA/V3 prompts for new visual builds. Stored legacy projects retain their existing pipeline.
+- Correct coffee/coffee-typo, fashion-store, fitness-shop and financial-analytics classification.
+- Curated industry profiles with distinct palettes, font pairings, content constraints, storyboard and planned-media records. Selection is explicitly rule-based, not an invented score.
+- Next App Router compiler inserts actual CSS, a BrandImage component and `.reklu/design-engine.json`. Idempotent and preserves unrelated files; root and `src/` layouts covered.
+- Bounded heading scales, readable responsive grids, semantic foreground/background pairs, accessible controls and reduced-motion rules. Curated fonts request browser-side loading with fallbacks; startup does not wait for font downloads.
+- BrandImage reports loading/loaded/failed and shows a labeled failure state. Image planning recognizes its literal image requests and aspect ratios. Existing binary assets are not generated again; empty provider responses count as failures.
+- Ordinary product grids are no longer rejected just because they contain four Card references.
+- Critical visual defects override high scores. Missing screenshots, image audit or interaction evidence cannot count as approval.
+- First-preview and running-preview edits enqueue the same version-bound background job. Worker asset processing is limited to eight assets, one queue attempt and one active Build job per worker process. Compare-and-lock checkpoints reject superseded versions.
+- Background reviewer uses plan-permitted vision models; unavailable capture/review leaves an explicit pending result. Quality writes merge only owned fields and are conditional on the reviewed version.
+- Build UI separates preview readiness from design approval and exposes outstanding evidence.
+
+## IN PROGRESS — intentionally not represented as complete
+
+- Product understanding, brand/content/art direction are deterministic curated planning, not a fully evaluated multi-role agent system.
+- Layout compositions are contract guidance plus common safe primitives, not a complete premium component catalogue/compiler for every framework. Non-Next imported projects are left untouched.
+- The production screenshot adapter still captures one desktop screen. The worker cannot currently satisfy the full five-width/full-page gate and therefore will not claim premium approval.
+- Asset existence is handled; decoded dimensions and semantic relevance still require a browser-backed inventory. Dynamic product-data image references outside the literal `/generated/` convention are not fulfilled automatically.
+- The background worker reports findings but does not yet apply a validated, rollback-safe targeted repair loop. Existing foreground source/type repair remains available.
+- Quality details are available on page refresh; dedicated live progress/debug tooling is not complete.
+- A rare process crash between the database claim and queue enqueue can strand a claim. Transactional outbox/reconciliation is still needed before claiming exactly-once durable scheduling.
+
+## VALIDATION
+
+- Build unit suite: 389 tests passed, including the V4 generation integration case.
+- Design-intelligence: 22 tests passed, covering eight category briefs and quality evidence rules.
+- Queue: 11 tests passed, including required workspace/user/version binding.
+- Web: 202 tests passed, including actual compiled image decoding, deferred retry and cleanup behavior.
+- Typechecks passed for Build, design-intelligence, queue, web and worker.
+- Browser structural fixture: no horizontal overflow at 1440, 1024, 768, 430 and 390px. Measured heading lines were 2/3/4/2/2; card widths approximately 302/305/349/390/350px. A selection button changed to Selected.
+- These measurements used the fallback-font structural fixture, not model-generated sites. Browser full-page screenshot stitching was visibly unreliable, so it is not presented as a golden screenshot baseline.
+
+## BLOCKED / EXTERNAL REQUIREMENTS
+
+- No deployment or live provider/sandbox end-to-end run has been verified in this task. Web and worker must both be deployed with Redis, database, storage and the existing sandbox/image/model providers configured.
+- No measured P50/P95 latency, cost baseline, generated-site pass rate or blind Replit comparison is available. No superiority claim is justified yet.
+
+## NEXT
+
+1. Add isolated browser evidence collection for five full-page widths, font readiness, image decode/relevance and primary interaction checks.
+2. Add a transactional design-job outbox/reconciler and worker integration tests against Redis/Postgres.
+3. Implement one targeted repair attempt with runtime validation, version locking, re-review and rollback on regression.
+4. Generate and evaluate the eight-category suite with real providers; store actual screenshots, cost and timing evidence.
+5. Add golden reference retrieval, blind pairwise review and measured acceptance thresholds. Keep the unrelated cyclist in the supplied Replit reference as an image-relevance negative test.
+6. Add explicit user brand overrides and expand framework/component coverage without silently migrating old projects.
+
+## Local fixture
+
+Run `pnpm exec tsx packages/design-intelligence/scripts/preview-v4.mts`, then open `http://127.0.0.1:4317/`. Optional `?category=finance`, `fitness` or `fashion`. It does not invoke paid providers or modify database projects.

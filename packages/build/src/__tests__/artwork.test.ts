@@ -15,6 +15,14 @@ function page(content: string): GeneratedFile {
 }
 
 describe('finding the pictures a page expects', () => {
+  it('respects the compiled image aspect ratio instead of guessing from hero filenames', () => {
+    const found = plannedArtwork([
+      page(
+        '<BrandImage src="/generated/hero.png" alt="A barista pouring a flat white" aspectRatio="4 / 5" role="critical" />',
+      ),
+    ]);
+    expect(found[0]?.shape).toBe('portrait');
+  });
   it('reads the description from the alt of the same element', () => {
     const found = plannedArtwork([
       page(
@@ -52,10 +60,14 @@ describe('finding the pictures a page expects', () => {
 
   it('takes the proportions from the declared size', () => {
     const wide = plannedArtwork([
-      page('<img src="/generated/a.png" alt="a wide shot of the shop" width="1600" height="900" />'),
+      page(
+        '<img src="/generated/a.png" alt="a wide shot of the shop" width="1600" height="900" />',
+      ),
     ]);
     const tall = plannedArtwork([
-      page('<img src="/generated/b.png" alt="a portrait of the barber" width="800" height="1200" />'),
+      page(
+        '<img src="/generated/b.png" alt="a portrait of the barber" width="800" height="1200" />',
+      ),
     ]);
 
     expect(wide[0]?.shape).toBe('landscape');
@@ -85,7 +97,10 @@ describe('finding the pictures a page expects', () => {
   it('asks for each picture once', () => {
     const found = plannedArtwork([
       page('<img src="/generated/hero.png" alt="a barber trimming a beard" />'),
-      { ...page('<img src="/generated/hero.png" alt="a barber trimming a beard" />'), path: 'app/page.tsx' },
+      {
+        ...page('<img src="/generated/hero.png" alt="a barber trimming a beard" />'),
+        path: 'app/page.tsx',
+      },
     ]);
 
     expect(found).toHaveLength(1);
@@ -108,9 +123,28 @@ describe('what the image model is asked for', () => {
 
 describe('drawing them', () => {
   const files = [
-    page('<img src="/generated/hero.png" alt="a barber trimming a beard" width={1600} height={900} />'),
+    page(
+      '<img src="/generated/hero.png" alt="a barber trimming a beard" width={1600} height={900} />',
+    ),
   ];
   const binary = { storageKey: 'k', contentType: 'image/png', bytes: 1024 };
+
+  it('does not charge for images already fulfilled by a previous pass', async () => {
+    const draw = vi.fn();
+    const result = await drawArtwork(
+      [...files, { path: 'public/generated/hero.png', content: '', language: 'binary', binary }],
+      'a shop',
+      draw,
+    );
+    expect(draw).not.toHaveBeenCalled();
+    expect(result.generated).toBe(0);
+  });
+
+  it('reports an empty provider result as a missing image', async () => {
+    const result = await drawArtwork(files, 'a shop', async () => undefined);
+    expect(result.generated).toBe(0);
+    expect(result.failures).toHaveLength(1);
+  });
 
   it('adds each picture to the tree', async () => {
     const draw = vi.fn().mockResolvedValue(binary);

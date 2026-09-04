@@ -27,7 +27,12 @@ import { parseGeneratedFiles, type GeneratedFile } from './parse';
 import type { DesignContract } from './design-contract';
 import { designContractPrompt } from './design-contract';
 import { designFeedbackPrompt, type DesignQualityIssue } from './design-quality';
-import { designEngineV3Prompt, type DesignEngineV3 } from '@reklu/design-intelligence';
+import {
+  designEngineV3Prompt,
+  designEngineV4Prompt,
+  type DesignEngineV3,
+  type DesignEngineV4,
+} from '@reklu/design-intelligence';
 
 /**
  * Targets where what it looks like *is* what it is.
@@ -43,8 +48,10 @@ export function needsDesignPass(target: BuildTarget): boolean {
 export function visualFiles(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   return files.filter((file) => {
     if (/^(node_modules|\.next|dist|build)\//.test(file.path)) return false;
-    return /\.(tsx|jsx|css|scss|html)$/.test(file.path) ||
-      /tailwind\.config|globals\.css|theme|tokens/.test(file.path);
+    return (
+      /\.(tsx|jsx|css|scss|html)$/.test(file.path) ||
+      /tailwind\.config|globals\.css|theme|tokens/.test(file.path)
+    );
   });
 }
 
@@ -135,6 +142,7 @@ export async function runDesignPass(options: {
   readonly model: RegisteredModel;
   readonly contract?: DesignContract;
   readonly designEngineV3?: DesignEngineV3;
+  readonly designEngineV4?: DesignEngineV4 | undefined;
   readonly feedback?: readonly DesignQualityIssue[];
   readonly signal?: AbortSignal;
 }): Promise<DesignPassResult> {
@@ -155,18 +163,19 @@ export async function runDesignPass(options: {
     '',
     'Current files:',
     ...candidates.map(
-      (file) => `\n// ${file.path}\n\`\`\`${file.language}\n${file.content.slice(0, 8_000)}\n\`\`\``,
+      (file) =>
+        `\n// ${file.path}\n\`\`\`${file.language}\n${file.content.slice(0, 8_000)}\n\`\`\``,
     ),
   ]
     .filter(Boolean)
     .join('\n');
 
-  const messages: ModelMessage[] = [
-    { role: 'user', content: [{ type: 'text', text: context }] },
-  ];
+  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: context }] }];
 
   const direction = chooseDirection(options.brief);
-  logger.info('Design pass direction', { direction: describeDirection(direction) });
+  logger.info('Design pass direction', {
+    direction: options.designEngineV4?.selection.profile ?? describeDirection(direction),
+  });
 
   const result = await provider.generate({
     modelIdentifier: options.model.modelIdentifier,
@@ -178,9 +187,13 @@ export async function runDesignPass(options: {
      */
     system: [
       DESIGN_PROMPT,
-      directionPrompt(direction, options.brief.target),
-      ...(options.contract ? [designContractPrompt(options.contract)] : []),
-      ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
+      ...(options.designEngineV4
+        ? [designEngineV4Prompt(options.designEngineV4)]
+        : [
+            directionPrompt(direction, options.brief.target),
+            ...(options.contract ? [designContractPrompt(options.contract)] : []),
+            ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
+          ]),
       ...(options.feedback ? [designFeedbackPrompt(options.feedback)] : []),
     ].join('\n'),
     maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),

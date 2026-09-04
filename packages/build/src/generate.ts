@@ -28,10 +28,13 @@ import { withImageBytes } from './artwork';
 import {
   designDNAPrompt,
   designEngineV3Prompt,
+  designEngineV4Prompt,
+  type DesignEngineV4,
   type DesignDNA,
   type DesignEngineV3,
 } from '@reklu/design-intelligence';
 import { unresolvedLocalImports } from './repair-imports';
+import { compileDesignTree } from './design-compiler';
 
 export type BuildStage =
   | 'interpreting_product'
@@ -127,6 +130,7 @@ export interface GenerateBuildOptions {
   readonly designDNA?: DesignDNA | undefined;
   /** Selected brand, art direction, recipe, and storyboard for Design Engine V3. */
   readonly designEngineV3?: DesignEngineV3 | undefined;
+  readonly designEngineV4?: DesignEngineV4 | undefined;
 }
 
 export interface GenerationResult {
@@ -249,7 +253,11 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
   const visual = isVisualTarget(options.brief.target);
   const direction = visual ? chooseDirection(options.brief) : undefined;
 
-  if (direction) {
+  if (options.designEngineV4) {
+    logger.info('Design V4 contract selected', {
+      profile: options.designEngineV4.selection.profile,
+    });
+  } else if (direction) {
     logger.info('Design direction chosen', {
       direction: describeDirection(direction),
       matched: direction.matched,
@@ -259,9 +267,13 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
   const system = [
     GENERATION_PROMPT,
     skillGuidanceFor(options.brief.target),
-    ...(direction ? [directionPrompt(direction, options.brief.target)] : []),
-    ...(options.designDNA ? [designDNAPrompt(options.designDNA)] : []),
-    ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
+    ...(options.designEngineV4
+      ? [designEngineV4Prompt(options.designEngineV4)]
+      : [
+          ...(direction ? [directionPrompt(direction, options.brief.target)] : []),
+          ...(options.designDNA ? [designDNAPrompt(options.designDNA)] : []),
+          ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
+        ]),
   ].join('\n');
 
   /*
@@ -473,6 +485,17 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
    * by every provider and asks for only the missing modules, then rechecks the
    * files those modules import. An incomplete tree never reaches Preview.
    */
+  if (options.designEngineV4 && parsed.files.length > 0 && !options.signal?.aborted) {
+    parsed = {
+      ...parsed,
+      files: [
+        ...compileDesignTree(
+          mergeTree(options.existingFiles ?? [], parsed.files),
+          options.designEngineV4,
+        ),
+      ],
+    };
+  }
   if (options.requireFiles && parsed.files.length > 0 && !options.signal?.aborted) {
     let missing = unresolvedLocalImports(mergeTree(options.existingFiles ?? [], parsed.files));
 

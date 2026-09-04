@@ -22,6 +22,7 @@ vi.mock('@reklu/ai', () => ({ getProvider }));
 import { describeEmptyGeneration, generateFiles, incompleteFinalFile } from '../generate';
 import type { GenerationDiagnostics } from '../generate';
 import type { BuildBrief } from '../brief';
+import { createDesignEngineV4, understandProduct } from '@reklu/design-intelligence';
 
 const brief = {
   product: 'Coffee shop site',
@@ -64,6 +65,28 @@ beforeEach(() => {
 const FILE = ['// package.json', '```json', '{ "name": "coffee" }', '```'].join('\n');
 
 describe('asking again', () => {
+  it('uses one V4 contract and actually inserts compiler artifacts', async () => {
+    responds([
+      '// src/app/layout.tsx\n```tsx\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n```',
+    ]);
+    const engine = createDesignEngineV4(
+      understandProduct({ product: 'Coffino', summary: 'Coffee shop', target: 'website' }),
+    );
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      designEngineV4: engine,
+      report: vi.fn(),
+    });
+    const system = stream.mock.calls[0]?.[0].system as string;
+    expect(system).toContain('REKLU DESIGN ENGINE V4');
+    expect(system).not.toContain('Fredoka');
+    expect(result.files.some((file) => file.path === 'src/app/reklu-design.css')).toBe(true);
+    expect(result.files.some((file) => file.path === 'src/components/reklu/BrandImage.tsx')).toBe(
+      true,
+    );
+  });
   it('requests locally imported files that the model omitted before accepting the tree', async () => {
     responds([
       [

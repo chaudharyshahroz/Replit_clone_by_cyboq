@@ -3,7 +3,13 @@ import type { SelectableModel } from '@/components/chat/chat-view';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { and, eq, isNull } from 'drizzle-orm';
-import { currentPreview, listCheckpoints, loadTree, type BuildBrief } from '@reklu/build';
+import {
+  currentPreview,
+  listCheckpoints,
+  loadTree,
+  DesignEngineV4Schema,
+  type BuildBrief,
+} from '@reklu/build';
 import { loadRegistry, selectableModels } from '@reklu/ai';
 import { buildProjects, db, plans, subscriptions, type PlanLimits } from '@reklu/database';
 import { sandboxStatus } from '@reklu/sandbox';
@@ -25,9 +31,7 @@ export async function generateMetadata({
   const [project] = await db
     .select({ name: buildProjects.name })
     .from(buildProjects)
-    .where(
-      and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
-    )
+    .where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)))
     .limit(1);
   return { title: project?.name ?? 'Build' };
 }
@@ -93,6 +97,20 @@ export default async function BuildDetailPage({
   /* Said here, where the blank frame appears, rather than only in a log. */
   const framingProblem = previewFramingProblem();
   const latest = checkpoints[0];
+  const analysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
+  const engine = DesignEngineV4Schema.safeParse(analysis.designEngineV4);
+  const quality = (analysis.designQuality ?? {}) as Record<string, unknown>;
+  const qualityCurrent = quality.versionId === project.currentVersionId;
+  const qualityLabel =
+    qualityCurrent && quality.status === 'approved'
+      ? 'Approved'
+      : qualityCurrent && quality.status === 'needs_revision'
+        ? 'Needs revision'
+        : 'Verification pending';
+  const qualityReasons = [
+    ...(Array.isArray(quality.failures) ? quality.failures : []),
+    ...(Array.isArray(quality.pending) ? quality.pending : []),
+  ].filter((item): item is string => typeof item === 'string');
 
   return (
     /*
@@ -144,6 +162,31 @@ export default async function BuildDetailPage({
               {project.statusDetail}
             </p>
           ) : null}
+          {engine.success ? (
+            <details className="mt-3 text-xs text-text-secondary">
+              <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2">
+                Design V4 · {qualityLabel}
+              </summary>
+              <div className="mt-2 space-y-2 leading-relaxed">
+                <p>
+                  {engine.data.selection.profile} · {engine.data.product.industry}
+                </p>
+                <p>Preview readiness is separate from design approval.</p>
+                {qualityCurrent && qualityReasons.length ? (
+                  <ul className="list-disc space-y-1 pl-4">
+                    {qualityReasons.map((reason, index) => (
+                      <li key={index}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>This version still needs responsive, image and interaction evidence.</p>
+                )}
+                {qualityCurrent && typeof quality.reviewUnavailable === 'string' ? (
+                  <p>{quality.reviewUnavailable}</p>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
         </header>
 
         {/* The pane scrolls; the panes do not scroll each other. */}
@@ -162,7 +205,6 @@ export default async function BuildDetailPage({
               status={project.status}
             />
           ) : null}
-
         </div>
       </aside>
 

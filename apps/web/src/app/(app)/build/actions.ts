@@ -2,7 +2,9 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { and, asc, eq } from 'drizzle-orm';
+import { after } from 'next/server';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { enqueue } from '@reklu/queue';
 import { loadRegistry, selectableModels, type RegisteredModel } from '@reklu/ai';
 import {
   createCheckpoint,
@@ -62,6 +64,9 @@ import {
   restoreCheckpoint,
   createDesignDNA,
   createDesignEngineV3,
+  createDesignEngineV4,
+  DesignEngineV4Schema,
+  compileDesignTree,
   createInformationArchitecture,
   understandProduct,
   DesignDNASchema,
@@ -86,6 +91,68 @@ export interface BuildFormState {
   readonly error?: string;
 }
 
+/** Both first preview and edits to a running preview enter the same background pipeline. */
+function scheduleDesignWork(buildId: string, workspaceId: string, userId: string) {
+  after(async () => {
+    try {
+      const [current] = await db
+        .select()
+        .from(buildProjects)
+        .where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspaceId)))
+        .limit(1);
+      if (!current?.currentVersionId) return;
+      const analysis = (current.codebaseAnalysis ?? {}) as Record<string, unknown>;
+      if (!DesignEngineV4Schema.safeParse(analysis.designEngineV4).success) return;
+      const versionId = current.currentVersionId;
+      const scope = and(
+        eq(buildProjects.id, buildId),
+        eq(buildProjects.workspaceId, workspaceId),
+        eq(buildProjects.currentVersionId, versionId),
+      );
+      const claimed = await db
+        .update(buildProjects)
+        .set({
+          codebaseAnalysis: sql`coalesce(${buildProjects.codebaseAnalysis}, '{}'::jsonb) || ${JSON.stringify({ designJobVersion: versionId })}::jsonb`,
+        })
+        .where(
+          and(
+            scope,
+            sql`coalesce(${buildProjects.codebaseAnalysis}->>'designJobVersion', '') <> ${versionId}`,
+          ),
+        )
+        .returning({ id: buildProjects.id });
+      if (!claimed.length) return;
+      try {
+        await enqueue({
+          kind: 'build_design',
+          workspaceId,
+          userId,
+          resourceType: 'build',
+          resourceId: buildId,
+          payload: { buildProjectId: buildId, workspaceId, userId, versionId },
+          jobOptions: { attempts: 1 },
+        });
+        await recordStep({
+          buildId,
+          workspaceId,
+          kind: 'note',
+          message: 'Design assets and rendered review queued. Preview remains interactive.',
+        });
+      } catch (error) {
+        await db
+          .update(buildProjects)
+          .set({
+            codebaseAnalysis: sql`(${buildProjects.codebaseAnalysis} - 'designJobVersion') || ${JSON.stringify({ designQuality: { status: 'pending', reason: 'Design queue unavailable; reopen preview to retry.' } })}::jsonb`,
+          })
+          .where(scope);
+        throw error;
+      }
+    } catch (error) {
+      logger.warn('Could not queue post-preview design work', { buildId, error });
+    }
+  });
+}
+
 async function pickModel(
   requested?: string,
   excludeKeys: readonly string[] = [],
@@ -100,7 +167,12 @@ async function pickModel(
     throw errors.notConfigured({
       feature: needsVision ? 'Build image input' : 'Build',
       requiredEnv: needsVision
-        ? ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_API_KEY']
+        ? [
+            'OPENAI_API_KEY',
+            'ANTHROPIC_API_KEY',
+            'GOOGLE_GENERATIVE_AI_API_KEY',
+            'OPENROUTER_API_KEY',
+          ]
         : ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
       docsPath: '/settings',
     });
@@ -692,6 +764,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   const storedAnalysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
   const storedDNA = DesignDNASchema.safeParse(storedAnalysis.designDNA);
   const storedEngineV3 = DesignEngineV3Schema.safeParse(storedAnalysis.designEngineV3);
+  const storedEngineV4 = DesignEngineV4Schema.safeParse(storedAnalysis.designEngineV4);
   const productContext = understandProduct({
     product: brief.product,
     summary: brief.summary,
@@ -699,14 +772,21 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     userRoles: brief.userRoles,
     pages: brief.pages,
   });
-  const designDNA: DesignDNA = storedDNA.success ? storedDNA.data : createDesignDNA(productContext);
+  // New projects use V4. Existing designs are not silently restyled on a small edit.
+  const designEngineV4 = storedEngineV4.success
+    ? storedEngineV4.data
+    : existing.length === 0 && isVisualTarget(brief.target)
+      ? createDesignEngineV4(productContext)
+      : undefined;
+  const designDNA: DesignDNA =
+    designEngineV4?.dna ?? (storedDNA.success ? storedDNA.data : createDesignDNA(productContext));
   const designEngineV3: DesignEngineV3 = storedEngineV3.success
     ? storedEngineV3.data
     : createDesignEngineV3(productContext);
   const informationArchitecture = createInformationArchitecture(productContext);
   const buildPath = chooseBuildPath(brief);
   await performance.mark('product_understood', productContext.productType);
-  await performance.mark('design_ready', designEngineV3.selected.conceptName);
+  await performance.mark('design_ready', designEngineV4?.selection.profile ?? designEngineV3.selected.conceptName);
 
   await recordStep({
     buildId,
@@ -724,6 +804,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           productDesignContext: productContext,
           designDNA,
           designEngineV3,
+          ...(designEngineV4 ? { designEngineV4 } : {}),
           informationArchitecture,
         },
       })
@@ -843,7 +924,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       buildId,
       workspaceId: workspace.workspaceId,
       kind: 'note',
-      message: `Design direction: ${describeDirection(chooseDirection(brief))}.`,
+      message: `Design direction: ${designEngineV4?.dna.visualDirection ?? describeDirection(chooseDirection(brief))}.`,
     });
   }
 
@@ -858,6 +939,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       existingFiles: existing,
       designDNA,
       designEngineV3,
+      designEngineV4,
       /*
        * Each stage is written down as it is entered, in the words a reader would
        * use. The status alone said "generating" for the whole of a two-minute
@@ -922,7 +1004,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     /* Free providers are capacity-constrained. Try several distinct coding
      * models so one overloaded endpoint does not strand an otherwise valid build. */
     for (let fallbackAttempt = 0; fallbackAttempt < 3; fallbackAttempt++) {
-      const fallback = await pickModel(undefined, attempted, images.length > 0).catch(() => undefined);
+      const fallback = await pickModel(undefined, attempted, images.length > 0).catch(
+        () => undefined,
+      );
       if (!fallback) break;
       attempted.push(fallback.key);
       await recordStep({
@@ -1021,6 +1105,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         model: designModel,
         contract,
         designEngineV3,
+        designEngineV4,
       });
       if (designed.files.length > 0) {
         merged = mergeTree(merged, designed.files);
@@ -1062,6 +1147,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           model: designModel,
           contract,
           designEngineV3,
+          designEngineV4,
           feedback: blockingFindings,
         });
         if (refined.files.length > 0) {
@@ -1099,8 +1185,20 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     }
   }
 
+  let designAnalytics: Record<string, unknown> | undefined;
   if (isVisualTarget(brief.target)) {
     const genericity = evaluateGenericity(merged);
+    designAnalytics = {
+      directionId: designEngineV4?.selection.profile ?? designEngineV3.selected.id,
+      conceptName: designEngineV4?.dna.visualDirection ?? designEngineV3.selected.conceptName,
+      displayFont: designDNA.typography.display,
+      paletteStrategy: designEngineV4 ? designEngineV4.dna.colors.primary : designEngineV3.selected.paletteDirection,
+      genericityScore: genericity.score,
+      scoreSource: 'source-heuristics-not-rendered-benchmark',
+      genericityFlags: genericity.genericityIssues.map((issue) => issue.code),
+      rejected: genericity.rejected,
+      evaluatedAt: new Date().toISOString(),
+    };
     await db
       .update(buildProjects)
       .set({
@@ -1109,23 +1207,15 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           productDesignContext: productContext,
           designDNA,
           designEngineV3,
+          ...(designEngineV4 ? { designEngineV4 } : {}),
           informationArchitecture,
-          designAnalytics: {
-            directionId: designEngineV3.selected.id,
-            conceptName: designEngineV3.selected.conceptName,
-            displayFont: designEngineV3.recipe.typography.displayFont,
-            paletteStrategy: designEngineV3.selected.paletteDirection,
-            genericityScore: genericity.score,
-            genericityFlags: genericity.genericityIssues.map((issue) => issue.code),
-            rejected: genericity.rejected,
-            evaluatedAt: new Date().toISOString(),
-          },
+          designAnalytics,
         },
       })
       .where(eq(buildProjects.id, buildId));
-    logger.info('Design Engine V3 quality analytics', {
+    logger.info('Design source analytics', {
       buildId,
-      direction: designEngineV3.selected.conceptName,
+      direction: designAnalytics.directionId,
       genericityScore: genericity.score,
       rejected: genericity.rejected,
     });
@@ -1149,7 +1239,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * compile — and the reader meets that as a white frame rather than as a
    * missing line in a config file.
    */
-  let resolved = normalizeGeneratedTree(merged);
+  let resolved = normalizeGeneratedTree(
+    designEngineV4 ? compileDesignTree(merged, designEngineV4) : merged,
+  );
 
   /*
    * Design passes can revise a working page into one that imports components
@@ -1182,6 +1274,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       requireFiles: true,
       existingFiles: resolved,
       designDNA,
+      designEngineV4,
       report: async (stage) => {
         await db
           .update(buildProjects)
@@ -1262,8 +1355,19 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         ...storedAnalysis,
         productDesignContext: productContext,
         designDNA,
+        designEngineV3,
+        ...(designEngineV4
+          ? {
+              designEngineV4,
+              designQuality: {
+                status: 'pending',
+                reason: 'Preview readiness is not visual approval; rendered checks pending.',
+              },
+            }
+          : {}),
         informationArchitecture,
         sourceMap: instrumented.sourceMap,
+        ...(designAnalytics ? { designAnalytics } : {}),
       },
     })
     .where(eq(buildProjects.id, buildId));
@@ -1395,6 +1499,8 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   });
   await performance.mark('build_completed', `${instrumented.files.length} files`);
 
+  if (running && designEngineV4) scheduleDesignWork(buildId, workspace.workspaceId, user.id);
+
   return {
     ok: true,
     message: `Generated ${instrumented.files.length} file${
@@ -1445,7 +1551,9 @@ async function visuallyReviewPreview(
     message: `Visual QA: ${review.score}/100 — ${review.summary || review.verdict}.`,
   });
 
-  const needsRevision = review.verdict === 'revise' && review.findings.length > 0;
+  const needsRevision =
+    review.verdict === 'revise' &&
+    (review.findings.length > 0 || (review.criticalFindings?.length ?? 0) > 0);
   let updatedPreview: Awaited<ReturnType<typeof startPreview>> | undefined;
   if (needsRevision) {
     const previous = (await listCheckpoints(buildId, workspaceId)).find(
@@ -1516,6 +1624,7 @@ async function visuallyReviewPreview(
         ...((latest?.codebaseAnalysis ?? {}) as Record<string, unknown>),
         visualReviewedVersionId: latest?.currentVersionId,
         visualReviewScore: review.score,
+        visualReviewVerdict: review.verdict,
       },
     })
     .where(eq(buildProjects.id, buildId));
@@ -1526,7 +1635,7 @@ async function visuallyReviewPreview(
 export async function startPreviewAction(
   buildId: string,
 ): Promise<{ url: string | null; output: string; error?: string }> {
-  const { workspace } = await getAppContext();
+  const { workspace, user } = await getAppContext();
   await recordPersistentPerformance(buildId, workspace.workspaceId, 'preview_action_started');
 
   /* The layout of the tree, which is one of the reasons a server never starts. */
@@ -1583,9 +1692,15 @@ export async function startPreviewAction(
 
     if (!result.installed) {
       // Dependencies failing is a real, readable failure — not a generic error.
-      await db.update(buildProjects).set({
-        status: 'failed', statusDetail: describeInstallFailure(result.output),
-      }).where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)));
+      await db
+        .update(buildProjects)
+        .set({
+          status: 'failed',
+          statusDetail: describeInstallFailure(result.output),
+        })
+        .where(
+          and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
+        );
       return {
         url: null,
         output: result.output,
@@ -1621,9 +1736,15 @@ export async function startPreviewAction(
     });
 
     if (!result.installed) {
-      await db.update(buildProjects).set({
-        status: 'failed', statusDetail: describeInstallFailure(result.output),
-      }).where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)));
+      await db
+        .update(buildProjects)
+        .set({
+          status: 'failed',
+          statusDetail: describeInstallFailure(result.output),
+        })
+        .where(
+          and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
+        );
       return { url: null, output: result.output, error: describeInstallFailure(result.output) };
     }
 
@@ -1650,11 +1771,15 @@ export async function startPreviewAction(
      * is intentionally deferred; a durable background job will own it.
      */
     await recordPersistentPerformance(buildId, workspace.workspaceId, 'first_preview', result.url);
+    // Request completion releases the preview immediately; Redis owns the actual work.
+    // Captured IDs only: no request-scoped auth calls inside the after callback.
+    scheduleDesignWork(buildId, workspace.workspaceId, user.id);
     await recordStep({
       buildId,
       workspaceId: workspace.workspaceId,
       kind: 'note',
-      message: 'Preview ready. Responsive and visual polish are deferred until after first paint.',
+      message:
+        'Preview ready. This confirms the application runs, not that visual quality is approved.',
     });
 
     return {

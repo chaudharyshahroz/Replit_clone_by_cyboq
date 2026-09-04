@@ -22,6 +22,7 @@ import { loadServerEnv, logger } from '@reklu/shared';
 import { agentRunHandler } from './handlers/agent';
 import { maintenanceHandler } from './handlers/maintenance';
 import { deepResearchHandler } from './handlers/research';
+import { buildDesignHandler } from './handlers/build-design';
 
 const log = logger.child({ service: 'worker' });
 
@@ -48,6 +49,16 @@ async function main(): Promise<void> {
   });
 
   const workers = [
+    startWorker({
+      queueName: 'build',
+      registrations: [
+        {
+          kind: 'build_design',
+          handler: buildDesignHandler as WorkerRegistration<JobKind>['handler'],
+        },
+      ],
+      concurrency: 1,
+    }),
     startWorker({
       queueName: 'maintenance',
       registrations: [

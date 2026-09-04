@@ -50,24 +50,40 @@ export function evaluateGenericity(files: readonly GeneratedFile[]): GenericityR
     .map((file) => file.content)
     .join('\n');
   const issues: GenericityIssue[] = [];
-  const add = (code: string, weight: number, message: string) => issues.push({ code, weight, message });
+  const add = (code: string, weight: number, message: string) =>
+    issues.push({ code, weight, message });
 
   if (UI_EMOJI.test(visual)) add('emoji-ui-icon', 25, 'Emoji is used as interface imagery.');
-  if (GENERIC_COPY.some((pattern) => pattern.test(visual))) add('generic-marketing-copy', 20, 'Interchangeable marketing copy weakens brand identity.');
-  if ((visual.match(/(?:<Card\b|className=["'][^"']*\bcard\b)/g) ?? []).length >= 4) {
-    add('repeated-card-grid', 30, 'Four or more card components create a repeated template rhythm.');
-  }
+  if (GENERIC_COPY.some((pattern) => pattern.test(visual)))
+    add('generic-marketing-copy', 20, 'Interchangeable marketing copy weakens brand identity.');
+  // Product/pricing grids deliberately repeat. Counting components is not visual evidence
+  // of genericity; composition must be judged at section level in the rendered review.
   if ((visual.match(/<(?:section|div)[^>]*className=["'][^"']*text-center/g) ?? []).length >= 3) {
     add('repeated-centered-sections', 15, 'Centered section composition repeats too often.');
   }
   if ((visual.match(/(?:\b\d+(?:\.\d+)?[KkMm]?\+|99\.9%|100%)/g) ?? []).length >= 2) {
-    add('fabricated-vanity-counters', 25, 'Multiple unsupported round-number claims resemble template filler.');
+    add(
+      'fabricated-vanity-counters',
+      25,
+      'Multiple unsupported round-number claims resemble template filler.',
+    );
   }
-  if (/bg-gradient-to-|text-transparent\s+bg-clip-text|shadow-[^"'\s]*\[(?:.*(?:purple|violet|blue))/i.test(visual)) {
-    add('generic-gradient-treatment', 15, 'A stock gradient/glow treatment replaces product-specific art direction.');
+  if (
+    /bg-gradient-to-|text-transparent\s+bg-clip-text|shadow-[^"'\s]*\[(?:.*(?:purple|violet|blue))/i.test(
+      visual,
+    )
+  ) {
+    add(
+      'generic-gradient-treatment',
+      15,
+      'A stock gradient/glow treatment replaces product-specific art direction.',
+    );
   }
 
-  const score = Math.min(100, issues.reduce((total, issue) => total + issue.weight, 0));
+  const score = Math.min(
+    100,
+    issues.reduce((total, issue) => total + issue.weight, 0),
+  );
   return { score, genericityIssues: issues, rejected: score >= 35 };
 }
 
@@ -139,16 +155,6 @@ export function auditDesignQuality(
       });
     }
 
-    const cardReferences = visual.match(/(?:<Card\b|className=["'][^"']*\bcard\b)/g) ?? [];
-    if (cardReferences.length >= 4) {
-      issues.push({
-        code: 'repeated-card-grid',
-        severity: 'blocking',
-        message:
-          'Four or more card-shaped components make the narrative look template-driven. Redesign the affected sequence with varied editorial, media, split, rail, or full-bleed compositions.',
-      });
-    }
-
     const unsupportedCounters = visual.match(/(?:\b\d+(?:\.\d+)?[KkMm]?\+|99\.9%|100%)/g) ?? [];
     if (unsupportedCounters.length >= 2) {
       issues.push({
@@ -159,7 +165,8 @@ export function auditDesignQuality(
       });
     }
 
-    const centeredSections = visual.match(/<(?:section|div)[^>]*className=["'][^"']*text-center/g) ?? [];
+    const centeredSections =
+      visual.match(/<(?:section|div)[^>]*className=["'][^"']*text-center/g) ?? [];
     if (centeredSections.length >= 3) {
       issues.push({
         code: 'repeated-centered-sections',
@@ -169,7 +176,8 @@ export function auditDesignQuality(
       });
     }
 
-    const viewportSections = visual.match(/(?:min-h-screen|h-screen|min-height\s*:\s*100vh)/g) ?? [];
+    const viewportSections =
+      visual.match(/(?:min-h-screen|h-screen|min-height\s*:\s*100vh)/g) ?? [];
     if (viewportSections.length > 1) {
       issues.push({
         code: 'repeated-viewport-sections',

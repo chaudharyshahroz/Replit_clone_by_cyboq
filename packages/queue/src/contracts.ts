@@ -49,6 +49,13 @@ export const BuildProjectPayload = z.object({
   prompt: z.string(),
 });
 
+export const BuildDesignPayload = z.object({
+  buildProjectId: z.string().min(1),
+  workspaceId: z.string().min(1),
+  userId: z.string().min(1),
+  versionId: z.string().min(1),
+});
+
 export const DeployPayload = z.object({
   deploymentId: z.string(),
   workspaceId: z.string(),
@@ -109,6 +116,11 @@ export const JOB_KINDS = {
       'running_checks',
       'starting_preview',
     ],
+  },
+  build_design: {
+    queue: 'build' as const,
+    schema: BuildDesignPayload,
+    stages: ['creating_assets', 'updating_preview', 'reviewing_design'],
   },
   deploy: {
     queue: 'deploy' as const,

@@ -39,6 +39,20 @@ describe('job contracts', () => {
 });
 
 describe('parsePayload', () => {
+  it('binds design work to a workspace, user and exact version', () => {
+    const payload = {
+      buildProjectId: 'bld_1',
+      workspaceId: 'wsp_1',
+      userId: 'usr_1',
+      versionId: 'ver_1',
+    };
+    expect(parsePayload('build_design', payload)).toEqual(payload);
+    for (const key of Object.keys(payload)) {
+      expect(() => parsePayload('build_design', { ...payload, [key]: '' })).toThrow();
+    }
+    expect(queueFor('build_design')).toBe('build');
+    expect(stagesFor('build_design')).toContain('reviewing_design');
+  });
   it('accepts a valid payload', () => {
     const payload = parsePayload('embed_file', {
       fileId: 'fil_1',

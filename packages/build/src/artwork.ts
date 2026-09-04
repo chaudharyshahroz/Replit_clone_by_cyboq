@@ -42,7 +42,7 @@ export function plannedArtwork(files: readonly GeneratedFile[]): readonly Artwor
     if (file.binary) continue;
 
     /* The whole element, so `alt` can be read whether it precedes or follows `src`. */
-    const elements = file.content.matchAll(/<(?:img|Image)\b[^>]*>/gs);
+    const elements = file.content.matchAll(/<(?:img|Image|BrandImage)\b[^>]*>/gs);
 
     for (const [element] of elements) {
       const source = /src=(?:"([^"]*)"|\{?['"]([^'"]*)['"]\}?)/.exec(element);
@@ -77,6 +77,13 @@ export function plannedArtwork(files: readonly GeneratedFile[]): readonly Artwor
  * a hero is wide and everything else is square.
  */
 function shapeFor(element: string, reference: string): ArtworkRequest['shape'] {
+  const ratio = /aspectRatio=["']\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*["']/.exec(element);
+  if (ratio && Number(ratio[2]) > 0) {
+    const value = Number(ratio[1]) / Number(ratio[2]);
+    if (value > 1.2) return 'landscape';
+    if (value < 1 / 1.2) return 'portrait';
+    return 'square';
+  }
   const width = Number(/width=\{?["']?(\d+)/.exec(element)?.[1] ?? 0);
   const height = Number(/height=\{?["']?(\d+)/.exec(element)?.[1] ?? 0);
 
@@ -125,13 +132,11 @@ export async function drawArtwork(
    * wants the plain description those were built around, because the words
    * that steer a camera confuse a search engine.
    */
-  draw: (
-    request: ArtworkRequest,
-    prompt: string,
-  ) => Promise<GeneratedFile['binary']>,
+  draw: (request: ArtworkRequest, prompt: string) => Promise<GeneratedFile['binary']>,
   onProgress?: (message: string) => Promise<void> | void,
 ): Promise<ArtworkResult> {
-  const requests = plannedArtwork(files);
+  const existing = new Set(files.filter((file) => file.binary).map((file) => file.path));
+  const requests = plannedArtwork(files).filter((request) => !existing.has(request.path));
   if (requests.length === 0) return { files, generated: 0, failures: [] };
 
   const drawn = new Map<string, NonNullable<GeneratedFile['binary']>>();
@@ -150,7 +155,8 @@ export async function drawArtwork(
 
     try {
       const binary = await draw(request, artworkPrompt(request, subject));
-      if (binary) drawn.set(request.path, binary);
+      if (!binary) throw new Error('The image service returned no asset.');
+      drawn.set(request.path, binary);
     } catch (error) {
       /*
        * One picture failing must not lose the build. The application is written

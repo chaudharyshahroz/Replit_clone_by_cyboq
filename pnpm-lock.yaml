@@ -159,6 +159,12 @@ importers:
       '@reklu/artifacts':
         specifier: workspace:*
         version: link:../../packages/artifacts
+      '@reklu/build':
+        specifier: workspace:*
+        version: link:../../packages/build
+      '@reklu/create':
+        specifier: workspace:*
+        version: link:../../packages/create
       '@reklu/database':
         specifier: workspace:*
         version: link:../../packages/database

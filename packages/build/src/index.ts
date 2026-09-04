@@ -10,6 +10,7 @@ export * from './build-skills';
 export * from './market-research';
 export * from './design-pass';
 export * from './design-contract';
+export * from './design-compiler';
 export * from './design-quality';
 export * from './visual-review';
 export * from './design-intelligence';
