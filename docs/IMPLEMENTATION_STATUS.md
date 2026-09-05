@@ -1624,6 +1624,7 @@ Updated 2026-09-04. This is a foundation implementation, not completion of the f
 - First-preview and running-preview edits enqueue the same version-bound background job. Worker asset processing is limited to eight assets, one queue attempt and one active Build job per worker process. Compare-and-lock checkpoints reject superseded versions.
 - Background reviewer uses plan-permitted vision models; unavailable capture/review leaves an explicit pending result. Quality writes merge only owned fields and are conditional on the reviewed version.
 - Build UI separates preview readiness from design approval and exposes outstanding evidence.
+- Generated TSX/JSX that uses hooks, browser APIs or JSX events without a `use client` boundary is repaired during every generation, preview restart and publish. If that page also exports Next metadata, the incompatible export is removed after the client boundary is established. Server-only Next modules are excluded from this mechanical repair.
 
 ## IN PROGRESS — intentionally not represented as complete
 
@@ -1637,7 +1638,7 @@ Updated 2026-09-04. This is a foundation implementation, not completion of the f
 
 ## VALIDATION
 
-- Build unit suite: 389 tests passed, including the V4 generation integration case.
+- Build unit suite: 393 tests passed, including the V4 generation integration case and the missing-client-boundary regression.
 - Design-intelligence: 22 tests passed, covering eight category briefs and quality evidence rules.
 - Queue: 11 tests passed, including required workspace/user/version binding.
 - Web: 202 tests passed, including actual compiled image decoding, deferred retry and cleanup behavior.

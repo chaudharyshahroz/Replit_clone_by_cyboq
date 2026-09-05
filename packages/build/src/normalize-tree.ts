@@ -1,15 +1,13 @@
 import type { GeneratedFile } from './parse';
 import { repairPrismaSchemas } from './repair-prisma';
 import { repairAliasPaths } from './repair-imports';
-import {
-  repairMissingDependencies,
-  repairUnavailableDependencyVersions,
-} from './repair-deps';
+import { repairMissingDependencies, repairUnavailableDependencyVersions } from './repair-deps';
 import { repairFontWeights } from './repair-fonts';
 import { repairStaticExport } from './repair-export';
 import {
   repairClientIconRegistries,
   repairClientMetadata,
+  repairMissingClientDirectives,
 } from './repair-client-metadata';
 import { repairGlobalStyles } from './repair-styles';
 import { repairJsxExtensions } from './repair-jsx-extension';
@@ -17,19 +15,23 @@ import { ensureNextRootLayout } from './repair-next-layout';
 
 /** One repair pipeline for newly generated files and historical saved projects. */
 export function normalizeGeneratedTree(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
-  return ensureNextRootLayout(repairJsxExtensions(
-    repairGlobalStyles(
-      repairClientIconRegistries(
-        repairClientMetadata(
-          repairStaticExport(
-            repairFontWeights(
-              repairUnavailableDependencyVersions(
-                repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(files))),
+  return ensureNextRootLayout(
+    repairJsxExtensions(
+      repairGlobalStyles(
+        repairClientIconRegistries(
+          repairClientMetadata(
+            repairMissingClientDirectives(
+              repairStaticExport(
+                repairFontWeights(
+                  repairUnavailableDependencyVersions(
+                    repairMissingDependencies(repairAliasPaths(repairPrismaSchemas(files))),
+                  ),
+                ),
               ),
             ),
           ),
         ),
       ),
     ),
-  ));
+  );
 }

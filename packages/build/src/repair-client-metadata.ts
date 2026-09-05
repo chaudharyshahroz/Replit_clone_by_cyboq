@@ -21,6 +21,31 @@ import type { GeneratedFile } from './parse';
 /** `"use client"` as the first meaningful line, single or double quoted. */
 const USE_CLIENT = /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*|\s)*['"]use client['"]/;
 
+const CLIENT_BEHAVIOUR =
+  /\b(?:React\.)?(?:useState|useEffect|useLayoutEffect|useInsertionEffect|useReducer|useRef|useContext|useMemo|useCallback|useTransition|useDeferredValue|useSyncExternalStore)\s*\(|\buse[A-Z]\w*\s*\(|\b(?:window|document|navigator|localStorage|sessionStorage)\b|\bon(?:Click|Change|Submit|Input|KeyDown|KeyUp|Pointer|Mouse|Touch|Focus|Blur)\s*=/;
+
+const SERVER_ONLY = /from\s*['"]next\/(?:headers|server)['"]|\b(?:cookies|headers|draftMode)\s*\(/;
+
+/**
+ * Next App Router files are Server Components unless they opt into the client.
+ * Generated pages regularly use a hook but omit that directive. Repair the
+ * boundary before metadata repair runs, so the resulting tree compiles on the
+ * first preview and on every later restart.
+ */
+export function repairMissingClientDirectives(
+  files: readonly GeneratedFile[],
+): readonly GeneratedFile[] {
+  return files.map((file) => {
+    if (!/\.(tsx|jsx)$/.test(file.path)) return file;
+    if (USE_CLIENT.test(file.content) || !CLIENT_BEHAVIOUR.test(file.content)) return file;
+    // A module using server-only APIs cannot become a client component safely;
+    // leave it for the compiler-guided source repair instead of hiding one error
+    // behind another.
+    if (SERVER_ONLY.test(file.content)) return file;
+    return { ...file, content: `'use client';\n\n${file.content}` };
+  });
+}
+
 /**
  * An exported `metadata` or `generateMetadata`, and everything it spans.
  *
@@ -28,16 +53,15 @@ const USE_CLIENT = /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*|\s)*['"]use client['
  * metadata object is written across several — and removing only the first line
  * leaves a dangling object literal, which fails to compile for a new reason.
  */
-const METADATA_CONST = /^export\s+const\s+metadata(?:\s*:\s*[A-Za-z<>[\]|\s.]+)?\s*=\s*\{[\s\S]*?^\};?\s*$/m;
+const METADATA_CONST =
+  /^export\s+const\s+metadata(?:\s*:\s*[A-Za-z<>[\]|\s.]+)?\s*=\s*\{[\s\S]*?^\};?\s*$/m;
 const METADATA_FUNCTION = /^export\s+(?:async\s+)?function\s+generateMetadata\s*\([\s\S]*?^\}\s*$/m;
 
 const NOTE =
   '// Removed by Reklu: a component marked "use client" cannot export metadata.\n' +
   '// Move it to a server component — this page keeps working without it.\n';
 
-export function repairClientMetadata(
-  files: readonly GeneratedFile[],
-): readonly GeneratedFile[] {
+export function repairClientMetadata(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   return files.map((file) => {
     if (!/\.(tsx|jsx)$/.test(file.path)) return file;
     if (!USE_CLIENT.test(file.content)) return file;
@@ -55,15 +79,15 @@ export function repairClientMetadata(
      * default config, and the build script runs the linter.
      */
     if (!/\bMetadata\b/.test(content.replace(/^import[^\n]*\n/gm, ''))) {
-      content = content.replace(/^import\s+type\s*\{\s*Metadata\s*\}\s*from\s*['"]next['"];?\s*\n/m, '');
+      content = content.replace(
+        /^import\s+type\s*\{\s*Metadata\s*\}\s*from\s*['"]next['"];?\s*\n/m,
+        '',
+      );
     }
 
     return { ...file, content };
   });
 }
-
-const CLIENT_BEHAVIOUR =
-  /\b(?:useState|useEffect|useLayoutEffect|useReducer|useRef|useContext)\s*\(|\b(?:window|document|localStorage|sessionStorage)\b|\bon(?:Click|Change|Submit|Input|KeyDown|KeyUp|Pointer|Mouse|Touch)\s*=/;
 
 /**
  * Keep static SVG registries out of the React Client Manifest.
@@ -83,10 +107,7 @@ export function repairClientIconRegistries(
     if (!/export\s+const\s+Icons\s*=\s*\{/.test(file.content)) return file;
     if (CLIENT_BEHAVIOUR.test(file.content)) return file;
 
-    const content = file.content.replace(
-      /(^|\n)\s*['"]use client['"];?\s*(?:\n|$)/,
-      '$1',
-    );
+    const content = file.content.replace(/(^|\n)\s*['"]use client['"];?\s*(?:\n|$)/, '$1');
     return content === file.content ? file : { ...file, content };
   });
 }

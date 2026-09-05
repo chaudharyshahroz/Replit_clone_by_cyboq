@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   repairClientIconRegistries,
   repairClientMetadata,
+  repairMissingClientDirectives,
 } from '../repair-client-metadata';
 import type { GeneratedFile } from '../parse';
 
@@ -60,6 +61,32 @@ export default function MenuPage() {
 `;
 
 describe('repairing a client component that exports metadata', () => {
+  it('repairs the screenshot case: a hook and metadata with no client directive', () => {
+    const broken = page(CLIENT_PAGE.replace("'use client';\n\n", ''));
+    const [marked] = repairMissingClientDirectives([broken]);
+    const [repaired] = repairClientMetadata([marked!]);
+
+    expect(repaired?.content).toMatch(/^'use client';/);
+    expect(repaired?.content).toContain('useState');
+    expect(repaired?.content).not.toContain('export const metadata');
+  });
+
+  it('recognizes memoized handlers, browser APIs and JSX events', () => {
+    for (const source of [
+      "import { useMemo } from 'react'; export default function Page(){ useMemo(() => 1, []); return null; }",
+      "import { useRouter } from 'next/navigation'; export default function Page(){ useRouter(); return null; }",
+      'export default function Page(){ return <button onClick={() => window.print()}>Print</button>; }',
+      'export default function Page(){ React.useCallback(() => 1, []); return null; }',
+    ]) {
+      expect(repairMissingClientDirectives([page(source)])[0]?.content).toMatch(/^'use client';/);
+    }
+  });
+
+  it('does not move a module using server-only Next APIs across the boundary', () => {
+    const source =
+      "import { cookies } from 'next/headers'; import { useState } from 'react'; export default function Page(){ useState(0); cookies(); return null; }";
+    expect(repairMissingClientDirectives([page(source)])[0]?.content).toBe(source);
+  });
   it('removes the export and keeps the component', () => {
     const [repaired] = repairClientMetadata([page(CLIENT_PAGE)]);
 
@@ -85,7 +112,7 @@ describe('repairing a client component that exports metadata', () => {
 
   it('drops the now-unused type import', () => {
     const [repaired] = repairClientMetadata([page(CLIENT_PAGE)]);
-    expect(repaired?.content).not.toContain("import type { Metadata }");
+    expect(repaired?.content).not.toContain('import type { Metadata }');
   });
 
   it('handles generateMetadata as well', () => {
