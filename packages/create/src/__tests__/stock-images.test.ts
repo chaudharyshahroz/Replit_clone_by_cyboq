@@ -8,7 +8,7 @@
  * exists for silently never happens.
  */
 import { describe, expect, it } from 'vitest';
-import { searchTerms } from '../stock-images';
+import { searchTerms, stockResultMatches } from '../stock-images';
 
 describe('building a search from a description', () => {
   it('keeps the nouns and drops the joining words', () => {
@@ -39,6 +39,24 @@ describe('building a search from a description', () => {
     /* The caller treats an empty query as a miss, rather than searching for "". */
     expect(searchTerms('a of the in on')).toBe('');
     expect(searchTerms('')).toBe('');
+  });
+});
+
+describe('rejecting semantically wrong stock results', () => {
+  it('accepts catalogue tags that prove the requested subject', () => {
+    expect(
+      stockResultMatches('a barista pouring a latte in a neighborhood coffee shop', 'coffee, cafe, latte art, cup'),
+    ).toBe(true);
+  });
+
+  it('rejects popular but irrelevant animals and vehicles', () => {
+    expect(stockResultMatches('a coffee shop hero portrait', 'meerkat, animal, wildlife')).toBe(false);
+    expect(stockResultMatches('the exterior of a neighborhood cafe', 'car, vehicle, automobile')).toBe(false);
+  });
+
+  it('uses a literal subject overlap when no known industry family applies', () => {
+    expect(stockResultMatches('a ceramic desk lamp beside a book', 'lamp, desk, home')).toBe(true);
+    expect(stockResultMatches('a ceramic desk lamp beside a book', 'ocean, beach, sunset')).toBe(false);
   });
 });
 

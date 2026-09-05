@@ -69,6 +69,13 @@ describe('the guidance a build receives', () => {
     expect(skillGuidanceFor('web_app').toLowerCase()).toContain('server components');
   });
 
+  it('requires deterministic server and browser first renders for Next targets', () => {
+    const guidance = skillGuidanceFor('website');
+    expect(guidance).toContain('identical markup');
+    expect(guidance).toContain('localStorage');
+    expect(guidance).toContain('useEffect after mount');
+  });
+
   it('tells an API about status codes and a dashboard about units', () => {
     expect(skillGuidanceFor('api')).toContain('401');
     expect(skillGuidanceFor('dashboard').toLowerCase()).toContain('units');

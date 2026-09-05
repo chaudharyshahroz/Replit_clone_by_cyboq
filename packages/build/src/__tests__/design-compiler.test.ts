@@ -45,6 +45,7 @@ describe('actual V4 compilation', () => {
         path: 'public/generated/coffee-hero.png',
         description: 'Barista pouring a flat white at the cafe',
         shape: 'landscape',
+        priority: 'critical',
       },
     ]);
   });

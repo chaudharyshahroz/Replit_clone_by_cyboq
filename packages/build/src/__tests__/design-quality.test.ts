@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { fallbackBrief } from '../brief';
 import { createDesignContract, designContractPrompt } from '../design-contract';
-import { auditDesignQuality, designFeedbackPrompt, evaluateGenericity } from '../design-quality';
+import {
+  auditDesignQuality,
+  designFeedbackPrompt,
+  evaluateGenericity,
+  hydrationSafetyIssues,
+} from '../design-quality';
 import type { GeneratedFile } from '../parse';
 
 const website = fallbackBrief('Build a marketing website for Coffino coffee shop');
@@ -135,5 +140,35 @@ describe('design quality critic', () => {
     ];
     expect(evaluateGenericity(files).rejected).toBe(false);
     expect(auditDesignQuality(website, files)).toEqual([]);
+  });
+
+  it('blocks browser storage in a useState initializer before preview', () => {
+    const provider = page(`
+      'use client';
+      import { useState } from 'react';
+      export function CartProvider({ children }) {
+        const [items] = useState(() => {
+          const saved = window.localStorage.getItem('cart');
+          return saved ? JSON.parse(saved) : [];
+        });
+        return <div data-count={items.length}>{children}</div>;
+      }
+    `);
+    expect(hydrationSafetyIssues([provider])).toEqual([
+      expect.objectContaining({ code: 'non-deterministic-first-render', severity: 'blocking' }),
+    ]);
+  });
+
+  it('allows storage to be read after hydration in an effect', () => {
+    const provider = page(`
+      'use client';
+      import { useEffect, useState } from 'react';
+      export function CartProvider({ children }) {
+        const [items, setItems] = useState([]);
+        useEffect(() => { setItems(JSON.parse(localStorage.getItem('cart') || '[]')); }, []);
+        return <div data-count={items.length}>{children}</div>;
+      }
+    `);
+    expect(hydrationSafetyIssues([provider])).toEqual([]);
   });
 });

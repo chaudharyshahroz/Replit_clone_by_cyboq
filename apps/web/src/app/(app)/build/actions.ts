@@ -16,6 +16,7 @@ import {
   chooseDirection,
   createDesignContract,
   auditDesignQuality,
+  hydrationSafetyIssues,
   evaluateGenericity,
   describeDirection,
   describeEmptyGeneration,
@@ -1244,6 +1245,54 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   );
 
   /*
+   * TypeScript cannot see a hydration mismatch. Generated cart/theme providers
+   * often read localStorage in a useState initializer, so the server renders an
+   * empty tree while the browser's very first render contains stored items.
+   * Repair that source before the preview can be called ready.
+   */
+  const hydrationFindings = hydrationSafetyIssues(resolved);
+  if (hydrationFindings.length > 0) {
+    await recordStep({
+      buildId,
+      workspaceId: workspace.workspaceId,
+      kind: 'stage',
+      message: 'Correcting server/client first-render mismatch before preview',
+    });
+    const corrected = await generateFiles({
+      brief,
+      prompt: [
+        'Correct only the hydration-safety problems in this existing Next.js application.',
+        ...hydrationFindings.map((finding) => `- ${finding.message}`),
+        'The server render and the first client render must have identical markup.',
+        'Initialize cart, theme and persisted state with deterministic literals. Read browser storage in useEffect after mount, then update state.',
+        'A context provider must return the same outer element tree before and after hydration. Preserve design, behavior and public APIs.',
+        'Emit every changed file and nothing unrelated.',
+      ].join('\n'),
+      model,
+      requireFiles: true,
+      existingFiles: resolved,
+      designDNA,
+      designEngineV4,
+      report: async (stage) => {
+        await db
+          .update(buildProjects)
+          .set({ status: 'generating', statusDetail: STAGE_LABELS[stage] ?? 'Repairing runtime' })
+          .where(eq(buildProjects.id, buildId));
+      },
+    });
+    resolved = normalizeGeneratedTree(
+      designEngineV4
+        ? compileDesignTree(mergeTree(resolved, corrected.files), designEngineV4)
+        : mergeTree(resolved, corrected.files),
+    );
+    if (hydrationSafetyIssues(resolved).length > 0) {
+      throw errors.validation(
+        'The generated app still contains browser-derived initial state that would cause a hydration error. Reklu stopped before publishing a broken preview.',
+      );
+    }
+  }
+
+  /*
    * Design passes can revise a working page into one that imports components
    * they forgot to emit. Validate the final designed tree as well as the raw
    * generation, using the same provider-neutral closure check. This also makes
@@ -1304,7 +1353,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * a photograph.
    */
   const illustrated =
-    request.repairPass || buildPath.path === 'fast'
+    request.repairPass
       ? { files: resolved, generated: 0, failures: [] }
       : await drawArtwork(
           resolved,
@@ -1315,11 +1364,14 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
             ),
           (message) =>
             recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+          buildPath.path === 'fast'
+            ? { priority: 'critical', maxAssets: 6 }
+            : { priority: 'all', maxAssets: 8 },
         );
   await performance.mark(
     'assets_completed',
     buildPath.path === 'fast'
-      ? 'deferred until after first preview'
+      ? `${illustrated.generated} critical asset${illustrated.generated === 1 ? '' : 's'} fulfilled; optional assets deferred`
       : `${illustrated.generated} generated`,
   );
 

@@ -257,11 +257,12 @@ export function designEngineV4Prompt(engine: DesignEngineV4): string {
     'REKLU DESIGN ENGINE V4 — authoritative design contract. Do not combine with another palette/type recipe.',
     JSON.stringify(engine),
     'The compiler supplies src/app/reklu-design.css (or app/reklu-design.css) and src/components/reklu/BrandImage.tsx (or components/reklu/BrandImage.tsx). Do not rewrite those files.',
-    'Use rk-container, rk-section, rk-hero, rk-hero-title, rk-section-title, rk-grid, rk-button and rk-surface-primary classes. They are plain CSS, not Tailwind plugins. Use data-section-id matching the storyboard.',
+    'Use rk-container, rk-section, rk-hero, rk-hero-title, rk-section-title, rk-grid, rk-button, rk-site-header, rk-surface-primary and rk-surface-inverse classes. They are plain CSS, not Tailwind plugins. Use data-section-id matching the storyboard.',
     'rk-hero is a two-column layout; give it exactly two direct children: copy/actions and media/demo. Use rk-grid for normal product lists; never use six skinny paragraph cards. Do not add fixed card widths.',
-    'Import BrandImage from the provided components/reklu path for photos and products. Declare requested imagery with literal src="/generated/descriptive-name.png" and detailed literal alt text so the asset service can fulfill it. Never invent remote image IDs. Use role="critical" for hero/product media. Loading/fallback media is not final completion.',
+    'Import BrandImage from the provided components/reklu path for photos and products. Declare requested imagery with literal src="/generated/descriptive-name.png" and detailed literal alt text so the asset service can fulfill it. The alt must name the concrete business subject and exclude plausible distractors: for example cafe exterior with storefront and seating, no cars; coffee hero with cup or barista, no animals. Never invent remote image IDs. Use role="critical" for hero and primary product media. Loading/fallback media is not final completion.',
     'Keep headings concise. Desktop hero 2–4 lines, section 1–3; mobile at most 5. Do not force br tags or one-word lines. Never apply viewport-wide type sizes inside a narrow column.',
-    'Use CSS variables --color-background, --color-foreground, --color-primary, --color-on-primary. Use paired colors on every contrast surface. No white text on an unresolved image background.',
+    'Use CSS variables --color-background, --color-foreground, --color-primary, --color-on-primary, --color-inverse, --color-on-inverse and --color-on-inverse-muted. Use paired colors on every contrast surface. A dark footer must use rk-surface-inverse and its on-inverse tokens. No white text on an unresolved image background.',
+    'The site header uses rk-site-header. Keep it in normal document flow; do not make a marketing header sticky, fixed, translucent or positioned over hero media.',
     'Use real SVG icons from one installed family, 20–24px, inline with labels; never emoji icons. Reduced motion must preserve visible content.',
     'Preserve familiar navigation, product grids, pricing tables and forms. Distinction comes from brand, composition, content and imagery, not breaking useful grids.',
     'One meaningful first viewport with heading, action and media/demo. No full-height empty sections. First preview is interactive; final quality is a separate evidence-based gate.',
@@ -291,6 +292,8 @@ ${fontImport}
   --color-background: var(--rk-paper); --color-foreground: var(--rk-ink);
   --color-primary: var(--rk-brand); --color-on-primary: ${dna.colors.onPrimary};
   --color-surface: ${dna.colors.surfaceRaised}; --color-muted-foreground: ${dna.colors.muted};
+  --color-inverse: var(--color-foreground); --color-on-inverse: var(--color-background);
+  --color-on-inverse-muted: color-mix(in srgb, var(--color-background) 76%, var(--color-foreground));
   --font-display: "${dna.typography.display}", ${serif ? 'Georgia, serif' : 'system-ui, sans-serif'};
   --font-body: "${dna.typography.body}", system-ui, sans-serif;
   --type-hero: clamp(2.5rem, 1.5rem + 3.3vw, 4.5rem);
@@ -299,7 +302,10 @@ ${fontImport}
   --spacing-section: clamp(3.5rem, 6vw, 6.5rem); --spacing-gutter: clamp(1.25rem, 3vw, 3rem);
   --button-bg: var(--color-primary); --button-fg: var(--color-on-primary);
   --card-padding: 1.5rem; --card-radius: ${dna.radius.md}px;
+  --header-bg: var(--color-background); --footer-bg: var(--color-inverse);
+  --footer-fg: var(--color-on-inverse); --footer-muted: var(--color-on-inverse-muted);
 }
+:where(html,body) { max-width: 100%; overflow-x: clip; }
 :where(body) { margin: 0; background: var(--color-background); color: var(--color-foreground); font-family: var(--font-body); font-size: var(--type-body); line-height: 1.6; }
 .rk-container, .rk-container *, .rk-button, .rk-media { box-sizing: border-box; }
 :where(h1,h2,h3) { font-family: var(--font-display); line-height: 1.1; text-wrap: balance; overflow-wrap: break-word; }
@@ -309,6 +315,7 @@ ${fontImport}
 .rk-container { width: min(calc(100% - 2 * var(--spacing-gutter)), ${engine.layout.container}px); margin-inline: auto; }
 .rk-section { padding-block: var(--spacing-section); }
 .rk-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(2rem, 5vw, 5rem); align-items: center; padding-block: var(--spacing-section); }
+.rk-hero:not(.rk-container) { width: min(calc(100% - 2 * var(--spacing-gutter)), ${engine.layout.container}px); margin-inline: auto; }
 .rk-hero > * { min-width: 0; }
 .rk-hero-title { font-size: var(--type-hero); max-width: 20ch; line-height: 1.04; margin-block: 0 1.5rem; }
 .rk-section-title { font-size: var(--type-h2); max-width: 28ch; margin-block: 0 1.5rem; }
@@ -320,6 +327,10 @@ ${fontImport}
 .rk-button:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 .rk-button:disabled { opacity: .55; cursor: not-allowed; }
 .rk-surface-primary { background: var(--color-primary); color: var(--color-on-primary); }
+.rk-surface-inverse { background: var(--footer-bg); color: var(--footer-fg); }
+.rk-surface-inverse :where(p,small,li) { color: var(--footer-muted); }
+.rk-surface-inverse :where(a,h1,h2,h3,h4,strong) { color: inherit; }
+.rk-site-header { position: relative; inset: auto; z-index: 20; width: 100%; background: var(--header-bg); color: var(--color-foreground); }
 .rk-media { display: grid; overflow: hidden; background: var(--color-surface); color: var(--color-foreground); border-radius: var(--card-radius); }
 .rk-media img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
 .rk-media-fallback { padding: 1.5rem; align-self: center; text-align: center; }

@@ -22,6 +22,7 @@ describe('finding the pictures a page expects', () => {
       ),
     ]);
     expect(found[0]?.shape).toBe('portrait');
+    expect(found[0]?.priority).toBe('critical');
   });
   it('reads the description from the alt of the same element', () => {
     const found = plannedArtwork([
@@ -72,6 +73,13 @@ describe('finding the pictures a page expects', () => {
 
     expect(wide[0]?.shape).toBe('landscape');
     expect(tall[0]?.shape).toBe('portrait');
+  });
+
+  it('treats a legacy hero path as critical even without an explicit role', () => {
+    const found = plannedArtwork([
+      page('<img src="/generated/hero-cafe.png" alt="a barista serving coffee" />'),
+    ]);
+    expect(found[0]?.priority).toBe('critical');
   });
 
   it('leaves images the site did not ask Reklu for alone', () => {
@@ -166,6 +174,25 @@ describe('drawing them', () => {
     expect(image?.binary).toEqual(binary);
     // The bytes are not in the tree; a code view reads this on every page load.
     expect(image?.content).toBe('');
+  });
+
+  it('can fulfill only critical media for the first preview', async () => {
+    const draw = vi.fn().mockResolvedValue(binary);
+    const result = await drawArtwork(
+      [
+        page(
+          '<BrandImage src="/generated/hero.png" alt="a barber at work" role="critical" />\n' +
+            '<BrandImage src="/generated/detail.png" alt="a shelf of grooming products" role="optional" />',
+        ),
+      ],
+      'a barber shop',
+      draw,
+      undefined,
+      { priority: 'critical', maxAssets: 4 },
+    );
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(result.files.some((file) => file.path === 'public/generated/hero.png')).toBe(true);
+    expect(result.files.some((file) => file.path === 'public/generated/detail.png')).toBe(false);
   });
 
   it('draws one at a time', async () => {

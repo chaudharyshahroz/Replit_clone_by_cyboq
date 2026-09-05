@@ -43,6 +43,62 @@ const GENERIC_COPY = [
 /** Emoji pictographs used as decoration rather than ordinary punctuation. */
 const UI_EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 
+const BROWSER_ONLY_STATE = /\b(?:window|document|navigator|localStorage|sessionStorage)\b/;
+
+/** Return call bodies without pretending a regular expression can parse nested JavaScript. */
+function hookArguments(content: string, hook: string): readonly string[] {
+  const calls: string[] = [];
+  const pattern = new RegExp(`(?:React\\.)?${hook}(?:<[^;()]{0,400}>)?\\s*\\(`, 'g');
+  for (const match of content.matchAll(pattern)) {
+    const open = match.index! + match[0].lastIndexOf('(');
+    let depth = 0;
+    let quote = '';
+    let escaped = false;
+    for (let index = open; index < content.length; index += 1) {
+      const character = content[index]!;
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === quote) quote = '';
+        continue;
+      }
+      if (character === '"' || character === "'" || character === '`') {
+        quote = character;
+        continue;
+      }
+      if (character === '(') depth += 1;
+      else if (character === ')' && --depth === 0) {
+        calls.push(content.slice(open + 1, index));
+        break;
+      }
+    }
+  }
+  return calls;
+}
+
+/** Browser-derived initial state is the dominant generated Next hydration failure. */
+export function hydrationSafetyIssues(files: readonly GeneratedFile[]): readonly DesignQualityIssue[] {
+  const riskyFiles = files.filter(
+    (file) =>
+      /\.(?:tsx|jsx)$/.test(file.path) &&
+      hookArguments(file.content, 'useState').some((argument) => BROWSER_ONLY_STATE.test(argument)),
+  );
+  const renderConditionFiles = files.filter(
+    (file) =>
+      /\.(?:tsx|jsx)$/.test(file.path) &&
+      /return\s*\([\s\S]{0,1200}?typeof\s+window\s*!==?\s*['"]undefined['"]/.test(file.content),
+  );
+  const paths = [...new Set([...riskyFiles, ...renderConditionFiles].map((file) => file.path))];
+  if (paths.length === 0) return [];
+  return [
+    {
+      code: 'non-deterministic-first-render',
+      severity: 'blocking',
+      message: `Server and browser can produce different initial markup in ${paths.join(', ')}. Initialize deterministic state and read browser-only values in useEffect after mount.`,
+    },
+  ];
+}
+
 /** Deterministic anti-template gate; fast enough to run before first preview. */
 export function evaluateGenericity(files: readonly GeneratedFile[]): GenericityReport {
   const visual = files
@@ -101,6 +157,7 @@ export function auditDesignQuality(
   if (!visual) return [];
 
   const issues: DesignQualityIssue[] = [];
+  issues.push(...hydrationSafetyIssues(files));
   const tailwindProblem = tailwindStylesProblem(files);
   if (tailwindProblem) {
     issues.push({

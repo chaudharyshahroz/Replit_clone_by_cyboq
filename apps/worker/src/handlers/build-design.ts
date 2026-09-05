@@ -14,7 +14,12 @@ import {
   fallbackBrief,
   evaluatePremiumGate,
   DesignEngineV4Schema,
+  runDesignPass,
+  mergeTree,
+  normalizeGeneratedTree,
+  compileDesignTree,
   type BuildBrief,
+  type DesignQualityIssue,
 } from '@reklu/build';
 import type { JobContext } from '@reklu/queue';
 
@@ -88,6 +93,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   await context.reportStage('reviewing_design');
   let screenshot: Awaited<ReturnType<typeof captureRenderedPreview>> = undefined;
   let review: Awaited<ReturnType<typeof reviewRenderedDesign>> | undefined = undefined;
+  let reviewModel: ReturnType<typeof selectableModels>[number] | undefined;
   let reviewUnavailable: string | undefined;
   try {
     await context.throwIfCancelled();
@@ -98,18 +104,28 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       .innerJoin(plans, eq(subscriptions.planId, plans.id))
       .where(eq(subscriptions.workspaceId, workspaceId))
       .limit(1);
-    const model = selectableModels(
+    reviewModel = selectableModels(
       await loadRegistry(),
       planRow?.limits as PlanLimits | undefined,
-    ).find((model) => model.supportsVision);
-    screenshot = model ? await captureRenderedPreview({ buildProjectId, workspaceId }) : undefined;
+    )
+      .filter((model) => model.supportsVision)
+      .sort((left, right) => {
+        const score = (candidate: typeof left) =>
+          (candidate.bestFor.includes('coding') ? 6 : 0) +
+          (candidate.bestFor.includes('reasoning') ? 4 : 0) +
+          Math.min(candidate.maxOutputTokens / 8_000, 2);
+        return score(right) - score(left) || left.sortOrder - right.sortOrder;
+      })[0];
+    screenshot = reviewModel
+      ? await captureRenderedPreview({ buildProjectId, workspaceId })
+      : undefined;
     review =
-      model && screenshot
+      reviewModel && screenshot
         ? await reviewRenderedDesign({
             brief,
             contract: { ...createDesignContract(brief), concept: engine.data.dna.visualDirection },
             screenshot,
-            model,
+            model: reviewModel,
           })
         : undefined;
     if (!review)
@@ -118,6 +134,97 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   } catch (error) {
     logger.warn('Design review unavailable; quality remains pending', { buildProjectId, error });
     reviewUnavailable = 'The screenshot or visual review service failed. No approval was issued.';
+  }
+
+  /*
+   * The critic used to write down that a design was bad and stop. Complete the
+   * architecture with one bounded targeted repair, then review the real result
+   * again. This is deliberately one pass: visual judgment must not become an
+   * unbounded autonomous loop.
+   */
+  if (reviewModel && review?.verdict === 'revise' && (await current())) {
+    try {
+      await context.throwIfCancelled();
+      await context.reportStage('polishing_design');
+      const feedback: DesignQualityIssue[] = [
+        ...(review.criticalFindings ?? []).map((message, index) => ({
+          code: `rendered-critical-${index + 1}`,
+          severity: 'blocking' as const,
+          message,
+        })),
+        ...review.findings.map((message, index) => ({
+          code: `rendered-finding-${index + 1}`,
+          severity: 'warning' as const,
+          message,
+        })),
+        {
+          code: 'preserve-verified-assets',
+          severity: 'blocking' as const,
+          message:
+            'Keep every existing image src unchanged and do not add new media; correct composition, typography, spacing, contrast and cropping around the fulfilled assets.',
+        },
+      ];
+      const polished = await runDesignPass({
+        brief,
+        files: assets.files,
+        model: reviewModel,
+        contract: createDesignContract(brief),
+        designEngineV4: engine.data,
+        feedback,
+      });
+      if (polished.changed > 0) {
+        const beforeReview = review;
+        const revised = normalizeGeneratedTree(
+          compileDesignTree(mergeTree(assets.files, polished.files), engine.data),
+        );
+        const saved = await createCheckpoint({
+          buildProjectId,
+          workspaceId,
+          userId,
+          expectedVersionId: versionId,
+          files: revised,
+          changeSummary: 'Applied targeted fixes from rendered visual QA',
+        });
+        versionId = saved.version.id;
+        await syncPreview({ buildProjectId, workspaceId });
+        const revisedScreenshot = await captureRenderedPreview({ buildProjectId, workspaceId });
+        const revisedReview = revisedScreenshot
+          ? await reviewRenderedDesign({
+              brief,
+              contract: {
+                ...createDesignContract(brief),
+                concept: engine.data.dna.visualDirection,
+              },
+              screenshot: revisedScreenshot,
+              model: reviewModel,
+            })
+          : undefined;
+        const regressed =
+          !revisedReview ||
+          revisedReview.score < beforeReview.score ||
+          (revisedReview.criticalFindings?.length ?? 0) >
+            (beforeReview.criticalFindings?.length ?? 0);
+        if (regressed) {
+          const rollback = await createCheckpoint({
+            buildProjectId,
+            workspaceId,
+            userId,
+            expectedVersionId: versionId,
+            files: assets.files,
+            changeSummary: 'Restored the stronger design after visual QA regression',
+          });
+          versionId = rollback.version.id;
+          await syncPreview({ buildProjectId, workspaceId });
+          review = beforeReview;
+        } else {
+          screenshot = revisedScreenshot;
+          review = revisedReview;
+        }
+      }
+    } catch (error) {
+      logger.warn('Targeted rendered-design repair was unavailable', { buildProjectId, error });
+      reviewUnavailable = 'The bounded targeted-fix pass failed; the original review was retained.';
+    }
   }
   await context.throwIfCancelled();
   const gate = evaluatePremiumGate({

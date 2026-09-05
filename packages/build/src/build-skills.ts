@@ -141,6 +141,8 @@ export const NEXT_CORRECTNESS: BuildSkill = {
     'Import types with `import type`, and never import a server-only module into a client component.',
     'Every custom Tailwind utility must be backed by tailwind.config. Never use a semantic class such as text-on-primary, including inside @apply, unless that exact colour token is configured.',
     'If components use Tailwind utilities, the global stylesheet must load Tailwind: use @tailwind base/components/utilities for Tailwind 3, or @import "tailwindcss" for Tailwind 4. Handwritten global rules do not activate utility classes.',
+    'The server render and the first browser render must produce identical markup. Never read localStorage, sessionStorage, window, document, Date.now(), Math.random(), or browser dimensions in a useState initializer or during render. Initialize deterministic state, then read browser-only values in useEffect after mount.',
+    'Context providers must always return the same outer element tree on server and first client render. Do not add or remove a provider wrapper based on mounted state, stored cart contents, or typeof window.',
   ],
 };
 

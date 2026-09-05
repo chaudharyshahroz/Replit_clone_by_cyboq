@@ -115,6 +115,68 @@ const ORIENTATION = {
 const TIMEOUT_MS = 15_000;
 
 /**
+ * Pixabay ranks popularity, not semantic fit. A popular animal or car can be
+ * returned for a long business description that shares one weak token. Keep a
+ * stock result only when its catalogue tags prove that it depicts the requested
+ * subject; otherwise the image generator is the safer fallback.
+ */
+const SUBJECT_FAMILIES: readonly { request: readonly string[]; evidence: readonly string[] }[] = [
+  {
+    request: ['coffee', 'cafe', 'espresso', 'latte', 'barista', 'roastery', 'beans'],
+    evidence: ['coffee', 'cafe', 'espresso', 'latte', 'barista', 'roast', 'roastery', 'beans', 'cup', 'cappuccino'],
+  },
+  {
+    request: ['restaurant', 'dining', 'chef', 'food', 'dish', 'meal'],
+    evidence: ['restaurant', 'dining', 'chef', 'food', 'dish', 'meal', 'kitchen', 'plate'],
+  },
+  {
+    request: ['fashion', 'clothing', 'apparel', 'dress', 'shoe', 'jewelry'],
+    evidence: ['fashion', 'clothing', 'apparel', 'dress', 'shoe', 'jewelry', 'model', 'garment'],
+  },
+  {
+    request: ['fitness', 'gym', 'workout', 'training', 'yoga'],
+    evidence: ['fitness', 'gym', 'workout', 'training', 'exercise', 'yoga', 'athlete'],
+  },
+  {
+    request: ['barber', 'haircut', 'beard', 'salon'],
+    evidence: ['barber', 'haircut', 'beard', 'salon', 'hairdresser', 'clippers'],
+  },
+];
+
+const WEAK_SEARCH_WORDS = new Set([
+  'wide', 'close', 'closeup', 'warm', 'cool', 'bright', 'dark', 'sunlit', 'modern',
+  'premium', 'professional', 'natural', 'interior', 'exterior', 'scene', 'view',
+  'business', 'website', 'showing', 'beside', 'inside', 'outside', 'people',
+]);
+
+function words(value: string): Set<string> {
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length > 2),
+  );
+}
+
+/** Exported for a deterministic regression test; no visual model is guessed here. */
+export function stockResultMatches(request: string, tags: string): boolean {
+  const requested = words(searchTerms(request));
+  const tagged = words(tags);
+  if (requested.size === 0 || tagged.size === 0) return false;
+
+  const families = SUBJECT_FAMILIES.filter((family) =>
+    family.request.some((term) => requested.has(term)),
+  );
+  if (families.length > 0) {
+    return families.every((family) => family.evidence.some((term) => tagged.has(term)));
+  }
+
+  const meaningful = [...requested].filter((term) => !WEAK_SEARCH_WORDS.has(term));
+  return meaningful.some((term) => tagged.has(term));
+}
+
+/**
  * Find a photograph, or return nothing.
  *
  * Returning `undefined` rather than throwing is the point: a miss is ordinary
@@ -153,7 +215,9 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
       url.searchParams.set('safesearch', 'true');
       url.searchParams.set('order', 'popular');
       /* Three is the smallest page the API accepts. */
-      url.searchParams.set('per_page', '3');
+      // Inspect several candidates: the most popular result is not necessarily
+      // the subject the page asked for.
+      url.searchParams.set('per_page', '20');
 
       const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!response.ok) {
@@ -162,10 +226,13 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
       }
 
       const payload = (await response.json()) as {
-        hits?: { largeImageURL?: string; user?: string }[];
+        hits?: { largeImageURL?: string; user?: string; tags?: string }[];
       };
 
-      const hit = payload.hits?.find((candidate) => candidate.largeImageURL);
+      const hit = payload.hits?.find(
+        (candidate) =>
+          candidate.largeImageURL && stockResultMatches(input.query, candidate.tags ?? ''),
+      );
       if (!hit?.largeImageURL) {
         remember(cacheKey, {});
         return undefined;

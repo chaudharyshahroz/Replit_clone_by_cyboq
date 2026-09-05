@@ -34,6 +34,10 @@ describe('V4 category regression matrix', () => {
       expect(engine.selection.method).toBe('curated-rules');
       expect(compileDesignStyles(engine)).not.toContain('10vw');
       expect(compileDesignStyles(engine)).toContain('--color-on-primary:');
+      expect(compileDesignStyles(engine)).toContain('--color-on-inverse-muted:');
+      expect(compileDesignStyles(engine)).toContain('.rk-surface-inverse');
+      expect(compileDesignStyles(engine)).toContain('.rk-site-header');
+      expect(compileDesignStyles(engine)).toContain('.rk-hero:not(.rk-container)');
       expect(compileDesignStyles(engine)).toContain('minmax(min(100%, 240px), 1fr)');
     },
   );

@@ -23,6 +23,8 @@ export interface ArtworkRequest {
   readonly description: string;
   /** Wider than tall for a hero, square for a portrait or a tile. */
   readonly shape: 'landscape' | 'square' | 'portrait';
+  /** Critical media must exist before the first useful preview is shown. */
+  readonly priority?: 'critical' | 'optional';
 }
 
 /** The prefix the model is told to use. Everything under it is Reklu's to fill. */
@@ -62,7 +64,11 @@ export function plannedArtwork(files: readonly GeneratedFile[]): readonly Artwor
       const path = `public${reference}`;
       if (found.has(path)) continue;
 
-      found.set(path, { path, description, shape: shapeFor(element, reference) });
+      const declaredRole = /role=(?:"([^"]*)"|\{?['"]([^'"]*)['"]\}?)/.exec(element);
+      const role = declaredRole?.[1] ?? declaredRole?.[2];
+      const priority =
+        role === 'critical' || /hero|banner|cover/i.test(reference) ? 'critical' : 'optional';
+      found.set(path, { path, description, shape: shapeFor(element, reference), priority });
     }
   }
 
@@ -134,9 +140,21 @@ export async function drawArtwork(
    */
   draw: (request: ArtworkRequest, prompt: string) => Promise<GeneratedFile['binary']>,
   onProgress?: (message: string) => Promise<void> | void,
+  options?: {
+    readonly priority?: 'critical' | 'optional' | 'all';
+    readonly maxAssets?: number;
+  },
 ): Promise<ArtworkResult> {
   const existing = new Set(files.filter((file) => file.binary).map((file) => file.path));
-  const requests = plannedArtwork(files).filter((request) => !existing.has(request.path));
+  const requests = plannedArtwork(files)
+    .filter((request) => !existing.has(request.path))
+    .filter(
+      (request) =>
+        !options?.priority ||
+        options.priority === 'all' ||
+        request.priority === options.priority,
+    )
+    .slice(0, options?.maxAssets ?? Number.POSITIVE_INFINITY);
   if (requests.length === 0) return { files, generated: 0, failures: [] };
 
   const drawn = new Map<string, NonNullable<GeneratedFile['binary']>>();
