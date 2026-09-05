@@ -709,6 +709,8 @@ export interface FeatureAvailability {
   readonly anyModelProvider: boolean;
   readonly embeddings: boolean;
   readonly webSearch: boolean;
+  /** Real photographs can be sourced from Pixabay before generation is used. */
+  readonly stockImages: boolean;
   readonly imageGeneration: boolean;
   readonly videoGeneration: boolean;
   readonly googleSignIn: boolean;
@@ -748,6 +750,7 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
           ? openai
           : google,
     webSearch: Boolean(env.SEARCH_PROVIDER),
+    stockImages: Boolean(env.PIXABAY_API_KEY),
     imageGeneration:
       env.IMAGE_PROVIDER === 'pollinations' ? true : env.IMAGE_PROVIDER === 'openai' ? openai : google,
     videoGeneration: Boolean(env.VIDEO_PROVIDER),

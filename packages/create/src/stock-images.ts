@@ -147,6 +147,8 @@ const WEAK_SEARCH_WORDS = new Set([
   'wide', 'close', 'closeup', 'warm', 'cool', 'bright', 'dark', 'sunlit', 'modern',
   'premium', 'professional', 'natural', 'interior', 'exterior', 'scene', 'view',
   'business', 'website', 'showing', 'beside', 'inside', 'outside', 'people',
+  'hero', 'portrait', 'editorial', 'commercial', 'minimal', 'luxury', 'cozy',
+  'without', 'exclude', 'excluding', 'any',
 ]);
 
 function words(value: string): Set<string> {
@@ -156,6 +158,49 @@ function words(value: string): Set<string> {
       .replace(/[^a-z0-9\s-]/g, ' ')
       .split(/\s+/)
       .filter((word) => word.length > 2),
+  );
+}
+
+function excludedWords(value: string): Set<string> {
+  const excluded = new Set<string>();
+  const normalized = value.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ');
+  for (const match of normalized.matchAll(
+    /\b(?:no|without|exclude|excluding)\s+(?:any\s+)?([a-z0-9-]+)(?:\s+(?:or|and)\s+([a-z0-9-]+))?/g,
+  )) {
+    if (match[1]) excluded.add(match[1]);
+    if (match[2]) excluded.add(match[2]);
+  }
+  return excluded;
+}
+
+/**
+ * Ordered Pixabay queries, from exact subject to safe category fallback.
+ *
+ * A generated brief commonly says "warm editorial hero photograph of a cafe,
+ * without cars". Sending that sentence to stock search overweights art-direction
+ * words and, worse, searches for the forbidden car. These queries keep the
+ * actual subject, remove exclusions, and allow one broader retry before image
+ * generation is used.
+ */
+export function stockSearchQueries(description: string): readonly string[] {
+  const requested = words(searchTerms(description));
+  const excluded = excludedWords(description);
+  const meaningful = [...requested].filter(
+    (term) => !WEAK_SEARCH_WORDS.has(term) && !excluded.has(term),
+  );
+  if (meaningful.length === 0) return [];
+
+  const family = SUBJECT_FAMILIES.find((candidate) =>
+    candidate.request.some((term) => requested.has(term)),
+  );
+  const subjectTerms = family?.request.filter((term) => requested.has(term)) ?? [];
+  const exact = [...new Set([...subjectTerms, ...meaningful])].slice(0, 6).join(' ');
+  const broad = family
+    ? family.request.slice(0, 3).join(' ')
+    : meaningful.slice(0, 4).join(' ');
+
+  return [...new Set([exact, broad].filter(Boolean))].map((query) =>
+    query.slice(0, 100).trim(),
   );
 }
 
@@ -187,25 +232,26 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
   const env = loadServerEnv();
   if (!env.PIXABAY_API_KEY) return undefined;
 
-  const query = searchTerms(input.query);
-  if (!query) return undefined;
-
-  const cacheKey = `${input.shape}:${query}`;
-  const remembered = cached(cacheKey);
-
-  /*
-   * A remembered miss counts as much as a remembered hit. Asking again for a
-   * subject Pixabay does not have costs a request and returns the same nothing.
-   */
-  if (remembered && !remembered.url) return undefined;
+  const queries = stockSearchQueries(input.query);
+  if (queries.length === 0) return undefined;
 
   try {
-    let chosen = remembered?.url;
-    let credit = remembered?.credit;
+    let chosen: string | undefined;
+    let credit: string | undefined;
 
     /* The search is what gets cached; the download happens either way, because
        every build needs its own stored copy of the bytes. */
-    if (!chosen) {
+    for (const query of queries) {
+      const cacheKey = `${input.shape}:${query}`;
+      const remembered = cached(cacheKey);
+      if (remembered?.url) {
+        chosen = remembered.url;
+        credit = remembered.credit;
+        break;
+      }
+      /* A remembered miss is skipped, but does not suppress a broader retry. */
+      if (remembered) continue;
+
       const url = new URL('https://pixabay.com/api/');
       url.searchParams.set('key', env.PIXABAY_API_KEY);
       url.searchParams.set('q', query);
@@ -222,7 +268,10 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
       const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!response.ok) {
         logger.debug('Pixabay refused a search', { status: response.status });
-        return undefined;
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          return undefined;
+        }
+        continue;
       }
 
       const payload = (await response.json()) as {
@@ -235,13 +284,16 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
       );
       if (!hit?.largeImageURL) {
         remember(cacheKey, {});
-        return undefined;
+        continue;
       }
 
       chosen = hit.largeImageURL;
       credit = hit.user;
       remember(cacheKey, { url: chosen, ...(credit ? { credit } : {}) });
+      break;
     }
+
+    if (!chosen) return undefined;
 
     const image = await fetch(chosen, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!image.ok) return undefined;
@@ -284,7 +336,7 @@ export async function findStockImage(input: StockImageInput): Promise<StockImage
      * search that timed out is not a reason to fail a build.
      */
     logger.debug('Could not find a stock image', {
-      query,
+      queries,
       error: error instanceof Error ? error.message : String(error),
     });
     return undefined;

@@ -8,7 +8,7 @@
  * exists for silently never happens.
  */
 import { describe, expect, it } from 'vitest';
-import { searchTerms, stockResultMatches } from '../stock-images';
+import { searchTerms, stockResultMatches, stockSearchQueries } from '../stock-images';
 
 describe('building a search from a description', () => {
   it('keeps the nouns and drops the joining words', () => {
@@ -39,6 +39,27 @@ describe('building a search from a description', () => {
     /* The caller treats an empty query as a miss, rather than searching for "". */
     expect(searchTerms('a of the in on')).toBe('');
     expect(searchTerms('')).toBe('');
+  });
+});
+
+describe('building resilient Pixabay queries', () => {
+  it('keeps the business subject and removes visual-direction filler', () => {
+    expect(
+      stockSearchQueries('warm editorial hero photograph of a neighborhood coffee cafe'),
+    ).toEqual(['coffee cafe neighborhood', 'coffee cafe espresso']);
+  });
+
+  it('never searches for subjects the brief explicitly excludes', () => {
+    const queries = stockSearchQueries('cafe exterior without cars or animals');
+    expect(queries.join(' ')).not.toMatch(/cars|animals/);
+    expect(queries[0]).toContain('cafe');
+  });
+
+  it('provides a known-industry fallback without losing the exact query', () => {
+    expect(stockSearchQueries('barista pouring latte at a coffee bar')).toEqual([
+      'coffee latte barista pouring bar',
+      'coffee cafe espresso',
+    ]);
   });
 });
 

@@ -46,6 +46,7 @@ export async function GET(): Promise<Response> {
       modelProvider: available.anyModelProvider,
       embeddings: available.embeddings,
       webSearch: available.webSearch,
+      stockImages: available.stockImages,
       durableStorage: available.durableStorage,
       isolatedSandbox: available.isolatedSandbox,
       build: available.build,
