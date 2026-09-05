@@ -13,6 +13,8 @@ import {
   createDesignContract,
   fallbackBrief,
   evaluatePremiumGate,
+  createDesignEngineV4,
+  DESIGN_ENGINE_V4_REVISION,
   DesignEngineV4Schema,
   runDesignPass,
   mergeTree,
@@ -42,6 +44,13 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   const engine = DesignEngineV4Schema.safeParse(analysis.designEngineV4);
   if (!engine.success) return { status: 'legacy' };
   const brief = (project.brief as BuildBrief | null) ?? fallbackBrief('Build a website');
+  const designEngine =
+    engine.data.revision >= DESIGN_ENGINE_V4_REVISION
+      ? engine.data
+      : createDesignEngineV4(
+          { ...engine.data.product, identitySeed: brief.product },
+          buildProjectId,
+        );
   await context.throwIfCancelled();
   await context.reportStage('creating_assets');
   const tree = await loadTree(buildProjectId, workspaceId);
@@ -61,7 +70,11 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         shape: request.shape,
       });
       if (stock)
-        return { storageKey: stock.storageKey, contentType: stock.contentType, bytes: stock.bytes };
+        return {
+          storageKey: stock.storageKey,
+          contentType: stock.contentType,
+          bytes: stock.bytes,
+        };
       const image = await generateImage({
         workspaceId,
         prompt,
@@ -73,10 +86,14 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
               : '1024x1024',
         quality: 'medium',
       });
-      return { storageKey: image.storageKey, contentType: image.contentType, bytes: image.bytes };
+      return {
+        storageKey: image.storageKey,
+        contentType: image.contentType,
+        bytes: image.bytes,
+      };
     },
   );
-  const workingFiles = normalizeGeneratedTree(compileDesignTree(assets.files, engine.data));
+  const workingFiles = normalizeGeneratedTree(compileDesignTree(assets.files, designEngine));
   const compilerChanged = JSON.stringify(workingFiles) !== JSON.stringify(assets.files);
   await context.throwIfCancelled();
   if (!(await current())) return { status: 'superseded' };
@@ -132,7 +149,10 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       reviewModel && screenshot
         ? await reviewRenderedDesign({
             brief,
-            contract: { ...createDesignContract(brief), concept: engine.data.dna.visualDirection },
+            contract: {
+              ...createDesignContract(brief),
+              concept: designEngine.dna.visualDirection,
+            },
             screenshot,
             model: reviewModel,
           })
@@ -141,7 +161,10 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       reviewUnavailable =
         'No permitted vision model or supported screenshot provider is available.';
   } catch (error) {
-    logger.warn('Design review unavailable; quality remains pending', { buildProjectId, error });
+    logger.warn('Design review unavailable; quality remains pending', {
+      buildProjectId,
+      error,
+    });
     reviewUnavailable = 'The screenshot or visual review service failed. No approval was issued.';
   }
 
@@ -183,19 +206,17 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         files: workingFiles,
         model: repairModel,
         contract: createDesignContract(brief),
-        designEngineV4: engine.data,
+        designEngineV4: designEngine,
         feedback,
       });
       if (polished.changed > 0) {
         const beforeReview = review;
         const revised = normalizeGeneratedTree(
-          compileDesignTree(mergeTree(workingFiles, polished.files), engine.data),
+          compileDesignTree(mergeTree(workingFiles, polished.files), designEngine),
         );
         const revisedSourceIssues = auditDesignQuality(brief, revised);
         const previousBlockingCodes = new Set(
-          sourceIssues
-            .filter((issue) => issue.severity === 'blocking')
-            .map((issue) => issue.code),
+          sourceIssues.filter((issue) => issue.severity === 'blocking').map((issue) => issue.code),
         );
         const revisedBlockingIssues = revisedSourceIssues.filter(
           (issue) => issue.severity === 'blocking',
@@ -222,7 +243,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
                 brief,
                 contract: {
                   ...createDesignContract(brief),
-                  concept: engine.data.dna.visualDirection,
+                  concept: designEngine.dna.visualDirection,
                 },
                 screenshot: revisedScreenshot,
                 model: reviewModel,
@@ -255,7 +276,10 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         }
       }
     } catch (error) {
-      logger.warn('Targeted rendered-design repair was unavailable', { buildProjectId, error });
+      logger.warn('Targeted rendered-design repair was unavailable', {
+        buildProjectId,
+        error,
+      });
       reviewUnavailable = 'The bounded targeted-fix pass failed; the original review was retained.';
     }
   }
@@ -307,7 +331,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   await db
     .update(buildProjects)
     .set({
-      codebaseAnalysis: sql`coalesce(${buildProjects.codebaseAnalysis}, '{}'::jsonb) || ${JSON.stringify({ designQuality: quality, designJobVersion: versionId })}::jsonb`,
+      codebaseAnalysis: sql`coalesce(${buildProjects.codebaseAnalysis}, '{}'::jsonb) || ${JSON.stringify({ designEngineV4: designEngine, designQuality: quality, designJobVersion: versionId })}::jsonb`,
     })
     .where(predicate());
   return quality;

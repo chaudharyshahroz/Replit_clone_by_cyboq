@@ -5,7 +5,10 @@ export interface ProductInput {
   readonly summary: string;
   readonly target: string;
   readonly userRoles?: readonly string[];
-  readonly pages?: readonly { readonly name: string; readonly purpose: string }[];
+  readonly pages?: readonly {
+    readonly name: string;
+    readonly purpose: string;
+  }[];
 }
 
 const has = (text: string, pattern: RegExp): boolean => pattern.test(text);
@@ -24,19 +27,26 @@ export function understandProduct(input: ProductInput): ProductDesignContext {
             ? 'fashion'
             : has(text, /shop|store|commerce|product catalog|checkout/)
               ? 'commerce'
-              : has(text, /agency|creative studio|design studio/)
-                ? 'agency'
-                : has(text, /health|clinic|medical|dental|patient/)
-                  ? 'healthcare'
-                  : input.target === 'dashboard'
-                    ? 'dashboard'
-                    : input.target === 'web_app' || input.target === 'mobile_app'
-                      ? 'application'
-                      : has(text, /portfolio|studio|creator|photographer/)
-                        ? 'portfolio'
-                        : has(text, /saas|software|platform|ai /)
-                          ? 'saas'
-                          : 'other';
+              : has(text, /magazine|newsletter|publication|editorial|podcast|newsroom|blog/)
+                ? 'content'
+                : has(
+                      text,
+                      /salon|spa|barber|plumb(?:er|ing)|electrician|cleaning service|repair service|law firm|accounting firm/,
+                    )
+                  ? 'local_service'
+                  : has(text, /agency|creative studio|design studio/)
+                    ? 'agency'
+                    : has(text, /health|clinic|medical|dental|patient/)
+                      ? 'healthcare'
+                      : input.target === 'dashboard'
+                        ? 'dashboard'
+                        : input.target === 'web_app' || input.target === 'mobile_app'
+                          ? 'application'
+                          : has(text, /portfolio|studio|creator|photographer/)
+                            ? 'portfolio'
+                            : has(text, /saas|software|platform|ai /)
+                              ? 'saas'
+                              : 'other';
 
   const profiles: Record<
     string,
@@ -171,5 +181,6 @@ export function understandProduct(input: ProductInput): ProductDesignContext {
     userReferences: [],
     competitorReferences: [],
     existingBrand: false,
+    identitySeed: input.product,
   };
 }

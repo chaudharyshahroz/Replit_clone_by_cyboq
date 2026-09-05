@@ -66,6 +66,7 @@ import {
   createDesignDNA,
   createDesignEngineV3,
   createDesignEngineV4,
+  DESIGN_ENGINE_V4_REVISION,
   DesignEngineV4Schema,
   compileDesignTree,
   createInformationArchitecture,
@@ -149,7 +150,10 @@ function scheduleDesignWork(buildId: string, workspaceId: string, userId: string
         throw error;
       }
     } catch (error) {
-      logger.warn('Could not queue post-preview design work', { buildId, error });
+      logger.warn('Could not queue post-preview design work', {
+        buildId,
+        error,
+      });
     }
   });
 }
@@ -267,7 +271,10 @@ export interface BuildRequest {
   /** An element circled with the pencil. */
   readonly annotation?: { readonly elementId: string };
   /** Text retyped in place, as exact replacements. */
-  readonly textChanges?: readonly { readonly elementId: string; readonly text: string }[];
+  readonly textChanges?: readonly {
+    readonly elementId: string;
+    readonly text: string;
+  }[];
   /** Files attached to the message, already uploaded. */
   readonly fileIds?: readonly string[];
   /** A model chosen in the composer; absent means Reklu picks. */
@@ -389,7 +396,10 @@ async function recordStep(params: {
       path: params.path ?? null,
     });
   } catch (error) {
-    logger.debug('Could not record a build step', { buildId: params.buildId, error });
+    logger.debug('Could not record a build step', {
+      buildId: params.buildId,
+      error,
+    });
   }
 }
 
@@ -425,7 +435,10 @@ export async function buildProgressAction(buildId: string): Promise<BuildProgres
   const { workspace } = await getAppContext();
 
   const [project] = await db
-    .select({ status: buildProjects.status, statusDetail: buildProjects.statusDetail })
+    .select({
+      status: buildProjects.status,
+      statusDetail: buildProjects.statusDetail,
+    })
     .from(buildProjects)
     .where(and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)))
     .limit(1);
@@ -532,7 +545,9 @@ async function composePrompt(
   const sections: string[] = [];
   const images: { image: string; mimeType: string }[] = [];
 
-  const analysis = (project.codebaseAnalysis ?? {}) as { sourceMap?: SourceMap };
+  const analysis = (project.codebaseAnalysis ?? {}) as {
+    sourceMap?: SourceMap;
+  };
   const locate = (elementId: string) =>
     analysis.sourceMap ? resolveElement(analysis.sourceMap, elementId) : undefined;
 
@@ -663,10 +678,18 @@ async function drawOne(
    * that already exists and is free. A miss costs one request and falls
    * through to the generator, which is the one that never misses.
    */
-  const stock = await findStockImage({ workspaceId, query: request.description, shape });
+  const stock = await findStockImage({
+    workspaceId,
+    query: request.description,
+    shape,
+  });
   if (stock) {
     await report(`Found a photograph on Pixabay by ${stock.credit}`);
-    return { storageKey: stock.storageKey, contentType: stock.contentType, bytes: stock.bytes };
+    return {
+      storageKey: stock.storageKey,
+      contentType: stock.contentType,
+      bytes: stock.bytes,
+    };
   }
 
   await report('No photograph matched; drawing one');
@@ -773,12 +796,19 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     userRoles: brief.userRoles,
     pages: brief.pages,
   });
-  // New projects use V4. Existing designs are not silently restyled on a small edit.
-  const designEngineV4 = storedEngineV4.success
-    ? storedEngineV4.data
-    : existing.length === 0 && isVisualTarget(brief.target)
-      ? createDesignEngineV4(productContext)
-      : undefined;
+  // Compiler revisions are migrations, not optional styling. Refresh V4 projects so
+  // repaired layout/media contracts are not stranded behind an older stored engine.
+  // Legacy pre-V4 projects still are not silently restyled on a small edit.
+  const shouldCreateV4 =
+    isVisualTarget(brief.target) && (existing.length === 0 || storedEngineV4.success);
+  const designEngineV4 = shouldCreateV4
+    ? storedEngineV4.success && storedEngineV4.data.revision >= DESIGN_ENGINE_V4_REVISION
+      ? storedEngineV4.data
+      : createDesignEngineV4(productContext, buildId)
+    : undefined;
+  const designEngineNeedsSave =
+    Boolean(designEngineV4) &&
+    (!storedEngineV4.success || storedEngineV4.data.revision < DESIGN_ENGINE_V4_REVISION);
   const designDNA: DesignDNA =
     designEngineV4?.dna ?? (storedDNA.success ? storedDNA.data : createDesignDNA(productContext));
   const designEngineV3: DesignEngineV3 = storedEngineV3.success
@@ -787,7 +817,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   const informationArchitecture = createInformationArchitecture(productContext);
   const buildPath = chooseBuildPath(brief);
   await performance.mark('product_understood', productContext.productType);
-  await performance.mark('design_ready', designEngineV4?.selection.profile ?? designEngineV3.selected.conceptName);
+  await performance.mark(
+    'design_ready',
+    designEngineV4?.selection.profile ?? designEngineV3.selected.conceptName,
+  );
 
   await recordStep({
     buildId,
@@ -796,7 +829,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     message: `${buildPath.path === 'fast' ? 'Fast Build' : 'Agentic Build'} path: ${buildPath.reason}`,
   });
 
-  if (!storedDNA.success || !storedEngineV3.success) {
+  if (!storedDNA.success || !storedEngineV3.success || designEngineNeedsSave) {
     await db
       .update(buildProjects)
       .set({
@@ -891,7 +924,11 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           });
         }
 
-        plan = await planFromResearch({ brief, report: outcome.report, model: strategyModel });
+        plan = await planFromResearch({
+          brief,
+          report: outcome.report,
+          model: strategyModel,
+        });
 
         if (plan) {
           await recordStep({
@@ -1087,7 +1124,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   if (firstGeneration && buildPath.path === 'agentic' && needsDesignPass(brief.target)) {
     await db
       .update(buildProjects)
-      .set({ status: 'generating', statusDetail: STAGE_LABELS.designing ?? 'Designing' })
+      .set({
+        status: 'generating',
+        statusDetail: STAGE_LABELS.designing ?? 'Designing',
+      })
       .where(eq(buildProjects.id, buildId));
 
     try {
@@ -1193,7 +1233,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       directionId: designEngineV4?.selection.profile ?? designEngineV3.selected.id,
       conceptName: designEngineV4?.dna.visualDirection ?? designEngineV3.selected.conceptName,
       displayFont: designDNA.typography.display,
-      paletteStrategy: designEngineV4 ? designEngineV4.dna.colors.primary : designEngineV3.selected.paletteDirection,
+      paletteStrategy: designEngineV4
+        ? designEngineV4.dna.colors.primary
+        : designEngineV3.selected.paletteDirection,
       genericityScore: genericity.score,
       scoreSource: 'source-heuristics-not-rendered-benchmark',
       genericityFlags: genericity.genericityIssues.map((issue) => issue.code),
@@ -1276,7 +1318,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       report: async (stage) => {
         await db
           .update(buildProjects)
-          .set({ status: 'generating', statusDetail: STAGE_LABELS[stage] ?? 'Repairing runtime' })
+          .set({
+            status: 'generating',
+            statusDetail: STAGE_LABELS[stage] ?? 'Repairing runtime',
+          })
           .where(eq(buildProjects.id, buildId));
       },
     });
@@ -1327,7 +1372,10 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       report: async (stage) => {
         await db
           .update(buildProjects)
-          .set({ status: 'generating', statusDetail: STAGE_LABELS[stage] ?? null })
+          .set({
+            status: 'generating',
+            statusDetail: STAGE_LABELS[stage] ?? null,
+          })
           .where(eq(buildProjects.id, buildId));
       },
       onFile: async (path) => {
@@ -1352,22 +1400,31 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * still ships: the application is written and working, and what is missing is
    * a photograph.
    */
-  const illustrated =
-    request.repairPass
-      ? { files: resolved, generated: 0, failures: [] }
-      : await drawArtwork(
-          resolved,
-          `${brief.product} — ${brief.summary}`,
-          (request, imagePrompt) =>
-            drawOne(request, imagePrompt, workspace.workspaceId, (message) =>
-              recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
-            ),
-          (message) =>
-            recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
-          buildPath.path === 'fast'
-            ? { priority: 'critical', maxAssets: 6 }
-            : { priority: 'all', maxAssets: 8 },
-        );
+  const illustrated = request.repairPass
+    ? { files: resolved, generated: 0, failures: [] }
+    : await drawArtwork(
+        resolved,
+        `${brief.product} — ${brief.summary}`,
+        (request, imagePrompt) =>
+          drawOne(request, imagePrompt, workspace.workspaceId, (message) =>
+            recordStep({
+              buildId,
+              workspaceId: workspace.workspaceId,
+              kind: 'stage',
+              message,
+            }),
+          ),
+        (message) =>
+          recordStep({
+            buildId,
+            workspaceId: workspace.workspaceId,
+            kind: 'stage',
+            message,
+          }),
+        buildPath.path === 'fast'
+          ? { priority: 'critical', maxAssets: 6 }
+          : { priority: 'all', maxAssets: 8 },
+      );
   await performance.mark(
     'assets_completed',
     buildPath.path === 'fast'
@@ -1455,7 +1512,11 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       .set({ status: 'failed', statusDetail: missingEntry })
       .where(eq(buildProjects.id, buildId));
     revalidatePath(`/build/${buildId}`);
-    return { ok: false, message: missingEntry, fileCount: instrumented.files.length };
+    return {
+      ok: false,
+      message: missingEntry,
+      fileCount: instrumented.files.length,
+    };
   }
 
   /*
@@ -1624,11 +1685,17 @@ async function visuallyReviewPreview(
       repairPass: true,
     });
 
-    const revised = await startPreview({ buildProjectId: buildId, workspaceId });
+    const revised = await startPreview({
+      buildProjectId: buildId,
+      workspaceId,
+    });
     updatedPreview = revised;
     let visuallyRegressed = false;
     if (revised.installed && revised.ready) {
-      const after = await captureRenderedPreview({ buildProjectId: buildId, workspaceId });
+      const after = await captureRenderedPreview({
+        buildProjectId: buildId,
+        workspaceId,
+      });
       if (after) {
         const secondReview = await reviewRenderedDesign({
           brief,
@@ -1649,7 +1716,10 @@ async function visuallyReviewPreview(
           userId: user.id,
           version: previous.version,
         });
-        updatedPreview = await startPreview({ buildProjectId: buildId, workspaceId });
+        updatedPreview = await startPreview({
+          buildProjectId: buildId,
+          workspaceId,
+        });
       }
       await recordStep({
         buildId,
@@ -1737,7 +1807,9 @@ export async function startPreviewAction(
         );
         await db
           .update(buildProjects)
-          .set({ status: stage === 'installing_dependencies' ? 'installing' : 'ready' })
+          .set({
+            status: stage === 'installing_dependencies' ? 'installing' : 'ready',
+          })
           .where(eq(buildProjects.id, buildId));
       },
     });
@@ -1784,7 +1856,11 @@ export async function startPreviewAction(
           repairPass: true,
         });
       },
-      restart: () => startPreview({ buildProjectId: buildId, workspaceId: workspace.workspaceId }),
+      restart: () =>
+        startPreview({
+          buildProjectId: buildId,
+          workspaceId: workspace.workspaceId,
+        }),
     });
 
     if (!result.installed) {
@@ -1797,7 +1873,11 @@ export async function startPreviewAction(
         .where(
           and(eq(buildProjects.id, buildId), eq(buildProjects.workspaceId, workspace.workspaceId)),
         );
-      return { url: null, output: result.output, error: describeInstallFailure(result.output) };
+      return {
+        url: null,
+        output: result.output,
+        error: describeInstallFailure(result.output),
+      };
     }
 
     if (!result.ready) {
@@ -2004,7 +2084,11 @@ function databaseFault(error: unknown): { code?: string; message?: string } | un
    */
   let current: unknown = error;
   for (let depth = 0; current && depth < 5; depth++) {
-    const candidate = current as { code?: unknown; message?: unknown; cause?: unknown };
+    const candidate = current as {
+      code?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
     if (typeof candidate.code === 'string' && /^[0-9A-Z]{5}$/.test(candidate.code)) {
       return {
         code: candidate.code,
@@ -2103,7 +2187,12 @@ export async function publishAction(buildId: string): Promise<PublishState> {
       buildProjectId: buildId,
       workspaceId: workspace.workspaceId,
       report: (message) =>
-        recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+        recordStep({
+          buildId,
+          workspaceId: workspace.workspaceId,
+          kind: 'stage',
+          message,
+        }),
     });
 
     revalidatePath(`/build/${buildId}`);
@@ -2181,7 +2270,12 @@ export async function checkDomainAction(buildId: string): Promise<PublishState> 
 
   try {
     await activateCustomDomain(buildId, workspace.workspaceId, (message) =>
-      recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+      recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message,
+      }),
     );
     revalidatePath(`/build/${buildId}`);
     return publicationStateAction(buildId);
@@ -2195,7 +2289,12 @@ export async function removeDomainAction(buildId: string): Promise<PublishState>
 
   try {
     await removeCustomDomain(buildId, workspace.workspaceId, (message) =>
-      recordStep({ buildId, workspaceId: workspace.workspaceId, kind: 'stage', message }),
+      recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'stage',
+        message,
+      }),
     );
     revalidatePath(`/build/${buildId}`);
     return publicationStateAction(buildId);
@@ -2216,7 +2315,11 @@ export async function fixPublishFailureAction(buildId: string): Promise<Generate
 
   const record = await currentPublication(buildId, workspace.workspaceId);
   if (!record?.buildLog) {
-    return { ok: false, message: 'There is no build failure to fix.', fileCount: 0 };
+    return {
+      ok: false,
+      message: 'There is no build failure to fix.',
+      fileCount: 0,
+    };
   }
 
   return generateBuildAction(buildId, {

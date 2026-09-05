@@ -38,7 +38,12 @@ describe('design contract', () => {
         competitorPatterns: [],
         differentiators: [],
         pages: [{ path: '/', name: 'Home', purpose: 'Convert', sections: ['Hero'] }],
-        theme: { mood: 'warm', palette: 'earthy', typography: 'editorial', imagery: 'craft' },
+        theme: {
+          mood: 'warm',
+          palette: 'earthy',
+          typography: 'editorial',
+          imagery: 'craft',
+        },
         conversion: {
           primaryAction: 'Book a table',
           supportingActions: ['View menu'],
@@ -89,12 +94,19 @@ describe('design quality critic', () => {
       page(
         '<main className="flex min-h-screen"><h1>Barboa</h1><img src="/barber.jpg"/><a href="/book">Book</a></main>',
       ),
-      { path: 'src/app/globals.css', content: 'body { margin: 0; }', language: 'css' },
+      {
+        path: 'src/app/globals.css',
+        content: 'body { margin: 0; }',
+        language: 'css',
+      },
     ]);
 
     expect(issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'tailwind-not-loaded', severity: 'blocking' }),
+        expect.objectContaining({
+          code: 'tailwind-not-loaded',
+          severity: 'blocking',
+        }),
       ]),
     );
   });
@@ -117,16 +129,21 @@ describe('design quality critic', () => {
       ),
       {
         path: 'src/app/globals.css',
-        content:
-          '.hero-copy { max-width: 180px; } .rk-hero-title { overflow-wrap: anywhere; }',
+        content: '.hero-copy { max-width: 180px; } .rk-hero-title { overflow-wrap: anywhere; }',
         language: 'css',
       },
     ]);
 
     expect(issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'destructive-heading-wrap', severity: 'blocking' }),
-        expect.objectContaining({ code: 'collapsed-hero-column', severity: 'blocking' }),
+        expect.objectContaining({
+          code: 'destructive-heading-wrap',
+          severity: 'blocking',
+        }),
+        expect.objectContaining({
+          code: 'collapsed-hero-column',
+          severity: 'blocking',
+        }),
       ]),
     );
   });
@@ -141,7 +158,38 @@ describe('design quality critic', () => {
 
     expect(issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'missing-v4-hero-contract', severity: 'blocking' }),
+        expect.objectContaining({
+          code: 'missing-v4-hero-contract',
+          severity: 'blocking',
+        }),
+      ]),
+    );
+  });
+
+  it('blocks raw headers, broken generated media paths and fake sold-out catalogues in V4', () => {
+    const issues = auditDesignQuality(website, [
+      v4(),
+      page(`
+        <header><a href="/">Coffino</a><nav>Shop</nav></header>
+        <main><section className="rk-hero"><div><h1 className="rk-hero-title">Fresh coffee</h1><a href="/shop">Shop</a></div><img src="/generated/hero.png" alt="Coffee hero" /></section>
+        <p>Sold out</p><p>Sold out</p><p>Sold out</p></main>
+      `),
+    ]);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'missing-v4-header-contract',
+          severity: 'blocking',
+        }),
+        expect.objectContaining({
+          code: 'unmanaged-generated-media',
+          severity: 'blocking',
+        }),
+        expect.objectContaining({
+          code: 'implausible-sold-out-catalogue',
+          severity: 'blocking',
+        }),
       ]),
     );
   });
@@ -165,9 +213,18 @@ describe('design quality critic', () => {
     const issues = auditDesignQuality(website, files);
     expect(issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'emoji-ui-icon', severity: 'blocking' }),
-        expect.objectContaining({ code: 'generic-marketing-copy', severity: 'blocking' }),
-        expect.objectContaining({ code: 'fabricated-vanity-counters', severity: 'blocking' }),
+        expect.objectContaining({
+          code: 'emoji-ui-icon',
+          severity: 'blocking',
+        }),
+        expect.objectContaining({
+          code: 'generic-marketing-copy',
+          severity: 'blocking',
+        }),
+        expect.objectContaining({
+          code: 'fabricated-vanity-counters',
+          severity: 'blocking',
+        }),
       ]),
     );
     expect(evaluateGenericity(files)).toMatchObject({ rejected: true });
@@ -197,7 +254,10 @@ describe('design quality critic', () => {
       }
     `);
     expect(hydrationSafetyIssues([provider])).toEqual([
-      expect.objectContaining({ code: 'non-deterministic-first-render', severity: 'blocking' }),
+      expect.objectContaining({
+        code: 'non-deterministic-first-render',
+        severity: 'blocking',
+      }),
     ]);
   });
 

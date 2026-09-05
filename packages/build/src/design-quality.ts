@@ -94,7 +94,9 @@ function hookArguments(content: string, hook: string): readonly string[] {
 }
 
 /** Browser-derived initial state is the dominant generated Next hydration failure. */
-export function hydrationSafetyIssues(files: readonly GeneratedFile[]): readonly DesignQualityIssue[] {
+export function hydrationSafetyIssues(
+  files: readonly GeneratedFile[],
+): readonly DesignQualityIssue[] {
   const riskyFiles = files.filter(
     (file) =>
       /\.(?:tsx|jsx)$/.test(file.path) &&
@@ -230,6 +232,42 @@ export function auditDesignQuality(
           severity: 'blocking',
           message:
             'This V4 website does not use both rk-hero and rk-hero-title. Apply the compiler-owned hero contract with exactly two direct children so generated CSS cannot collapse the first viewport.',
+        });
+      }
+      if (
+        /<header\b/i.test(markup) &&
+        (!/\brk-site-header\b/.test(markup) ||
+          !/\brk-header-inner\b/.test(markup) ||
+          !/\brk-site-nav\b/.test(markup) ||
+          !/\brk-header-actions\b/.test(markup))
+      ) {
+        issues.push({
+          code: 'missing-v4-header-contract',
+          severity: 'blocking',
+          message:
+            'The header bypasses the compiler-owned composition. Apply rk-site-header, rk-header-inner, rk-site-nav and rk-header-actions so brand, navigation and actions cannot fall into raw document flow.',
+        });
+      }
+
+      const rawGeneratedMedia = markup.match(
+        /<(?:img|Image)\b[^>]{0,1000}\bsrc\s*=\s*["']\/generated\//gi,
+      );
+      if (rawGeneratedMedia?.length) {
+        issues.push({
+          code: 'unmanaged-generated-media',
+          severity: 'blocking',
+          message:
+            'Generated media is rendered by raw img/next Image, which exposes broken-image icons and alt text when an asset fails. Render every /generated/ source through the supplied BrandImage component.',
+        });
+      }
+
+      const soldOutLabels = markup.match(/\bSold out\b/gi) ?? [];
+      if (soldOutLabels.length >= 3) {
+        issues.push({
+          code: 'implausible-sold-out-catalogue',
+          severity: 'blocking',
+          message:
+            'The preview marks the whole catalogue sold out. Keep representative preview products purchasable unless real inventory data says otherwise.',
         });
       }
     }
