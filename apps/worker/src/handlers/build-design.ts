@@ -76,20 +76,24 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       return { storageKey: image.storageKey, contentType: image.contentType, bytes: image.bytes };
     },
   );
+  const workingFiles = normalizeGeneratedTree(compileDesignTree(assets.files, engine.data));
+  const compilerChanged = JSON.stringify(workingFiles) !== JSON.stringify(assets.files);
   await context.throwIfCancelled();
   if (!(await current())) return { status: 'superseded' };
-  if (assets.generated) {
+  if (assets.generated || compilerChanged) {
     const saved = await createCheckpoint({
       buildProjectId,
       workspaceId,
       userId,
       expectedVersionId: versionId,
-      files: assets.files,
-      changeSummary: 'Fulfilled planned design assets after first preview',
+      files: workingFiles,
+      changeSummary: assets.generated
+        ? 'Fulfilled planned assets and refreshed compiler-owned design rules'
+        : 'Refreshed compiler-owned design rules before visual QA',
     });
     versionId = saved.version.id;
   }
-  let sourceIssues = auditDesignQuality(brief, assets.files);
+  let sourceIssues = auditDesignQuality(brief, workingFiles);
   await context.reportStage('updating_preview');
   await syncPreview({ buildProjectId, workspaceId });
   await context.reportStage('reviewing_design');
@@ -176,7 +180,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       ];
       const polished = await runDesignPass({
         brief,
-        files: assets.files,
+        files: workingFiles,
         model: repairModel,
         contract: createDesignContract(brief),
         designEngineV4: engine.data,
@@ -185,7 +189,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       if (polished.changed > 0) {
         const beforeReview = review;
         const revised = normalizeGeneratedTree(
-          compileDesignTree(mergeTree(assets.files, polished.files), engine.data),
+          compileDesignTree(mergeTree(workingFiles, polished.files), engine.data),
         );
         const revisedSourceIssues = auditDesignQuality(brief, revised);
         const previousBlockingCodes = new Set(
@@ -238,7 +242,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
             workspaceId,
             userId,
             expectedVersionId: versionId,
-            files: assets.files,
+            files: workingFiles,
             changeSummary: 'Restored the stronger design after visual QA regression',
           });
           versionId = rollback.version.id;
