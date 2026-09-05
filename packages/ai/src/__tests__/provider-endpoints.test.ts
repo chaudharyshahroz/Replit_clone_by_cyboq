@@ -23,7 +23,7 @@ function providerCase(key: string): string {
 
 describe('OpenAI-compatible providers', () => {
   it('are asked for chat completions explicitly', () => {
-    for (const key of ['openrouter', 'bai']) {
+    for (const key of ['kimi', 'openrouter', 'bai']) {
       expect(providerCase(key), key).toMatch(/\.chat\(/);
     }
   });
@@ -36,14 +36,21 @@ describe('OpenAI-compatible providers', () => {
      */
     expect(providerCase('openrouter')).toContain('OPENROUTER_BASE_URL');
     expect(providerCase('bai')).toContain('BAI_BASE_URL');
+    expect(providerCase('kimi')).toContain('MOONSHOT_BASE_URL');
   });
 
   it('use their own credential', () => {
     expect(providerCase('openrouter')).toContain('OPENROUTER_API_KEY');
     expect(providerCase('bai')).toContain('BAI_API_KEY');
+    expect(providerCase('kimi')).toContain('MOONSHOT_API_KEY');
     /* A key sent to the wrong host is a credential given away. */
     expect(providerCase('bai')).not.toContain('OPENAI_API_KEY');
     expect(providerCase('openrouter')).not.toContain('OPENAI_API_KEY');
+    expect(providerCase('kimi')).not.toContain('OPENAI_API_KEY');
+  });
+
+  it('does not send arbitrary temperature values to Kimi fixed-temperature models', () => {
+    expect(providerCase('kimi')).toContain('omitTemperature: true');
   });
 });
 

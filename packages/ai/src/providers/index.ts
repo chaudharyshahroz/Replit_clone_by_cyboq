@@ -100,6 +100,29 @@ export function getProvider(providerKey: string): AIProvider | undefined {
       }
       break;
 
+    case 'kimi':
+      if (env.MOONSHOT_API_KEY) {
+        /*
+         * Kimi's official platform is operated by Moonshot AI and exposes an
+         * OpenAI-compatible Chat Completions API at api.moonshot.ai. Keep the
+         * key and host separate from OpenAI so credentials can never cross.
+         */
+        const kimi = createOpenAI({
+          apiKey: env.MOONSHOT_API_KEY,
+          baseURL: env.MOONSHOT_BASE_URL,
+        });
+
+        provider = createVendorAdapter({
+          key: 'kimi',
+          displayName: 'Kimi',
+          capabilities: FULL,
+          model: (id: string) => kimi.chat(id),
+          /* Current Kimi models require their documented fixed temperature. */
+          omitTemperature: true,
+        });
+      }
+      break;
+
     case 'openrouter':
       if (env.OPENROUTER_API_KEY) {
         const openrouter = createOpenAI({
@@ -179,6 +202,7 @@ export function configuredProviderKeys(): readonly string[] {
   if (env.GOOGLE_GENERATIVE_AI_API_KEY) keys.push('google');
   if (env.XAI_API_KEY) keys.push('xai');
   if (env.DEEPSEEK_API_KEY) keys.push('deepseek');
+  if (env.MOONSHOT_API_KEY) keys.push('kimi');
   if (env.OPENROUTER_API_KEY) keys.push('openrouter');
   if (env.BAI_API_KEY) keys.push('bai');
   return keys;

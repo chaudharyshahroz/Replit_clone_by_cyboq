@@ -34,11 +34,24 @@ Reklu starts and is navigable with **no AI provider configured**. Every
 capability that needs a credential reports "Not configured" and names the exact
 variable required — nothing simulates success.
 
-To use Chat, Research, or Build, add at least one provider key to `.env`:
+To use Chat, Research, or Build, add at least one provider key to `.env`.
+For example, use a key issued directly by Anthropic:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+DeepSeek and Kimi can also be connected directly—no aggregator key is needed:
+
+```bash
+DEEPSEEK_API_KEY=...
+MOONSHOT_API_KEY=...
+```
+
+`MOONSHOT_API_KEY` is the name used by Kimi's official Moonshot AI platform.
+Reklu sends it only to `https://api.moonshot.ai/v1`. The optional
+`MOONSHOT_BASE_URL` setting exists for an operator-controlled compatible proxy;
+leave the documented default unchanged for the official integration.
 
 ---
 

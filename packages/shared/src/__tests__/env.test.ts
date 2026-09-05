@@ -278,6 +278,16 @@ describe('featuresFor', () => {
     expect(f.embeddings).toBe(false);
   });
 
+  it('recognises an official Moonshot key as the Kimi provider', () => {
+    resetServerEnvCache();
+    const f = featuresFor(
+      loadServerEnv(base({ OPENAI_API_KEY: '', MOONSHOT_API_KEY: 'moonshot-test' })),
+    );
+    expect(f.kimi).toBe(true);
+    expect(f.openai).toBe(false);
+    expect(f.anyModelProvider).toBe(true);
+  });
+
   it('counts an acknowledged single-node volume as durable storage', () => {
     resetServerEnvCache();
     const f = featuresFor(loadServerEnv(base({ STORAGE_LOCAL_SINGLE_NODE_ACK: 'true' })));

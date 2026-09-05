@@ -15,7 +15,15 @@ import type { PlanLimits } from '../schema/billing';
 
 export interface ProviderSeed {
   readonly key: string;
-  readonly kind: 'anthropic' | 'openai' | 'google' | 'xai' | 'deepseek' | 'openrouter' | 'bai';
+  readonly kind:
+    | 'anthropic'
+    | 'openai'
+    | 'google'
+    | 'xai'
+    | 'deepseek'
+    | 'kimi'
+    | 'openrouter'
+    | 'bai';
   readonly displayName: string;
   readonly apiKeyEnvVar: string;
 }
@@ -26,6 +34,7 @@ export const PROVIDERS: readonly ProviderSeed[] = [
   { key: 'google', kind: 'google', displayName: 'Google', apiKeyEnvVar: 'GOOGLE_GENERATIVE_AI_API_KEY' },
   { key: 'xai', kind: 'xai', displayName: 'xAI', apiKeyEnvVar: 'XAI_API_KEY' },
   { key: 'deepseek', kind: 'deepseek', displayName: 'DeepSeek', apiKeyEnvVar: 'DEEPSEEK_API_KEY' },
+  { key: 'kimi', kind: 'kimi', displayName: 'Kimi', apiKeyEnvVar: 'MOONSHOT_API_KEY' },
   {
     key: 'openrouter',
     kind: 'openrouter',
@@ -228,22 +237,119 @@ export const MODELS: readonly ModelSeed[] = [
   // ---- DeepSeek ----------------------------------------------------------
   {
     ...base,
-    key: 'deepseek-reasoner',
+    key: 'deepseek-v4-pro',
     providerKey: 'deepseek',
-    modelIdentifier: 'deepseek-reasoner',
-    displayName: 'DeepSeek Reasoner',
-    description: 'Open-weight reasoning at low cost.',
-    contextWindow: 128_000,
-    maxOutputTokens: 32_000,
+    modelIdentifier: 'deepseek-v4-pro',
+    displayName: 'DeepSeek V4 Pro',
+    description: 'DeepSeek’s highest-quality V4 model for reasoning, coding, and agents.',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
     supportsVision: false,
     supportsReasoning: true,
     speed: 'slow',
-    costTier: 'economy',
-    inputCostPerMillion: '0.5600',
-    outputCostPerMillion: '1.6800',
-    bestFor: ['reasoning', 'math', 'coding'],
-    routingPriority: 45,
+    costTier: 'standard',
+    inputCostPerMillion: '1.3200',
+    outputCostPerMillion: '3.9600',
+    bestFor: ['reasoning', 'coding', 'analysis', 'agent', 'long-context'],
+    routingPriority: 78,
     sortOrder: 90,
+  },
+  {
+    ...base,
+    key: 'deepseek-v4-flash',
+    providerKey: 'deepseek',
+    modelIdentifier: 'deepseek-v4-flash',
+    displayName: 'DeepSeek V4 Flash',
+    description: 'Fast, economical V4 reasoning for general work and coding.',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+    supportsVision: false,
+    supportsReasoning: true,
+    speed: 'fast',
+    costTier: 'economy',
+    inputCostPerMillion: '0.4400',
+    outputCostPerMillion: '1.3200',
+    bestFor: ['general', 'coding', 'reasoning', 'agent', 'long-context'],
+    routingPriority: 68,
+    sortOrder: 100,
+  },
+
+  // ---- Kimi (Moonshot AI official API) ----------------------------------
+  {
+    ...base,
+    key: 'kimi-k3',
+    providerKey: 'kimi',
+    modelIdentifier: 'kimi-k3',
+    displayName: 'Kimi K3',
+    description: 'Kimi’s frontier multimodal model with a one-million-token context window.',
+    contextWindow: 1_048_576,
+    maxOutputTokens: 131_072,
+    supportsVision: true,
+    supportsReasoning: true,
+    speed: 'slow',
+    costTier: 'premium',
+    inputCostPerMillion: '3.0000',
+    outputCostPerMillion: '15.0000',
+    bestFor: ['reasoning', 'coding', 'vision', 'agent', 'long-context', 'research'],
+    routingPriority: 92,
+    sortOrder: 110,
+  },
+  {
+    ...base,
+    key: 'kimi-k2-7-code',
+    providerKey: 'kimi',
+    modelIdentifier: 'kimi-k2.7-code',
+    displayName: 'Kimi K2.7 Code',
+    description: 'Agentic coding model with vision and tool use.',
+    contextWindow: 262_144,
+    maxOutputTokens: 32_768,
+    supportsVision: true,
+    supportsReasoning: true,
+    speed: 'balanced',
+    costTier: 'standard',
+    inputCostPerMillion: '0.9500',
+    outputCostPerMillion: '4.0000',
+    bestFor: ['coding', 'agent', 'vision', 'reasoning'],
+    routingPriority: 84,
+    sortOrder: 120,
+  },
+  {
+    ...base,
+    key: 'kimi-k2-7-code-highspeed',
+    providerKey: 'kimi',
+    modelIdentifier: 'kimi-k2.7-code-highspeed',
+    displayName: 'Kimi K2.7 Code Highspeed',
+    description: 'Faster K2.7 Code endpoint for latency-sensitive agentic work.',
+    contextWindow: 262_144,
+    maxOutputTokens: 32_768,
+    supportsVision: true,
+    supportsReasoning: true,
+    speed: 'fast',
+    costTier: 'premium',
+    inputCostPerMillion: '1.9000',
+    outputCostPerMillion: '8.0000',
+    bestFor: ['coding', 'agent', 'vision', 'quick'],
+    routingPriority: 82,
+    sortOrder: 130,
+  },
+  {
+    ...base,
+    key: 'kimi-k2-6',
+    providerKey: 'kimi',
+    modelIdentifier: 'kimi-k2.6',
+    displayName: 'Kimi K2.6',
+    description: 'Multimodal general model for reasoning, agents, and visual tasks.',
+    contextWindow: 262_144,
+    maxOutputTokens: 32_768,
+    supportsVision: true,
+    supportsReasoning: true,
+    speed: 'balanced',
+    costTier: 'standard',
+    inputCostPerMillion: '0.9500',
+    outputCostPerMillion: '4.0000',
+    bestFor: ['general', 'vision', 'reasoning', 'agent'],
+    routingPriority: 80,
+    sortOrder: 140,
   },
 
   // ---- OpenRouter --------------------------------------------------------

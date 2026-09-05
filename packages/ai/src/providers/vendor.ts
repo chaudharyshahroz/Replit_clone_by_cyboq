@@ -35,6 +35,8 @@ export interface VendorAdapterOptions {
   readonly model: ModelFactory;
   readonly capabilities: ProviderCapabilities;
   readonly embeddingModel?: (modelIdentifier: string) => unknown;
+  /** Some compatible APIs expose temperature but require a model-fixed value. */
+  readonly omitTemperature?: boolean;
 }
 
 const EMPTY_USAGE: TokenUsage = {
@@ -206,7 +208,7 @@ function toProviderError(key: string, error: unknown): ProviderCallError {
 }
 
 export function createVendorAdapter(options: VendorAdapterOptions): AIProvider {
-  const { key, displayName, model, capabilities } = options;
+  const { key, displayName, model, capabilities, omitTemperature = false } = options;
 
   return {
     key,
@@ -222,7 +224,9 @@ export function createVendorAdapter(options: VendorAdapterOptions): AIProvider {
           messages: toSdkMessages(request.messages) as never,
           ...(request.system ? { system: request.system } : {}),
           ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
-          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          ...(!omitTemperature && request.temperature !== undefined
+            ? { temperature: request.temperature }
+            : {}),
           ...(toSdkTools(request) ? { tools: toSdkTools(request) as never } : {}),
           ...(request.signal ? { abortSignal: request.signal } : {}),
         });
@@ -256,7 +260,9 @@ export function createVendorAdapter(options: VendorAdapterOptions): AIProvider {
           messages: toSdkMessages(request.messages) as never,
           ...(request.system ? { system: request.system } : {}),
           ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
-          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          ...(!omitTemperature && request.temperature !== undefined
+            ? { temperature: request.temperature }
+            : {}),
           ...(toSdkTools(request) ? { tools: toSdkTools(request) as never } : {}),
           ...(request.signal ? { abortSignal: request.signal } : {}),
         });

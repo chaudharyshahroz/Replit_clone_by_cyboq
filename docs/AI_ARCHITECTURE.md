@@ -45,7 +45,7 @@ interface AIProvider {
 `embed` is optional because not every provider offers embeddings; callers check
 rather than assume.
 
-### Why one adapter for five vendors
+### Why one adapter for multiple vendors
 
 `vendor.ts` is parameterized by an AI SDK model factory. The vendors' wire
 protocols differ, but the SDK already normalizes that. What Reklu adds — and
@@ -55,6 +55,12 @@ therefore owns regardless of the SDK — is:
 - **token accounting**, normalized across providers that name the same fields
   differently (`promptTokens` vs `inputTokens`),
 - the **error taxonomy**, specifically the retryable/not distinction.
+
+OpenAI-compatible vendors still receive separate credentials and base URLs.
+Kimi, for example, uses Moonshot AI's official `api.moonshot.ai` endpoint and
+never receives `OPENAI_API_KEY`. Provider-specific request constraints also
+stay at this boundary: current Kimi models use a fixed temperature, so Reklu
+does not forward its generic temperature setting to that provider.
 
 See [DECISIONS.md D16](./DECISIONS.md).
 

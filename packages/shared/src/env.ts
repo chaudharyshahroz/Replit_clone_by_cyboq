@@ -158,6 +158,9 @@ const serverSchema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: optionalString,
   XAI_API_KEY: optionalString,
   DEEPSEEK_API_KEY: optionalString,
+  /** Official Kimi Platform credential, issued by Moonshot AI. */
+  MOONSHOT_API_KEY: optionalString,
+  MOONSHOT_BASE_URL: z.string().url().default('https://api.moonshot.ai/v1'),
   /**
    * OpenRouter, which fronts many vendors behind one OpenAI-compatible API.
    *
@@ -545,6 +548,7 @@ function crossFieldProblems(env: ServerEnv): string[] {
         env.GOOGLE_GENERATIVE_AI_API_KEY ||
         env.XAI_API_KEY ||
         env.DEEPSEEK_API_KEY ||
+        env.MOONSHOT_API_KEY ||
         env.OPENROUTER_API_KEY ||
         env.BAI_API_KEY,
     );
@@ -552,7 +556,8 @@ function crossFieldProblems(env: ServerEnv): string[] {
       problems.push(
         'No AI provider key is configured. Reklu cannot serve Chat, Research, or Build. ' +
           'Set at least one of ANTHROPIC_API_KEY, OPENAI_API_KEY, ' +
-          'GOOGLE_GENERATIVE_AI_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, BAI_API_KEY.',
+          'GOOGLE_GENERATIVE_AI_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, MOONSHOT_API_KEY, ' +
+          'OPENROUTER_API_KEY, BAI_API_KEY.',
       );
     }
     if (env.STORAGE_DRIVER === 'local' && !env.STORAGE_LOCAL_SINGLE_NODE_ACK) {
@@ -706,6 +711,7 @@ export interface FeatureAvailability {
   readonly google: boolean;
   readonly xai: boolean;
   readonly deepseek: boolean;
+  readonly kimi: boolean;
   readonly anyModelProvider: boolean;
   readonly embeddings: boolean;
   readonly webSearch: boolean;
@@ -735,6 +741,7 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
   const google = Boolean(env.GOOGLE_GENERATIVE_AI_API_KEY);
   const xai = Boolean(env.XAI_API_KEY);
   const deepseek = Boolean(env.DEEPSEEK_API_KEY);
+  const kimi = Boolean(env.MOONSHOT_API_KEY);
 
   return {
     anthropic,
@@ -742,7 +749,8 @@ export function featuresFor(env: ServerEnv): FeatureAvailability {
     google,
     xai,
     deepseek,
-    anyModelProvider: anthropic || openai || google || xai || deepseek,
+    kimi,
+    anyModelProvider: anthropic || openai || google || xai || deepseek || kimi,
     embeddings:
       env.EMBEDDING_PROVIDER === 'none'
         ? false
