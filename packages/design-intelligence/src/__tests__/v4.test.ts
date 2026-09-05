@@ -38,6 +38,12 @@ describe('V4 category regression matrix', () => {
       expect(compileDesignStyles(engine)).toContain('.rk-surface-inverse');
       expect(compileDesignStyles(engine)).toContain('.rk-site-header');
       expect(compileDesignStyles(engine)).toContain('.rk-hero:not(.rk-container)');
+      expect(compileDesignStyles(engine)).toContain('minmax(24rem, .9fr)');
+      expect(compileDesignStyles(engine)).toContain('word-break: normal !important');
+      expect(compileDesignStyles(engine)).toContain('min-height: auto !important');
+      expect(compileDesignStyles(engine)).toContain('.rk-hero > :last-child.rk-media');
+      expect(compileDesignStyles(engine)).toContain('@media (max-width: 959px)');
+      expect(compileDesignStyles(engine)).not.toContain('overflow-wrap: break-word');
       expect(compileDesignStyles(engine)).toContain('minmax(min(100%, 240px), 1fr)');
     },
   );

@@ -260,7 +260,7 @@ export function designEngineV4Prompt(engine: DesignEngineV4): string {
     'Use rk-container, rk-section, rk-hero, rk-hero-title, rk-section-title, rk-grid, rk-button, rk-site-header, rk-surface-primary and rk-surface-inverse classes. They are plain CSS, not Tailwind plugins. Use data-section-id matching the storyboard.',
     'rk-hero is a two-column layout; give it exactly two direct children: copy/actions and media/demo. Use rk-grid for normal product lists; never use six skinny paragraph cards. Do not add fixed card widths.',
     'Import BrandImage from the provided components/reklu path for photos and products. Declare requested imagery with literal src="/generated/descriptive-name.png" and detailed literal alt text so the asset service can fulfill it. The alt must name the concrete business subject and exclude plausible distractors: for example cafe exterior with storefront and seating, no cars; coffee hero with cup or barista, no animals. Never invent remote image IDs. Use role="critical" for hero and primary product media. Loading/fallback media is not final completion.',
-    'Keep headings concise. Desktop hero 2–4 lines, section 1–3; mobile at most 5. Do not force br tags or one-word lines. Never apply viewport-wide type sizes inside a narrow column.',
+    'Keep headings concise. Desktop hero 2–4 lines, section 1–3; mobile at most 5. Do not force br tags or one-word lines. Never split a word to make a heading fit: word-break: break-all, overflow-wrap: anywhere, narrow fixed-width title wrappers and skinny fractional hero columns are blocking failures. Never apply viewport-wide type sizes inside a narrow column.',
     'Use CSS variables --color-background, --color-foreground, --color-primary, --color-on-primary, --color-inverse, --color-on-inverse and --color-on-inverse-muted. Use paired colors on every contrast surface. A dark footer must use rk-surface-inverse and its on-inverse tokens. No white text on an unresolved image background.',
     'The site header uses rk-site-header. Keep it in normal document flow; do not make a marketing header sticky, fixed, translucent or positioned over hero media.',
     'Use real SVG icons from one installed family, 20–24px, inline with labels; never emoji icons. Reduced motion must preserve visible content.',
@@ -308,16 +308,18 @@ ${fontImport}
 :where(html,body) { max-width: 100%; overflow-x: clip; }
 :where(body) { margin: 0; background: var(--color-background); color: var(--color-foreground); font-family: var(--font-body); font-size: var(--type-body); line-height: 1.6; }
 .rk-container, .rk-container *, .rk-button, .rk-media { box-sizing: border-box; }
-:where(h1,h2,h3) { font-family: var(--font-display); line-height: 1.1; text-wrap: balance; overflow-wrap: break-word; }
+:where(h1,h2,h3) { font-family: var(--font-display); line-height: 1.1; text-wrap: balance; overflow-wrap: normal; word-break: normal; hyphens: none; }
 :where(h1) { font-size: var(--type-h1); }
 :where(h2) { font-size: var(--type-h2); }
 :where(h3) { font-size: var(--type-h3); }
 .rk-container { width: min(calc(100% - 2 * var(--spacing-gutter)), ${engine.layout.container}px); margin-inline: auto; }
 .rk-section { padding-block: var(--spacing-section); }
-.rk-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(2rem, 5vw, 5rem); align-items: center; padding-block: var(--spacing-section); }
+.rk-hero { display: grid !important; grid-template-columns: minmax(24rem, .9fr) minmax(28rem, 1.1fr) !important; gap: clamp(2rem, 5vw, 5rem) !important; align-items: center; padding-block: var(--spacing-section); min-height: auto !important; height: auto !important; }
 .rk-hero:not(.rk-container) { width: min(calc(100% - 2 * var(--spacing-gutter)), ${engine.layout.container}px); margin-inline: auto; }
-.rk-hero > * { min-width: 0; }
-.rk-hero-title { font-size: var(--type-hero); max-width: 20ch; line-height: 1.04; margin-block: 0 1.5rem; }
+.rk-hero > * { min-width: 0; width: auto !important; max-width: none !important; grid-column: auto !important; }
+.rk-hero > :last-child { justify-self: stretch; }
+.rk-hero > :last-child.rk-media { width: 100% !important; }
+.rk-hero-title { width: auto !important; min-width: 0; max-width: 20ch !important; font-size: var(--type-hero); line-height: 1.04; margin-block: 0 1.5rem; overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
 .rk-section-title { font-size: var(--type-h2); max-width: 28ch; margin-block: 0 1.5rem; }
 .rk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, ${engine.layout.cardMin}px), 1fr)); gap: 1.5rem; align-items: stretch; }
 .rk-grid > * { min-width: 0; }
@@ -330,11 +332,11 @@ ${fontImport}
 .rk-surface-inverse { background: var(--footer-bg); color: var(--footer-fg); }
 .rk-surface-inverse :where(p,small,li) { color: var(--footer-muted); }
 .rk-surface-inverse :where(a,h1,h2,h3,h4,strong) { color: inherit; }
-.rk-site-header { position: relative; inset: auto; z-index: 20; width: 100%; background: var(--header-bg); color: var(--color-foreground); }
+.rk-site-header { position: relative !important; inset: auto !important; z-index: 20; width: 100%; background: var(--header-bg); color: var(--color-foreground); }
 .rk-media { display: grid; overflow: hidden; background: var(--color-surface); color: var(--color-foreground); border-radius: var(--card-radius); }
 .rk-media img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
 .rk-media-fallback { padding: 1.5rem; align-self: center; text-align: center; }
-@media (max-width: 767px) { .rk-hero { grid-template-columns: minmax(0, 1fr); } .rk-hero-title { max-width: 100%; } }
+@media (max-width: 959px) { .rk-hero { grid-template-columns: minmax(0, 1fr) !important; } .rk-hero-title { max-width: 100% !important; } }
 @media (prefers-reduced-motion: reduce) { .rk-button { transition: none; } [data-section-id] { scroll-behavior: auto; } }
 `;
 }

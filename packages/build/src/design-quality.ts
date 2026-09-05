@@ -45,6 +45,23 @@ const UI_EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 
 const BROWSER_ONLY_STATE = /\b(?:window|document|navigator|localStorage|sessionStorage)\b/;
 
+const DESTRUCTIVE_HEADING_WRAP =
+  /(?:h[1-3]|hero[^,{]{0,60}title|headline|display-heading)[^{]{0,120}\{[^}]{0,600}(?:word-break\s*:\s*(?:break-all|break-word)|overflow-wrap\s*:\s*(?:anywhere|break-word))|<h[1-3]\b[^>]{0,500}\b(?:break-all|break-words)\b/i;
+
+const NARROW_HERO_CSS =
+  /(?:hero|headline)[^{]{0,100}\{[^}]{0,800}(?:max-)?width\s*:\s*(?:[12]\d{2}px|3[01]\dpx|(?:[1-9]|1[0-8])rem|(?:[1-2]\d|3[0-2])%)\b/i;
+
+const SKINNY_HERO_GRID =
+  /(?:hero)[^{]{0,100}\{[^}]{0,800}grid-template-columns\s*:\s*(?:(?:[12]\d|3[0-2])%\s+|(?:0?\.[123]\d*fr)\s+)/i;
+
+function usesDesignEngineV4(files: readonly GeneratedFile[]): boolean {
+  return files.some(
+    (file) =>
+      /(?:^|\/)\.reklu\/design-engine\.json$/.test(file.path) &&
+      /["']version["']\s*:\s*4\b/.test(file.content),
+  );
+}
+
 /** Return call bodies without pretending a regular expression can parse nested JavaScript. */
 function hookArguments(content: string, hook: string): readonly string[] {
   const calls: string[] = [];
@@ -184,6 +201,39 @@ export function auditDesignQuality(
   }
 
   if (brief.target === 'website') {
+    if (DESTRUCTIVE_HEADING_WRAP.test(visual)) {
+      issues.push({
+        code: 'destructive-heading-wrap',
+        severity: 'blocking',
+        message:
+          'Heading CSS can split words into unreadable fragments. Remove break-all/anywhere/break-word wrapping from headings and give the copy column enough inline space for whole words.',
+      });
+    }
+
+    if (NARROW_HERO_CSS.test(visual) || SKINNY_HERO_GRID.test(visual)) {
+      issues.push({
+        code: 'collapsed-hero-column',
+        severity: 'blocking',
+        message:
+          'The hero copy/title is constrained to a narrow fixed or fractional column. Use the compiler rk-hero grid, keep the copy column at least 24rem on desktop, and collapse to one column below 960px.',
+      });
+    }
+
+    if (usesDesignEngineV4(files)) {
+      const markup = files
+        .filter((file) => /\.(?:tsx|jsx|html)$/.test(file.path))
+        .map((file) => file.content)
+        .join('\n');
+      if (!/\brk-hero\b/.test(markup) || !/\brk-hero-title\b/.test(markup)) {
+        issues.push({
+          code: 'missing-v4-hero-contract',
+          severity: 'blocking',
+          message:
+            'This V4 website does not use both rk-hero and rk-hero-title. Apply the compiler-owned hero contract with exactly two direct children so generated CSS cannot collapse the first viewport.',
+        });
+      }
+    }
+
     const empty = EMPTY_MARKETING_COPY.find((pattern) => pattern.test(visual));
     if (empty) {
       issues.push({

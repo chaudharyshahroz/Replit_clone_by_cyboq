@@ -15,6 +15,11 @@ const page = (content: string): GeneratedFile => ({
   content,
   language: 'tsx',
 });
+const v4 = (): GeneratedFile => ({
+  path: '.reklu/design-engine.json',
+  content: JSON.stringify({ version: 4 }),
+  language: 'json',
+});
 
 describe('design contract', () => {
   it('requires a complete first viewport and representative preview content', () => {
@@ -102,6 +107,43 @@ describe('design quality critic', () => {
     ]);
 
     expect(issues).toEqual([]);
+  });
+
+  it('blocks heading rules and hero columns that split words on desktop', () => {
+    const issues = auditDesignQuality(website, [
+      v4(),
+      page(
+        '<main><section className="rk-hero"><div><h1 className="rk-hero-title">Coffee that slows you down</h1><a href="/book">Book</a></div><img src="/coffee.jpg" alt="Coffee"/></section></main>',
+      ),
+      {
+        path: 'src/app/globals.css',
+        content:
+          '.hero-copy { max-width: 180px; } .rk-hero-title { overflow-wrap: anywhere; }',
+        language: 'css',
+      },
+    ]);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'destructive-heading-wrap', severity: 'blocking' }),
+        expect.objectContaining({ code: 'collapsed-hero-column', severity: 'blocking' }),
+      ]),
+    );
+  });
+
+  it('requires V4 pages to use the compiler-owned hero structure', () => {
+    const issues = auditDesignQuality(website, [
+      v4(),
+      page(
+        '<main><h1>Roasted for slow mornings</h1><img src="/coffee.jpg" alt="Coffee"/><a href="/shop">Shop</a></main>',
+      ),
+    ]);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'missing-v4-hero-contract', severity: 'blocking' }),
+      ]),
+    );
   });
 
   it('turns findings into explicit revision instructions', () => {

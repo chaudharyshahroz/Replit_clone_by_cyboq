@@ -18,6 +18,7 @@ import {
   mergeTree,
   normalizeGeneratedTree,
   compileDesignTree,
+  auditDesignQuality,
   type BuildBrief,
   type DesignQualityIssue,
 } from '@reklu/build';
@@ -88,12 +89,14 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
     });
     versionId = saved.version.id;
   }
+  let sourceIssues = auditDesignQuality(brief, assets.files);
   await context.reportStage('updating_preview');
   await syncPreview({ buildProjectId, workspaceId });
   await context.reportStage('reviewing_design');
   let screenshot: Awaited<ReturnType<typeof captureRenderedPreview>> = undefined;
   let review: Awaited<ReturnType<typeof reviewRenderedDesign>> | undefined = undefined;
   let reviewModel: ReturnType<typeof selectableModels>[number] | undefined;
+  let repairModel: ReturnType<typeof selectableModels>[number] | undefined;
   let reviewUnavailable: string | undefined;
   try {
     await context.throwIfCancelled();
@@ -104,18 +107,20 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       .innerJoin(plans, eq(subscriptions.planId, plans.id))
       .where(eq(subscriptions.workspaceId, workspaceId))
       .limit(1);
-    reviewModel = selectableModels(
+    const permittedModels = selectableModels(
       await loadRegistry(),
       planRow?.limits as PlanLimits | undefined,
-    )
+    );
+    const rank = (candidate: (typeof permittedModels)[number]) =>
+      (candidate.bestFor.includes('coding') ? 6 : 0) +
+      (candidate.bestFor.includes('reasoning') ? 4 : 0) +
+      Math.min(candidate.maxOutputTokens / 8_000, 2);
+    repairModel = [...permittedModels].sort(
+      (left, right) => rank(right) - rank(left) || left.sortOrder - right.sortOrder,
+    )[0];
+    reviewModel = permittedModels
       .filter((model) => model.supportsVision)
-      .sort((left, right) => {
-        const score = (candidate: typeof left) =>
-          (candidate.bestFor.includes('coding') ? 6 : 0) +
-          (candidate.bestFor.includes('reasoning') ? 4 : 0) +
-          Math.min(candidate.maxOutputTokens / 8_000, 2);
-        return score(right) - score(left) || left.sortOrder - right.sortOrder;
-      })[0];
+      .sort((left, right) => rank(right) - rank(left) || left.sortOrder - right.sortOrder)[0];
     screenshot = reviewModel
       ? await captureRenderedPreview({ buildProjectId, workspaceId })
       : undefined;
@@ -142,17 +147,22 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
    * again. This is deliberately one pass: visual judgment must not become an
    * unbounded autonomous loop.
    */
-  if (reviewModel && review?.verdict === 'revise' && (await current())) {
+  if (
+    repairModel &&
+    (review?.verdict === 'revise' || sourceIssues.some((issue) => issue.severity === 'blocking')) &&
+    (await current())
+  ) {
     try {
       await context.throwIfCancelled();
       await context.reportStage('polishing_design');
       const feedback: DesignQualityIssue[] = [
-        ...(review.criticalFindings ?? []).map((message, index) => ({
+        ...sourceIssues,
+        ...(review?.criticalFindings ?? []).map((message, index) => ({
           code: `rendered-critical-${index + 1}`,
           severity: 'blocking' as const,
           message,
         })),
-        ...review.findings.map((message, index) => ({
+        ...(review?.findings ?? []).map((message, index) => ({
           code: `rendered-finding-${index + 1}`,
           severity: 'warning' as const,
           message,
@@ -167,7 +177,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       const polished = await runDesignPass({
         brief,
         files: assets.files,
-        model: reviewModel,
+        model: repairModel,
         contract: createDesignContract(brief),
         designEngineV4: engine.data,
         feedback,
@@ -177,6 +187,18 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         const revised = normalizeGeneratedTree(
           compileDesignTree(mergeTree(assets.files, polished.files), engine.data),
         );
+        const revisedSourceIssues = auditDesignQuality(brief, revised);
+        const previousBlockingCodes = new Set(
+          sourceIssues
+            .filter((issue) => issue.severity === 'blocking')
+            .map((issue) => issue.code),
+        );
+        const revisedBlockingIssues = revisedSourceIssues.filter(
+          (issue) => issue.severity === 'blocking',
+        );
+        const sourceRegressed =
+          revisedBlockingIssues.length > previousBlockingCodes.size ||
+          revisedBlockingIssues.some((issue) => !previousBlockingCodes.has(issue.code));
         const saved = await createCheckpoint({
           buildProjectId,
           workspaceId,
@@ -187,23 +209,29 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         });
         versionId = saved.version.id;
         await syncPreview({ buildProjectId, workspaceId });
-        const revisedScreenshot = await captureRenderedPreview({ buildProjectId, workspaceId });
-        const revisedReview = revisedScreenshot
-          ? await reviewRenderedDesign({
-              brief,
-              contract: {
-                ...createDesignContract(brief),
-                concept: engine.data.dna.visualDirection,
-              },
-              screenshot: revisedScreenshot,
-              model: reviewModel,
-            })
+        const revisedScreenshot = reviewModel
+          ? await captureRenderedPreview({ buildProjectId, workspaceId })
           : undefined;
+        const revisedReview =
+          reviewModel && revisedScreenshot
+            ? await reviewRenderedDesign({
+                brief,
+                contract: {
+                  ...createDesignContract(brief),
+                  concept: engine.data.dna.visualDirection,
+                },
+                screenshot: revisedScreenshot,
+                model: reviewModel,
+              })
+            : undefined;
         const regressed =
-          !revisedReview ||
-          revisedReview.score < beforeReview.score ||
-          (revisedReview.criticalFindings?.length ?? 0) >
-            (beforeReview.criticalFindings?.length ?? 0);
+          sourceRegressed ||
+          (beforeReview
+            ? !revisedReview ||
+              revisedReview.score < beforeReview.score ||
+              (revisedReview.criticalFindings?.length ?? 0) >
+                (beforeReview.criticalFindings?.length ?? 0)
+            : false);
         if (regressed) {
           const rollback = await createCheckpoint({
             buildProjectId,
@@ -217,6 +245,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
           await syncPreview({ buildProjectId, workspaceId });
           review = beforeReview;
         } else {
+          sourceIssues = revisedSourceIssues;
           screenshot = revisedScreenshot;
           review = revisedReview;
         }
@@ -250,15 +279,24 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
     assetsAudited: false,
     interactionsVerified: false,
   });
+  const sourceFailures = sourceIssues
+    .filter((issue) => issue.severity === 'blocking')
+    .map((issue) => `${issue.code}: ${issue.message}`);
+  const verifiedGate = {
+    ...gate,
+    status: sourceFailures.length ? ('needs_revision' as const) : gate.status,
+    failures: [...sourceFailures, ...gate.failures],
+  };
   // Merge only our key, conditionally on the version actually reviewed. Never overwrite DNA/source maps.
   const quality = {
-    ...gate,
+    ...verifiedGate,
     versionId,
     reviewedAt: new Date().toISOString(),
     assetCalls: Math.min(calls, 8),
     assetFailures: assets.failures,
     review,
     reviewUnavailable,
+    sourceIssues,
     evidenceScope:
       'desktop screen only; full-page, responsive, decode and interaction verification still required',
   };
