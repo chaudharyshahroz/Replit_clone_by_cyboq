@@ -33,8 +33,8 @@ export interface AdminModel {
   readonly key: string;
   readonly displayName: string;
   readonly costTier: string;
-  /** Credits charged per 1,000 tokens at this tier. */
-  readonly creditsPerThousandTokens: number;
+  readonly inputCreditsPerThousand: number;
+  readonly outputCreditsPerThousand: number;
 }
 
 /**
@@ -248,7 +248,7 @@ function PlanCard({ plan, models }: { plan: AdminPlan; models: readonly AdminMod
             label="AI credits per month"
             value={aiUnits}
             onChange={setAiUnits}
-            hint="One credit is 1,000 tokens on a standard model."
+            hint="One credit equals $0.01 of variable provider cost."
           />
           <LimitField
             label="Images per month"
@@ -296,7 +296,8 @@ function PlanCard({ plan, models }: { plan: AdminPlan; models: readonly AdminMod
                 <span className="min-w-0 flex-1 truncate">{entry.displayName}</span>
                 {/* The real charge, from the same weights the meter uses. */}
                 <span className="shrink-0 tabular-nums text-text-muted">
-                  {entry.creditsPerThousandTokens} cr/1k
+                  {entry.inputCreditsPerThousand.toFixed(3)} in /{' '}
+                  {entry.outputCreditsPerThousand.toFixed(3)} out cr/1k
                 </span>
               </label>
             </li>

@@ -1,7 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { buildProjects, db, plans, subscriptions, type PlanLimits } from '@reklu/database';
+import {
+  buildProjects,
+  buildVersions,
+  db,
+  plans,
+  subscriptions,
+  type PlanLimits,
+} from '@reklu/database';
 import { logger } from '@reklu/shared';
-import { loadRegistry, selectableModels } from '@reklu/ai';
+import { checkQuota, loadRegistry, recordUsage, selectableModels } from '@reklu/ai';
 import { findStockImage, generateImage } from '@reklu/create';
 import {
   loadTree,
@@ -119,6 +126,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   let reviewModel: ReturnType<typeof selectableModels>[number] | undefined;
   let repairModel: ReturnType<typeof selectableModels>[number] | undefined;
   let reviewUnavailable: string | undefined;
+  let usagePeriodStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   try {
     await context.throwIfCancelled();
     if (!(await current())) return { status: 'superseded' };
@@ -132,14 +140,35 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       await loadRegistry(),
       planRow?.limits as PlanLimits | undefined,
     );
+    const quota = await checkQuota(workspaceId);
+    usagePeriodStart = quota?.periodStart ?? usagePeriodStart;
+    const [sourceVersion] = await db
+      .select({ modelKey: buildVersions.modelKey })
+      .from(buildVersions)
+      .where(
+        and(
+          eq(buildVersions.id, context.payload.versionId),
+          eq(buildVersions.buildProjectId, buildProjectId),
+        ),
+      )
+      .limit(1);
+    const selectedModel = sourceVersion?.modelKey
+      ? permittedModels.find((model) => model.key === sourceVersion.modelKey)
+      : undefined;
+    // A background quality pass must never turn a model selection into an
+    // undisclosed call to a different vendor. If the original model is gone,
+    // leave quality pending instead of guessing another provider.
+    const providerModels = selectedModel && !quota?.exceeded
+      ? permittedModels.filter((model) => model.providerKey === selectedModel.providerKey)
+      : [];
     const rank = (candidate: (typeof permittedModels)[number]) =>
       (candidate.bestFor.includes('coding') ? 6 : 0) +
       (candidate.bestFor.includes('reasoning') ? 4 : 0) +
       Math.min(candidate.maxOutputTokens / 8_000, 2);
-    repairModel = [...permittedModels].sort(
+    repairModel = [...providerModels].sort(
       (left, right) => rank(right) - rank(left) || left.sortOrder - right.sortOrder,
     )[0];
-    reviewModel = permittedModels
+    reviewModel = providerModels
       .filter((model) => model.supportsVision)
       .sort((left, right) => rank(right) - rank(left) || left.sortOrder - right.sortOrder)[0];
     screenshot = reviewModel
@@ -157,6 +186,21 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
             model: reviewModel,
           })
         : undefined;
+    if (reviewModel && review) {
+      await recordUsage({
+        workspaceId,
+        userId,
+        projectId: buildProjectId,
+        model: reviewModel,
+        usage: review.usage,
+        kind: 'build',
+        operation: 'Build visual review',
+        autoRouted: false,
+        routingReason: 'Same-provider background quality review',
+        jobId: context.jobId,
+        periodStart: usagePeriodStart,
+      });
+    }
     if (!review)
       reviewUnavailable =
         'No permitted vision model or supported screenshot provider is available.';
@@ -209,6 +253,19 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         designEngineV4: designEngine,
         feedback,
       });
+      await recordUsage({
+        workspaceId,
+        userId,
+        projectId: buildProjectId,
+        model: repairModel,
+        usage: polished.usage,
+        kind: 'build',
+        operation: 'Build background design repair',
+        autoRouted: false,
+        routingReason: 'Same-provider background quality repair',
+        jobId: context.jobId,
+        periodStart: usagePeriodStart,
+      });
       if (polished.changed > 0) {
         const beforeReview = review;
         const revised = normalizeGeneratedTree(
@@ -249,6 +306,21 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
                 model: reviewModel,
               })
             : undefined;
+        if (reviewModel && revisedReview) {
+          await recordUsage({
+            workspaceId,
+            userId,
+            projectId: buildProjectId,
+            model: reviewModel,
+            usage: revisedReview.usage,
+            kind: 'build',
+            operation: 'Build visual re-review',
+            autoRouted: false,
+            routingReason: 'Same-provider background quality review',
+            jobId: context.jobId,
+            periodStart: usagePeriodStart,
+          });
+        }
         const regressed =
           sourceRegressed ||
           (beforeReview

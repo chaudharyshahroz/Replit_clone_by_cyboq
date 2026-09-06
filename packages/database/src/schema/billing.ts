@@ -46,7 +46,7 @@ export const plans = pgTable(
   'plans',
   {
     id: primaryId('plan'),
-    /** Stable key referenced by models and feature checks: free | pro | team. */
+    /** Stable key referenced by models and feature checks, e.g. free | builder | team. */
     key: text('key').notNull(),
     name: text('name').notNull(),
     description: text('description'),

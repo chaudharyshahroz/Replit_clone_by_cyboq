@@ -12,6 +12,9 @@ describe('build Design Director orchestration', () => {
     );
 
     expect(designBlock).toContain('pickDesignModel(model)');
+    expect(source).toContain('model.providerKey === fallback.providerKey');
+    expect(designBlock).toContain("'Build design pass'");
+    expect(designBlock).toContain("'Build design refinement'");
     expect(designBlock).toContain("buildPath.path === 'agentic'");
     expect(designBlock).toContain('createDesignContract(brief, plan)');
     expect(designBlock).toContain('auditDesignQuality(brief, merged)');

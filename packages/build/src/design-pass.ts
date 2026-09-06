@@ -14,7 +14,7 @@
  * visual design to improve, and spending a model call pretending otherwise
  * would be theatre.
  */
-import { getProvider, type ModelMessage, type RegisteredModel } from '@reklu/ai';
+import { getProvider, type ModelMessage, type RegisteredModel, type TokenUsage } from '@reklu/ai';
 import { logger } from '@reklu/shared';
 import type { BuildBrief, BuildTarget } from './brief';
 import {
@@ -128,6 +128,7 @@ export interface DesignPassResult {
   readonly files: readonly GeneratedFile[];
   readonly changed: number;
   readonly commentary: string;
+  readonly usage: TokenUsage;
 }
 
 /**
@@ -153,7 +154,12 @@ export async function runDesignPass(options: {
 
   const candidates = visualFiles(options.files);
   if (candidates.length === 0) {
-    return { files: [], changed: 0, commentary: 'No visual files to revise.' };
+    return {
+      files: [],
+      changed: 0,
+      commentary: 'No visual files to revise.',
+      usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 },
+    };
   }
 
   const context = [
@@ -234,5 +240,6 @@ export async function runDesignPass(options: {
     files: revised,
     changed: revised.length,
     commentary: parsed.commentary,
+    usage: result.usage,
   };
 }

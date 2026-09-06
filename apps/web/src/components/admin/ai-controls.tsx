@@ -23,8 +23,8 @@ interface Model {
   readonly costTier: string;
   readonly inputCostPerMillion: string;
   readonly outputCostPerMillion: string;
-  /** Credits charged per 1,000 tokens, from the table the meter uses. */
-  readonly creditsPerThousandTokens: number;
+  readonly inputCreditsPerThousand: number;
+  readonly outputCreditsPerThousand: number;
   /** Plans that grant access, or empty when every plan does. */
   readonly plans: readonly string[];
 }
@@ -118,7 +118,8 @@ export function AiControls({
                       that could disagree with the bill.
                     */}
                     <span className="tabular-nums text-text">
-                      {model.creditsPerThousandTokens}
+                      {model.inputCreditsPerThousand.toFixed(3)} in /{' '}
+                      {model.outputCreditsPerThousand.toFixed(3)} out
                     </span>
                     <span className="ml-1 text-[0.625rem] text-text-muted">cr / 1k</span>
                     <span className="ml-2 rounded border border-border px-1 text-[0.625rem] uppercase tracking-wide text-text-muted">

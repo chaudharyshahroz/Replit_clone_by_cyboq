@@ -4,6 +4,7 @@ import {
   agentRuns,
   aiModels,
   aiProviders,
+  aiRequests,
   artifacts,
   auditLogs,
   buildProjects,
@@ -285,11 +286,16 @@ export async function listPlans(): Promise<PlanRow[]> {
 }
 
 export interface SpendRow {
+  readonly providerKey: string | null;
   readonly modelKey: string | null;
   readonly operation: string;
   readonly calls: number;
   readonly units: number;
   readonly costUsd: number;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly reasoningTokens: number;
+  readonly outputTokens: number;
 }
 
 /** Where the money actually goes, by model and operation. */
@@ -298,24 +304,35 @@ export async function spendBreakdown(days = 30): Promise<SpendRow[]> {
 
   const rows = await db
     .select({
+      providerKey: usageLedger.providerKey,
       modelKey: usageLedger.modelKey,
       operation: usageLedger.operation,
       calls: count(),
       units: sql<string>`coalesce(sum(${usageLedger.billableUnits}), 0)`,
       costUsd: sql<string>`coalesce(sum(${usageLedger.estimatedCostUsd}), 0)`,
+      inputTokens: sql<string>`coalesce(sum(${usageLedger.inputTokens}), 0)`,
+      cachedInputTokens: sql<string>`coalesce(sum(${aiRequests.cachedInputTokens}), 0)`,
+      reasoningTokens: sql<string>`coalesce(sum(${aiRequests.reasoningTokens}), 0)`,
+      outputTokens: sql<string>`coalesce(sum(${usageLedger.outputTokens}), 0)`,
     })
     .from(usageLedger)
+    .leftJoin(aiRequests, eq(usageLedger.aiRequestId, aiRequests.id))
     .where(gte(usageLedger.createdAt, since))
-    .groupBy(usageLedger.modelKey, usageLedger.operation)
+    .groupBy(usageLedger.providerKey, usageLedger.modelKey, usageLedger.operation)
     .orderBy(desc(sql`coalesce(sum(${usageLedger.estimatedCostUsd}), 0)`))
     .limit(30);
 
   return rows.map((row) => ({
+    providerKey: row.providerKey,
     modelKey: row.modelKey,
     operation: row.operation,
     calls: Number(row.calls),
     units: Number(row.units),
     costUsd: Number(row.costUsd),
+    inputTokens: Number(row.inputTokens),
+    cachedInputTokens: Number(row.cachedInputTokens),
+    reasoningTokens: Number(row.reasoningTokens),
+    outputTokens: Number(row.outputTokens),
   }));
 }
 
@@ -441,9 +458,12 @@ export async function featureUsage(): Promise<FeatureUsage[]> {
 }
 
 export interface ModelShare {
+  readonly providerKey: string;
   readonly modelKey: string;
   readonly calls: number;
   readonly costUsd: number;
+  readonly credits: number;
+  readonly tokens: number;
 }
 
 /** Which models the platform actually leans on. */
@@ -452,19 +472,25 @@ export async function modelShare(days = 30): Promise<ModelShare[]> {
 
   const rows = await db
     .select({
+      providerKey: usageLedger.providerKey,
       modelKey: usageLedger.modelKey,
       calls: count(),
       costUsd: sql<string>`coalesce(sum(${usageLedger.estimatedCostUsd}), 0)`,
+      credits: sql<string>`coalesce(sum(${usageLedger.billableUnits}), 0)`,
+      tokens: sql<string>`coalesce(sum(${usageLedger.inputTokens} + ${usageLedger.outputTokens}), 0)`,
     })
     .from(usageLedger)
     .where(gte(usageLedger.createdAt, since))
-    .groupBy(usageLedger.modelKey)
+    .groupBy(usageLedger.providerKey, usageLedger.modelKey)
     .orderBy(desc(count()));
 
   return rows.map((row) => ({
+    providerKey: row.providerKey ?? 'unknown',
     modelKey: row.modelKey ?? 'unknown',
     calls: Number(row.calls),
     costUsd: Number(row.costUsd),
+    credits: Number(row.credits),
+    tokens: Number(row.tokens),
   }));
 }
 

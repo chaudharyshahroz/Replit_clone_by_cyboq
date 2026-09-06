@@ -22,8 +22,8 @@ vi.mock('@/app/(admin)/admin/actions', () => ({
 const { PlanEditor } = await import('@/components/admin/plan-editor');
 
 const models = [
-  { key: 'gpt-5', displayName: 'GPT-5', costTier: 'premium', creditsPerThousandTokens: 4 },
-  { key: 'haiku', displayName: 'Haiku 4.5', costTier: 'economy', creditsPerThousandTokens: 0.25 },
+  { key: 'gpt-5', displayName: 'GPT-5', costTier: 'premium', inputCreditsPerThousand: 0.3, outputCreditsPerThousand: 1.5 },
+  { key: 'haiku', displayName: 'Haiku 4.5', costTier: 'economy', inputCreditsPerThousand: 0.08, outputCreditsPerThousand: 0.4 },
 ];
 
 const plan = {
@@ -96,8 +96,8 @@ describe('models', () => {
   /** The number shown must be the number charged. */
   it('shows the credit cost of each model', () => {
     render(<PlanEditor plans={[plan]} models={models} />);
-    expect(screen.getByText('4 cr/1k')).toBeDefined();
-    expect(screen.getByText('0.25 cr/1k')).toBeDefined();
+    expect(screen.getByText(/0\.300.*1\.500.*out cr\/1k/)).toBeDefined();
+    expect(screen.getByText(/0\.080.*0\.400.*out cr\/1k/)).toBeDefined();
   });
 
   it('restricts the plan when a model is ticked', async () => {

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { listModels, listPlans, listProviders } from '@/lib/admin-data';
-import { configuredProviderKeys, TIER_WEIGHT } from '@reklu/ai';
+import { configuredProviderKeys } from '@reklu/ai';
 import { AiControls } from '@/components/admin/ai-controls';
 
 export const metadata: Metadata = { title: 'Admin · AI' };
@@ -54,8 +54,8 @@ export default async function AdminAiPage() {
               costTier: model.costTier,
               inputCostPerMillion: model.inputCostPerMillion,
               outputCostPerMillion: model.outputCostPerMillion,
-              creditsPerThousandTokens:
-                TIER_WEIGHT[model.costTier as keyof typeof TIER_WEIGHT] ?? 1,
+              inputCreditsPerThousand: Number(model.inputCostPerMillion) / 10,
+              outputCreditsPerThousand: Number(model.outputCostPerMillion) / 10,
               /*
                * A plan with no explicit list allows every model, so it is not
                * named here — listing every plan against every model would say

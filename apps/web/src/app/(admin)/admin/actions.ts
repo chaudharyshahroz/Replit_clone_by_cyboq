@@ -237,7 +237,7 @@ export async function createPlan(input: {
       isPublic: false,
       sortOrder: 100,
       limits: {
-        aiUnitsPerMonth: 200,
+        aiUnitsPerMonth: 30,
         deepResearchPerMonth: 5,
         buildProjectsMax: 3,
         imageGenerationsPerMonth: 10,

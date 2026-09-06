@@ -10,7 +10,13 @@
  *   - an example in the request is not the scope
  *   - real applications need loading, empty and error states, not a happy path
  */
-import { getProvider, type FinishReason, type ModelMessage, type RegisteredModel } from '@reklu/ai';
+import {
+  getProvider,
+  type FinishReason,
+  type ModelMessage,
+  type RegisteredModel,
+  type TokenUsage,
+} from '@reklu/ai';
 import { sandbox, type SandboxHandle } from '@reklu/sandbox';
 import { errors, logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
@@ -137,6 +143,8 @@ export interface GenerationResult {
   readonly files: readonly GeneratedFile[];
   readonly rejected: readonly { path: string; reason: string }[];
   readonly commentary: string;
+  /** Sum of the initial stream and every bounded completion/recovery call. */
+  readonly usage: TokenUsage;
   /**
    * What the model actually did, kept for the case where it did nothing useful.
    *
@@ -163,6 +171,20 @@ export interface GenerationDiagnostics {
   /** The opening of the response, for a log line a person can read. */
   readonly preview: string;
 }
+
+const EMPTY_USAGE: TokenUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  cachedInputTokens: 0,
+};
+
+const addUsage = (left: TokenUsage, right?: TokenUsage): TokenUsage => ({
+  inputTokens: left.inputTokens + (right?.inputTokens ?? 0),
+  outputTokens: left.outputTokens + (right?.outputTokens ?? 0),
+  reasoningTokens: left.reasoningTokens + (right?.reasoningTokens ?? 0),
+  cachedInputTokens: left.cachedInputTokens + (right?.cachedInputTokens ?? 0),
+});
 
 /**
  * What the model said before it wrote anything.
@@ -285,6 +307,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
   const announced = new Set<string>();
   let narrated = false;
   let finishReason: FinishReason = 'unknown';
+  let usage: TokenUsage = EMPTY_USAGE;
 
   for await (const event of provider.stream({
     modelIdentifier: options.model.modelIdentifier,
@@ -298,7 +321,10 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
      * "the model ran out of room". Both produced the same empty result and the
      * same wrong advice.
      */
-    if (event.type === 'finish') finishReason = event.finishReason;
+    if (event.type === 'finish') {
+      finishReason = event.finishReason;
+      usage = addUsage(usage, event.usage);
+    }
     if (event.type !== 'text-delta') continue;
     text += event.text;
 
@@ -371,6 +397,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
       maxOutputTokens: Math.min(options.model.maxOutputTokens, 16_000),
       ...(options.signal ? { signal: options.signal } : {}),
     });
+    usage = addUsage(usage, completed?.usage);
     const replacement = parseGeneratedFiles(completed?.text ?? '').files.find(
       (file) => file.path === incompletePath,
     );
@@ -453,6 +480,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
         maxOutputTokens: Math.min(options.model.maxOutputTokens, 32_000),
         ...(options.signal ? { signal: options.signal } : {}),
       });
+      usage = addUsage(usage, retry?.usage);
 
       const second = parseGeneratedFiles(retry?.text ?? '');
       if (second.files.length > 0) {
@@ -533,6 +561,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
         maxOutputTokens: Math.min(options.model.maxOutputTokens, 24_000),
         ...(options.signal ? { signal: options.signal } : {}),
       });
+      usage = addUsage(usage, completion?.usage);
 
       const supplemental = parseGeneratedFiles(completion?.text ?? '');
       if (supplemental.files.length === 0) break;
@@ -599,6 +628,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
 
   return {
     ...parsed,
+    usage,
     diagnostics: {
       responseChars: text.length,
       sawFence: text.includes('```'),

@@ -5,7 +5,14 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { enqueue } from '@reklu/queue';
-import { loadRegistry, selectableModels, type RegisteredModel } from '@reklu/ai';
+import {
+  checkQuota,
+  loadRegistry,
+  recordUsage,
+  selectableModels,
+  type RegisteredModel,
+  type TokenUsage,
+} from '@reklu/ai';
 import {
   createCheckpoint,
   deployToVercel,
@@ -202,7 +209,11 @@ async function pickModel(
  */
 async function pickDesignModel(fallback: RegisteredModel): Promise<RegisteredModel> {
   const registry = await loadRegistry();
-  const allowed = selectableModels(registry, undefined);
+  // A design pass is part of the selected build, not permission to spend a
+  // second vendor key. Keep every hidden phase on the provider the user chose.
+  const allowed = selectableModels(registry, undefined).filter(
+    (model) => model.providerKey === fallback.providerKey,
+  );
   const capable = allowed.filter(
     (model) => model.bestFor.includes('coding') || model.bestFor.includes('reasoning'),
   );
@@ -325,7 +336,9 @@ export async function createBuildAction(
 
   try {
     const model = await pickModel(requestedModel);
-    const { brief, usedFallback } = await generateBrief({ prompt, model });
+    const quota = await checkQuota(workspace.workspaceId);
+    if (quota?.exceeded) return { error: 'This workspace has used its AI credits for this period.' };
+    const { brief, usedFallback, usage } = await generateBrief({ prompt, model });
 
     buildId = newId('build');
     await db.insert(buildProjects).values({
@@ -339,6 +352,20 @@ export async function createBuildAction(
       brief: brief as unknown as Record<string, unknown>,
       framework: brief.stack[0] ?? null,
       createdBy: user.id,
+    });
+
+    await recordUsage({
+      workspaceId: workspace.workspaceId,
+      userId: user.id,
+      projectId: buildId,
+      model,
+      usage,
+      kind: 'build',
+      operation: 'Build brief',
+      autoRouted: !requestedModel || requestedModel === 'auto',
+      routingReason: requestedModel ? 'User-selected build provider' : 'Reklu Auto build routing',
+      periodStart:
+        quota?.periodStart ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     });
 
     if (usedFallback) {
@@ -718,6 +745,33 @@ async function drawOne(
 
 async function runGeneration(buildId: string, request: BuildRequest): Promise<GenerateResult> {
   const { user, workspace } = await getAppContext();
+  const quota = await checkQuota(workspace.workspaceId);
+  if (quota?.exceeded) {
+    return {
+      ok: false,
+      message: 'This workspace has used its AI credits for the current billing period.',
+      fileCount: 0,
+    };
+  }
+  const periodStart = quota?.periodStart ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const meterBuildCall = async (
+    selectedModel: RegisteredModel,
+    usage: TokenUsage,
+    operation: string,
+    autoRouted = false,
+  ) =>
+    recordUsage({
+      workspaceId: workspace.workspaceId,
+      userId: user.id,
+      projectId: buildId,
+      model: selectedModel,
+      usage,
+      kind: 'build',
+      operation,
+      autoRouted,
+      routingReason: autoRouted ? 'Reklu Auto build routing' : 'User-selected build provider',
+      periodStart,
+    });
   const performance = createBuildPerformanceTimeline((mark) =>
     recordStep({
       buildId,
@@ -1073,6 +1127,12 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   }
 
   if (!generated) throw errors.internal('Build generation returned no result.');
+  await meterBuildCall(
+    model,
+    generated.usage,
+    'Build generation',
+    !request.modelKey || request.modelKey === 'auto',
+  );
   await performance.mark('generation_completed', `${generated.files.length} files`);
 
   if (generated.files.length === 0) {
@@ -1148,6 +1208,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         designEngineV3,
         designEngineV4,
       });
+      await meterBuildCall(designModel, designed.usage, 'Build design pass');
       if (designed.files.length > 0) {
         merged = mergeTree(merged, designed.files);
         logger.info('Design pass revised files', {
@@ -1191,6 +1252,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           designEngineV4,
           feedback: blockingFindings,
         });
+        await meterBuildCall(designModel, refined.usage, 'Build design refinement');
         if (refined.files.length > 0) {
           merged = mergeTree(merged, refined.files);
           logger.info('Design critic revision updated files', {

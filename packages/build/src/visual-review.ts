@@ -1,4 +1,9 @@
-import { getProvider, type ModelMessage, type RegisteredModel } from '@reklu/ai';
+import {
+  getProvider,
+  type ModelMessage,
+  type RegisteredModel,
+  type TokenUsage,
+} from '@reklu/ai';
 import type { PreviewScreenshot } from '@reklu/sandbox';
 import type { BuildBrief } from './brief';
 import type { DesignContract } from './design-contract';
@@ -9,6 +14,10 @@ export interface VisualReview {
   readonly summary: string;
   readonly findings: readonly string[];
   readonly criticalFindings?: readonly string[];
+}
+
+export interface MeteredVisualReview extends VisualReview {
+  readonly usage: TokenUsage;
 }
 
 export function parseVisualReview(text: string): VisualReview {
@@ -43,7 +52,7 @@ export async function reviewRenderedDesign(options: {
   readonly screenshot: PreviewScreenshot;
   readonly model: RegisteredModel;
   readonly signal?: AbortSignal;
-}): Promise<VisualReview> {
+}): Promise<MeteredVisualReview> {
   if (!options.model.supportsVision)
     throw new Error('The visual reviewer model cannot see images.');
   const provider = getProvider(options.model.providerKey);
@@ -92,7 +101,7 @@ export async function reviewRenderedDesign(options: {
     ...(options.signal ? { signal: options.signal } : {}),
   });
 
-  return parseVisualReview(result.text);
+  return { ...parseVisualReview(result.text), usage: result.usage };
 }
 
 export function visualRevisionPrompt(review: VisualReview): string {

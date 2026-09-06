@@ -77,14 +77,10 @@ describe('costMicros', () => {
 });
 
 describe('billableUnits', () => {
-  it('weights premium tiers more heavily than economy', () => {
+  it('converts actual provider cost at one cent per credit', () => {
     const tokens = usage({ inputTokens: 10_000, outputTokens: 10_000 });
-    const economy = billableUnits(model({ costTier: 'economy' }), tokens);
-    const standard = billableUnits(model({ costTier: 'standard' }), tokens);
-    const premium = billableUnits(model({ costTier: 'premium' }), tokens);
-
-    expect(economy).toBeLessThan(standard);
-    expect(standard).toBeLessThan(premium);
+    // $0.18 / $0.01
+    expect(billableUnits(model(), tokens)).toBe(18);
   });
 
   // The development mock must never consume a customer's quota.
@@ -94,8 +90,8 @@ describe('billableUnits', () => {
     ).toBe(0);
   });
 
-  it('charges a minimum for a real but tiny call', () => {
-    expect(billableUnits(model(), usage({ inputTokens: 1, outputTokens: 1 }))).toBeGreaterThan(0);
+  it('does not invent a minimum charge for a tiny call', () => {
+    expect(billableUnits(model(), usage({ inputTokens: 1, outputTokens: 1 }))).toBe(0.0018);
   });
 
   it('grows with token count', () => {

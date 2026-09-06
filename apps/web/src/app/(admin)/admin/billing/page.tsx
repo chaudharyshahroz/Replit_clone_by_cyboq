@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { listModels, listPlans, revenueSummary, spendBreakdown } from '@/lib/admin-data';
 import { PlanEditor } from '@/components/admin/plan-editor';
 import { NewPlan } from '@/components/admin/new-plan';
-import { TIER_WEIGHT } from '@reklu/ai';
 
 export const metadata: Metadata = { title: 'Admin · Billing' };
 export const dynamic = 'force-dynamic';
@@ -118,8 +117,8 @@ export default async function AdminBillingPage() {
                 costTier: model.costTier,
                 // From the same table the meter uses, so the number shown is
                 // the number charged.
-                creditsPerThousandTokens:
-                  TIER_WEIGHT[model.costTier as keyof typeof TIER_WEIGHT] ?? 1,
+                inputCreditsPerThousand: Number(model.inputCostPerMillion) / 10,
+                outputCreditsPerThousand: Number(model.outputCostPerMillion) / 10,
               }))}
             plans={plansList.map((plan) => ({
               id: plan.id,
@@ -165,9 +164,11 @@ export default async function AdminBillingPage() {
               <caption className="sr-only">Provider spend by model and operation</caption>
               <thead>
                 <tr className="bg-surface-raised text-left text-[0.6875rem] uppercase tracking-wider text-text-muted">
-                  <th scope="col" className="px-3 py-2 font-medium">Model</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Provider / model</th>
                   <th scope="col" className="px-3 py-2 font-medium">Operation</th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">Calls</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">In / cached</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Reason / out</th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">Units</th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">Cost</th>
                 </tr>
@@ -178,10 +179,19 @@ export default async function AdminBillingPage() {
                     key={`${row.modelKey}-${row.operation}`}
                     className="border-t border-border bg-surface"
                   >
-                    <td className="px-3 py-2 font-mono text-xs text-text">{row.modelKey ?? '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-text">
+                      <span className="block text-text-muted">{row.providerKey ?? 'unknown'}</span>
+                      {row.modelKey ?? '—'}
+                    </td>
                     <td className="px-3 py-2 text-text-secondary">{row.operation}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-text-secondary">
                       {row.calls.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-text-secondary">
+                      {row.inputTokens.toLocaleString()} / {row.cachedInputTokens.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-text-secondary">
+                      {row.reasoningTokens.toLocaleString()} / {row.outputTokens.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-text-secondary">
                       {Math.round(row.units).toLocaleString()}

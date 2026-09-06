@@ -94,8 +94,8 @@ export default async function UsagePage() {
         ) : null}
 
         <p className="mt-4 border-t border-border pt-3 text-xs text-text-muted">
-          On {plan?.name ?? 'Free'}. One credit is 1,000 tokens on a standard model;
-          faster models cost less and the most capable cost more.
+          On {plan?.name ?? 'Free'}. One credit equals $0.01 of variable provider cost;
+          cached, input, output, and reasoning usage are measured per provider response.
         </p>
       </section>
 

@@ -11,7 +11,7 @@
  * the full feature set rather than the illustrative subset.
  */
 import { z } from 'zod';
-import type { RegisteredModel } from '@reklu/ai';
+import type { RegisteredModel, TokenUsage } from '@reklu/ai';
 import { getProvider, type ModelMessage } from '@reklu/ai';
 import { logger } from '@reklu/shared';
 
@@ -143,7 +143,15 @@ export interface BriefResult {
   readonly brief: BuildBrief;
   /** True when the model's brief could not be parsed and a fallback was used. */
   readonly usedFallback: boolean;
+  readonly usage: TokenUsage;
 }
+
+const EMPTY_USAGE: TokenUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  cachedInputTokens: 0,
+};
 
 /**
  * Produce a brief for a prompt.
@@ -153,7 +161,8 @@ export interface BriefResult {
  */
 export async function generateBrief(options: GenerateBriefOptions): Promise<BriefResult> {
   const provider = getProvider(options.model.providerKey);
-  if (!provider) return { brief: fallbackBrief(options.prompt), usedFallback: true };
+  if (!provider)
+    return { brief: fallbackBrief(options.prompt), usedFallback: true, usage: EMPTY_USAGE };
 
   const messages: ModelMessage[] = [
     { role: 'user', content: [{ type: 'text', text: options.prompt }] },
@@ -170,13 +179,13 @@ export async function generateBrief(options: GenerateBriefOptions): Promise<Brie
     });
 
     const brief = parseBrief(result.text);
-    if (brief) return { brief, usedFallback: false };
+    if (brief) return { brief, usedFallback: false, usage: result.usage };
 
     logger.warn('Build brief could not be parsed; using heuristic fallback');
-    return { brief: fallbackBrief(options.prompt), usedFallback: true };
+    return { brief: fallbackBrief(options.prompt), usedFallback: true, usage: result.usage };
   } catch (error) {
     logger.error('Build brief generation failed', { error });
-    return { brief: fallbackBrief(options.prompt), usedFallback: true };
+    return { brief: fallbackBrief(options.prompt), usedFallback: true, usage: EMPTY_USAGE };
   }
 }
 

@@ -108,11 +108,17 @@ export default async function AdminAnalyticsPage() {
             {models.map((row) => {
               const share = totalCalls > 0 ? (row.calls / totalCalls) * 100 : 0;
               return (
-                <li key={row.modelKey} className="rounded-lg border border-border bg-surface p-3">
+                <li key={`${row.providerKey}-${row.modelKey}`} className="rounded-lg border border-border bg-surface p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <code className="font-mono text-xs text-text">{row.modelKey}</code>
+                    <div>
+                      <span className="block text-[0.6875rem] uppercase tracking-wide text-text-muted">
+                        {row.providerKey}
+                      </span>
+                      <code className="font-mono text-xs text-text">{row.modelKey}</code>
+                    </div>
                     <span className="text-xs text-text-secondary">
-                      {row.calls.toLocaleString()} calls · ${row.costUsd.toFixed(4)} ·{' '}
+                      {row.calls.toLocaleString()} calls · {row.tokens.toLocaleString()} tokens ·{' '}
+                      {row.credits.toFixed(2)} credits · ${row.costUsd.toFixed(4)} ·{' '}
                       {share.toFixed(0)}%
                     </span>
                   </div>

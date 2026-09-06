@@ -505,7 +505,10 @@ export async function POST(request: Request): Promise<Response> {
           } else if (tool === 'build') {
             send({ type: 'status', stage: 'planning', detail: 'Planning the build…' });
 
-            const { brief, usedFallback } = await generateBrief({ prompt: body.message, model });
+            const { brief, usedFallback, usage: briefUsage } = await generateBrief({
+              prompt: body.message,
+              model,
+            });
             const buildId = newId('build');
             const name = brief.product.slice(0, 120);
 
@@ -520,6 +523,21 @@ export async function POST(request: Request): Promise<Response> {
               brief: brief as unknown as Record<string, unknown>,
               framework: brief.stack[0] ?? null,
               createdBy: user.id,
+            });
+
+            await recordUsage({
+              workspaceId: access.workspaceId,
+              userId: user.id,
+              projectId: buildId,
+              conversationId,
+              model,
+              usage: briefUsage,
+              kind: 'build',
+              operation: 'Build brief',
+              autoRouted,
+              routingReason,
+              requestId,
+              periodStart,
             });
 
             if (usedFallback) log.warn('Build brief fell back to heuristics', { buildId });

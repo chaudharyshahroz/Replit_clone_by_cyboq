@@ -23,9 +23,13 @@ import type { RegisteredModel } from './registry';
 import type { TokenUsage } from './types';
 
 const MICROS_PER_USD = 1_000_000;
+/** One Reklu credit represents one cent of real variable provider cost. */
+export const USD_PER_REKLU_CREDIT = 0.01;
 
 /** Provider cost in micro-dollars. Rates are per million tokens. */
 export function costMicros(model: RegisteredModel, usage: TokenUsage): number {
+  // Providers report cached input inside total input. Until a model has an
+  // explicit cache rate, price it conservatively at the normal input rate.
   const input = usage.inputTokens * model.inputCostPerMillion;
   const output = usage.outputTokens * model.outputCostPerMillion;
   // Reasoning tokens are billed at the output rate by every current provider.
@@ -36,30 +40,12 @@ export function costMicros(model: RegisteredModel, usage: TokenUsage): number {
 export const microsToUsdString = (micros: number): string =>
   (micros / MICROS_PER_USD).toFixed(6);
 
-/**
- * Billable units charged against a plan quota.
- *
- * Decoupled from raw provider cost on purpose: users should not need to reason
- * about token prices, and Reklu must be able to re-price without changing what
- * a customer's quota means. One unit ≈ a standard-tier turn.
- */
-/**
- * Credits charged per 1,000 tokens, by cost tier.
- *
- * Exported so the admin panel can state the real number rather than keep a
- * second copy that drifts from the one doing the arithmetic.
- */
-export const TIER_WEIGHT: Record<RegisteredModel['costTier'], number> = {
-  economy: 0.25,
-  standard: 1,
-  premium: 4,
-};
-
 export function billableUnits(model: RegisteredModel, usage: TokenUsage): number {
   if (model.isDevelopmentMock) return 0;
-  const tokens = usage.inputTokens + usage.outputTokens + usage.reasoningTokens;
-  const units = (tokens / 1_000) * TIER_WEIGHT[model.costTier];
-  return Math.max(0.01, Math.round(units * 100) / 100);
+  // Cost is computed in integer micro-dollars. 10,000 micro-dollars = $0.01.
+  // Keep four decimals so tiny calls aggregate accurately; never invent a
+  // minimum charge or a tier multiplier that the provider did not charge.
+  return Math.round((costMicros(model, usage) / 10_000) * 10_000) / 10_000;
 }
 
 export interface RecordUsageInput {

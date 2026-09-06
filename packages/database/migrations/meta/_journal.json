@@ -113,6 +113,13 @@
       "when": 1788584400000,
       "tag": "0015_kimi_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788670800000,
+      "tag": "0016_credit_plan_catalog",
+      "breakpoints": true
     }
   ]
 }
