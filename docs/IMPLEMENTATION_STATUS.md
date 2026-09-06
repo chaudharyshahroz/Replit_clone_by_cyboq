@@ -1,11 +1,11 @@
 # Reklu — Implementation Status
 
-**Last updated:** 2026-09-02 (Design Intelligence foundation)
+**Last updated:** 2026-09-06 (Design Intelligence V5 increment)
 
 This file is the handoff contract. It is deliberately conservative: something is
 listed as complete only if it has been executed and verified, not merely written.
 
-## Current increment — Design Intelligence + Fast Build foundation 🚧
+## Current increment — Design Intelligence V5 + Fast Build foundation 🚧
 
 | Item | State | Evidence |
 | ---- | ----- | -------- |
@@ -17,6 +17,27 @@ listed as complete only if it has been executed and verified, not merely written
 | Structured multi-category screenshot critic | 🚧 | Schema exists; legacy visual reviewer still needs migration |
 | Two-phase Fast Preview / Complete Build | ⬜ | Current bottlenecks and target architecture documented |
 | Durable build worker + performance spans | 🚧 | Exact spans now persist as Build events; orchestration still remains in a server action |
+
+### V5 design-team increment — 2026-09-06
+
+| Item | State | Evidence |
+| ---- | ----- | -------- |
+| Combined product interpretation | ✅ | Restaurant + shop intent produces Menu, Shop, and Locations requirements; regression tested |
+| Structured V5 design-team contract | ✅ | ProductSpec, BrandStrategy, three art directions, selected direction, ReferenceAnalysis, storyboard, LayoutRecipe, AssetPlan |
+| Built-in skill routing | ✅ | Typed registry plus industry/capability router; active skills persisted per project |
+| Premium component registry | ✅ | Typed metadata, per-project selection and usage ledger persisted in `.reklu/` |
+| Deterministic V5 compiler | ✅ | Compiler CSS, safe media primitive, and eight persistent `.reklu` artifacts |
+| Multi-viewport visual critic | ✅ | 1440/1024/768/430/390 captures reviewed together; per-viewport score required |
+| Same-provider repair integrity | ✅ | Background review/repair never falls back to DeepSeek, Kimi, or another provider implicitly |
+| Expanded anti-generic lint | ✅ | Nested cards, unearned bento, radius drift, and shadow drift added to existing checks |
+| Full premium quality gate | 🚧 | Responsive critic exists; true full-page, decoded-asset, overflow, contrast, navigation, and keyboard evidence remains pending |
+| Cross-industry regression | ✅ | V5 category variety and Coffino combined-commerce behavior tested |
+
+Verification on 2026-09-06:
+
+- `pnpm --filter @reklu/design-intelligence test` → 28 passed
+- `pnpm --filter @reklu/build test` → 410 passed
+- package typechecks for design-intelligence, build, web, and worker → passed after the V5 integration fixes
 
 ### V2 latency increment — 2026-09-02
 

@@ -35,7 +35,9 @@ import {
   designDNAPrompt,
   designEngineV3Prompt,
   designEngineV4Prompt,
+  designEngineV5Prompt,
   type DesignEngineV4,
+  type DesignEngineV5,
   type DesignDNA,
   type DesignEngineV3,
 } from '@reklu/design-intelligence';
@@ -137,6 +139,8 @@ export interface GenerateBuildOptions {
   /** Selected brand, art direction, recipe, and storyboard for Design Engine V3. */
   readonly designEngineV3?: DesignEngineV3 | undefined;
   readonly designEngineV4?: DesignEngineV4 | undefined;
+  /** V5 is the complete design-team decision record; V4 remains its compiler target. */
+  readonly designEngineV5?: DesignEngineV5 | undefined;
 }
 
 export interface GenerationResult {
@@ -289,7 +293,9 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
   const system = [
     GENERATION_PROMPT,
     skillGuidanceFor(options.brief.target),
-    ...(options.designEngineV4
+    ...(options.designEngineV5
+      ? [designEngineV5Prompt(options.designEngineV5), designEngineV4Prompt(options.designEngineV5.compiler.engine)]
+      : options.designEngineV4
       ? [designEngineV4Prompt(options.designEngineV4)]
       : [
           ...(direction ? [directionPrompt(direction, options.brief.target)] : []),
@@ -520,6 +526,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
         ...compileDesignTree(
           mergeTree(options.existingFiles ?? [], parsed.files),
           options.designEngineV4,
+          options.designEngineV5,
         ),
       ],
     };

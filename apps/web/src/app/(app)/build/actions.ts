@@ -74,8 +74,10 @@ import {
   createDesignDNA,
   createDesignEngineV3,
   createDesignEngineV4,
+  createDesignEngineV5,
   DESIGN_ENGINE_V4_REVISION,
   DesignEngineV4Schema,
+  DesignEngineV5Schema,
   compileDesignTree,
   createInformationArchitecture,
   understandProduct,
@@ -857,6 +859,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
   const storedDNA = DesignDNASchema.safeParse(storedAnalysis.designDNA);
   const storedEngineV3 = DesignEngineV3Schema.safeParse(storedAnalysis.designEngineV3);
   const storedEngineV4 = DesignEngineV4Schema.safeParse(storedAnalysis.designEngineV4);
+  const storedEngineV5 = DesignEngineV5Schema.safeParse(storedAnalysis.designEngineV5);
   const productContext = understandProduct({
     product: brief.product,
     summary: brief.summary,
@@ -874,9 +877,18 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       ? storedEngineV4.data
       : createDesignEngineV4(productContext, buildId)
     : undefined;
+  const designEngineV5 = designEngineV4
+    ? storedEngineV5.success &&
+      storedEngineV4.success &&
+      storedEngineV4.data.revision >= DESIGN_ENGINE_V4_REVISION
+      ? storedEngineV5.data
+      : createDesignEngineV5(productContext, buildId)
+    : undefined;
   const designEngineNeedsSave =
     Boolean(designEngineV4) &&
-    (!storedEngineV4.success || storedEngineV4.data.revision < DESIGN_ENGINE_V4_REVISION);
+    (!storedEngineV4.success ||
+      storedEngineV4.data.revision < DESIGN_ENGINE_V4_REVISION ||
+      !storedEngineV5.success);
   const designDNA: DesignDNA =
     designEngineV4?.dna ?? (storedDNA.success ? storedDNA.data : createDesignDNA(productContext));
   const designEngineV3: DesignEngineV3 = storedEngineV3.success
@@ -907,6 +919,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           designDNA,
           designEngineV3,
           ...(designEngineV4 ? { designEngineV4 } : {}),
+          ...(designEngineV5 ? { designEngineV5 } : {}),
           informationArchitecture,
         },
       })
@@ -1046,6 +1059,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       designDNA,
       designEngineV3,
       designEngineV4,
+      designEngineV5,
       /*
        * Each stage is written down as it is entered, in the words a reader would
        * use. The status alone said "generating" for the whole of a two-minute
@@ -1221,6 +1235,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         contract,
         designEngineV3,
         designEngineV4,
+        designEngineV5,
       });
       await meterBuildCall(designModel, designed.usage, 'Build design pass');
       if (designed.files.length > 0) {
@@ -1264,6 +1279,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           contract,
           designEngineV3,
           designEngineV4,
+          designEngineV5,
           feedback: blockingFindings,
         });
         await meterBuildCall(designModel, refined.usage, 'Build design refinement');
@@ -1327,6 +1343,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           designDNA,
           designEngineV3,
           ...(designEngineV4 ? { designEngineV4 } : {}),
+          ...(designEngineV5 ? { designEngineV5 } : {}),
           informationArchitecture,
           designAnalytics,
         },
@@ -1359,7 +1376,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
    * missing line in a config file.
    */
   let resolved = normalizeGeneratedTree(
-    designEngineV4 ? compileDesignTree(merged, designEngineV4) : merged,
+    designEngineV4 ? compileDesignTree(merged, designEngineV4, designEngineV5) : merged,
   );
 
   /*
@@ -1391,6 +1408,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       existingFiles: resolved,
       designDNA,
       designEngineV4,
+      designEngineV5,
       report: async (stage) => {
         await db
           .update(buildProjects)
@@ -1403,7 +1421,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     });
     resolved = normalizeGeneratedTree(
       designEngineV4
-        ? compileDesignTree(mergeTree(resolved, corrected.files), designEngineV4)
+        ? compileDesignTree(mergeTree(resolved, corrected.files), designEngineV4, designEngineV5)
         : mergeTree(resolved, corrected.files),
     );
     if (hydrationSafetyIssues(resolved).length > 0) {
@@ -1445,6 +1463,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       existingFiles: resolved,
       designDNA,
       designEngineV4,
+      designEngineV5,
       report: async (stage) => {
         await db
           .update(buildProjects)
@@ -1498,8 +1517,28 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
             message,
           }),
         buildPath.path === 'fast'
-          ? { priority: 'critical', maxAssets: 6 }
-          : { priority: 'all', maxAssets: 8 },
+          ? {
+              priority: 'critical',
+              maxAssets: 6,
+              artDirection: designEngineV5
+                ? {
+                    photography: designEngineV5.artDirection.photographyDirection,
+                    palette: designEngineV5.artDirection.paletteDirection,
+                    composition: designEngineV5.assetPlan[0]?.composition,
+                  }
+                : undefined,
+            }
+          : {
+              priority: 'all',
+              maxAssets: 8,
+              artDirection: designEngineV5
+                ? {
+                    photography: designEngineV5.artDirection.photographyDirection,
+                    palette: designEngineV5.artDirection.paletteDirection,
+                    composition: designEngineV5.assetPlan[0]?.composition,
+                  }
+                : undefined,
+            },
       );
   await performance.mark(
     'assets_completed',
@@ -1544,6 +1583,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         ...(designEngineV4
           ? {
               designEngineV4,
+              ...(designEngineV5 ? { designEngineV5 } : {}),
               designQuality: {
                 status: 'pending',
                 reason: 'Preview readiness is not visual approval; rendered checks pending.',

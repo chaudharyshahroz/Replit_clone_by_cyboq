@@ -8,6 +8,7 @@ import {
   listCheckpoints,
   loadTree,
   DesignEngineV4Schema,
+  DesignEngineV5Schema,
   type BuildBrief,
 } from '@reklu/build';
 import { loadRegistry, selectableModels } from '@reklu/ai';
@@ -41,7 +42,7 @@ export default async function BuildDetailPage({
 }: {
   params: Promise<{ buildId: string }>;
 }) {
-  const { workspace } = await getAppContext();
+  const { user, workspace } = await getAppContext();
   const { buildId } = await params;
 
   const [project] = await db
@@ -99,6 +100,7 @@ export default async function BuildDetailPage({
   const latest = checkpoints[0];
   const analysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
   const engine = DesignEngineV4Schema.safeParse(analysis.designEngineV4);
+  const designTeam = DesignEngineV5Schema.safeParse(analysis.designEngineV5);
   const quality = (analysis.designQuality ?? {}) as Record<string, unknown>;
   const qualityCurrent = quality.versionId === project.currentVersionId;
   const qualityLabel =
@@ -111,6 +113,7 @@ export default async function BuildDetailPage({
     ...(Array.isArray(quality.failures) ? quality.failures : []),
     ...(Array.isArray(quality.pending) ? quality.pending : []),
   ].filter((item): item is string => typeof item === 'string');
+  const showDesignDebug = user.isSuperAdmin || process.env.NODE_ENV !== 'production';
 
   return (
     /*
@@ -162,15 +165,31 @@ export default async function BuildDetailPage({
               {project.statusDetail}
             </p>
           ) : null}
-          {engine.success ? (
+          {showDesignDebug && (designTeam.success || engine.success) ? (
             <details className="mt-3 text-xs text-text-secondary">
               <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2">
-                Design V4 · {qualityLabel}
+                Design {designTeam.success ? 'V5' : 'V4'} · {qualityLabel}
               </summary>
               <div className="mt-2 space-y-2 leading-relaxed">
-                <p>
-                  {engine.data.selection.profile} · {engine.data.product.industry}
-                </p>
+                {designTeam.success ? (
+                  <>
+                    <p>
+                      {designTeam.data.artDirection.conceptName} ·{' '}
+                      {designTeam.data.productSpec.industry}
+                    </p>
+                    <p>
+                      Active team: {designTeam.data.activeAgents.map((agent) => agent.name).join(', ')}
+                    </p>
+                    <p>
+                      Routed skills: {designTeam.data.activeSkills.map((skill) => skill.name).join(', ')}
+                    </p>
+                    <p>
+                      Components: {Object.values(designTeam.data.componentSelections).join(', ')}
+                    </p>
+                  </>
+                ) : engine.success ? (
+                  <p>{engine.data.selection.profile} · {engine.data.product.industry}</p>
+                ) : null}
                 <p>Preview readiness is separate from design approval.</p>
                 {qualityCurrent && qualityReasons.length ? (
                   <ul className="list-disc space-y-1 pl-4">

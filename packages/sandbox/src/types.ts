@@ -153,7 +153,7 @@ export interface SandboxDriver {
     command?: PreviewCommand,
   ): Promise<PreviewHandle>;
   /** Capture the rendered app inside the sandbox. Unsupported drivers omit it. */
-  capturePreview?(handle: SandboxHandle, port: number): Promise<PreviewScreenshot>;
+  capturePreview?(handle: SandboxHandle, port: number, width?: number): Promise<PreviewScreenshot>;
   destroy(handle: SandboxHandle): Promise<void>;
 }
 

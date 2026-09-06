@@ -7,4 +7,5 @@ export * from './fast-path';
 export * from './performance';
 export * from './v3';
 export * from './v4';
+export * from './v5';
 export * from './quality-gate';

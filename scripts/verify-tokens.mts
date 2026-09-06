@@ -49,7 +49,12 @@ const PREFIXES = [
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
-    if (statSync(path).isDirectory()) sourceFiles(path, found);
+    // Test fixtures intentionally contain examples of invalid generated classes.
+    // They are inputs to validators, not production Tailwind usage.
+    if (statSync(path).isDirectory()) {
+      if (entry === '__tests__' || entry === '__fixtures__') continue;
+      sourceFiles(path, found);
+    }
     else if (/\.tsx?$/.test(entry)) found.push(path);
   }
   return found;

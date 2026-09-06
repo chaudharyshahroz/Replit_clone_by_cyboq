@@ -1,4 +1,9 @@
-import { compileDesignStyles, type DesignEngineV4 } from '@reklu/design-intelligence';
+import {
+  compileDesignStyles,
+  PREMIUM_COMPONENTS,
+  type DesignEngineV4,
+  type DesignEngineV5,
+} from '@reklu/design-intelligence';
 import type { GeneratedFile } from './parse';
 
 /** Compiler-owned, dependency-free media primitive. A fallback never masquerades as a loaded asset. */
@@ -31,6 +36,7 @@ export default BrandImage;
 export function compileDesignTree(
   files: readonly GeneratedFile[],
   engine: DesignEngineV4,
+  designTeam?: DesignEngineV5,
 ): readonly GeneratedFile[] {
   const layout = files.find((f) => /^(?:src\/)?app\/layout\.[jt]sx$/.test(f.path));
   if (!layout) return files; // Imported/non-Next projects retain their own styling pipeline.
@@ -43,11 +49,19 @@ export function compileDesignTree(
       language: 'tsx',
       content: BRAND_IMAGE_SOURCE,
     },
-    {
-      path: '.reklu/design-engine.json',
-      language: 'json',
-      content: JSON.stringify(engine, null, 2),
-    },
+    { path: '.reklu/design-engine.json', language: 'json', content: JSON.stringify(designTeam ?? engine, null, 2) },
+    ...(designTeam
+      ? [
+          { path: '.reklu/product.json', language: 'json', content: JSON.stringify(designTeam.productSpec, null, 2) },
+          { path: '.reklu/brand.json', language: 'json', content: JSON.stringify(designTeam.brandStrategy, null, 2) },
+          { path: '.reklu/art-direction.json', language: 'json', content: JSON.stringify(designTeam.artDirection, null, 2) },
+          { path: '.reklu/design-dna.json', language: 'json', content: JSON.stringify(designTeam.designDNA, null, 2) },
+          { path: '.reklu/design-recipe.json', language: 'json', content: JSON.stringify({ storyboard: designTeam.storyboard, layout: designTeam.layoutRecipe, components: designTeam.componentSelections }, null, 2) },
+          { path: '.reklu/assets.json', language: 'json', content: JSON.stringify(designTeam.assetPlan, null, 2) },
+          { path: '.reklu/component-registry.json', language: 'json', content: JSON.stringify(PREMIUM_COMPONENTS, null, 2) },
+          { path: '.reklu/component-usage.json', language: 'json', content: JSON.stringify(Object.values(designTeam.componentSelections).reduce<Record<string, number>>((usage, id) => { usage[id] = (usage[id] ?? 0) + 1; return usage; }, {}), null, 2) },
+        ]
+      : []),
   ];
   const paths = new Set(artifacts.map((f) => f.path));
   const result = files

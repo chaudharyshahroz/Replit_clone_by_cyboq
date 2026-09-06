@@ -47,4 +47,20 @@ describe('rendered visual review', () => {
     expect(prompt).toContain('Remove the oversized empty hero region.');
     expect(prompt).toContain('Preserve all routes, behavior, data flow');
   });
+
+  it('keeps per-viewport scores for the responsive quality gate', () => {
+    expect(
+      parseVisualReview(JSON.stringify({
+        score: 88,
+        verdict: 'pass',
+        summary: 'Responsive system is coherent.',
+        findings: [],
+        criticalFindings: [],
+        viewportScores: { 1440: 91, 1024: 88, 768: 86, 430: 84, 390: 83 },
+      })),
+    ).toMatchObject({
+      verdict: 'pass',
+      viewportScores: { 1440: 91, 1024: 88, 768: 86, 430: 84, 390: 83 },
+    });
+  });
 });

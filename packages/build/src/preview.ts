@@ -697,6 +697,7 @@ export async function typecheckPreview(params: {
 export async function captureRenderedPreview(params: {
   readonly buildProjectId: string;
   readonly workspaceId: string;
+  readonly width?: number;
 }): Promise<PreviewScreenshot | undefined> {
   const [row] = await db
     .select({ id: sandboxes.id, externalId: sandboxes.externalId, port: sandboxes.port })
@@ -723,7 +724,22 @@ export async function captureRenderedPreview(params: {
       isIsolated: driver.isIsolated,
     },
     row.port,
+    params.width,
   );
+}
+
+/** Capture the complete required evidence matrix. Missing widths remain explicit pending evidence. */
+export async function captureRenderedPreviews(params: {
+  readonly buildProjectId: string;
+  readonly workspaceId: string;
+  readonly widths: readonly number[];
+}): Promise<readonly PreviewScreenshot[]> {
+  const captures: PreviewScreenshot[] = [];
+  for (const width of params.widths) {
+    const screenshot = await captureRenderedPreview({ ...params, width });
+    if (screenshot) captures.push(screenshot);
+  }
+  return captures;
 }
 
 export async function startPreview(params: {

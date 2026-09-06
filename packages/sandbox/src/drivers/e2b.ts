@@ -309,7 +309,7 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
       };
     },
 
-    async capturePreview(handle: SandboxHandle, port: number) {
+    async capturePreview(handle: SandboxHandle, port: number, width = 1440) {
       const runtime = await connect(handle);
       let browser: DesktopSandbox | undefined;
       try {
@@ -322,7 +322,7 @@ export function createE2bSandboxDriver(options: E2bDriverOptions): SandboxDriver
         browser = await DesktopSandbox.create('desktop', {
           apiKey,
           timeoutMs: 60_000,
-          resolution: [1440, 1000],
+          resolution: [Math.max(320, Math.min(width, 1920)), width <= 430 ? 932 : 1000],
           metadata: { reklu_preview_capture_for: handle.id },
           envs: isolatedEnv() as Record<string, string>,
         });

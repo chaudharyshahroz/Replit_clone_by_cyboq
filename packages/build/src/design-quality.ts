@@ -54,12 +54,19 @@ const NARROW_HERO_CSS =
 const SKINNY_HERO_GRID =
   /(?:hero)[^{]{0,100}\{[^}]{0,800}grid-template-columns\s*:\s*(?:(?:[12]\d|3[0-2])%\s+|(?:0?\.[123]\d*fr)\s+)/i;
 
-function usesDesignEngineV4(files: readonly GeneratedFile[]): boolean {
+function usesDesignEngineContract(files: readonly GeneratedFile[]): boolean {
   return files.some(
     (file) =>
       /(?:^|\/)\.reklu\/design-engine\.json$/.test(file.path) &&
-      /["']version["']\s*:\s*4\b/.test(file.content),
+      /["']version["']\s*:\s*[45]\b/.test(file.content),
   );
+}
+
+function distinctCssValues(source: string, property: string): number {
+  const values = new Set<string>();
+  const pattern = new RegExp(`${property}\\s*:\\s*([^;}]+)`, 'gi');
+  for (const match of source.matchAll(pattern)) values.add(match[1]!.trim());
+  return values.size;
 }
 
 /** Return call bodies without pretending a regular expression can parse nested JavaScript. */
@@ -154,6 +161,14 @@ export function evaluateGenericity(files: readonly GeneratedFile[]): GenericityR
       'A stock gradient/glow treatment replaces product-specific art direction.',
     );
   }
+  if (/\bbento\b/i.test(visual) && !/dashboard|analytics|comparison/i.test(visual))
+    add('unearned-bento', 15, 'A bento composition appears without information-density need.');
+  if (/<(?:div|article)[^>]*\brk-card\b[^>]*>[\s\S]{0,1200}<[^>]*\brk-card\b/i.test(visual))
+    add('nested-cards', 20, 'Card surfaces are nested and flatten the information hierarchy.');
+  if (distinctCssValues(visual, 'border-radius') > 7)
+    add('radius-drift', 15, 'Too many independent radius values weaken the shape system.');
+  if (distinctCssValues(visual, 'box-shadow') > 6)
+    add('shadow-drift', 15, 'Too many independent shadows weaken the elevation system.');
 
   const score = Math.min(
     100,
@@ -221,17 +236,17 @@ export function auditDesignQuality(
       });
     }
 
-    if (usesDesignEngineV4(files)) {
+    if (usesDesignEngineContract(files)) {
       const markup = files
         .filter((file) => /\.(?:tsx|jsx|html)$/.test(file.path))
         .map((file) => file.content)
         .join('\n');
       if (!/\brk-hero\b/.test(markup) || !/\brk-hero-title\b/.test(markup)) {
         issues.push({
-          code: 'missing-v4-hero-contract',
+          code: 'missing-design-hero-contract',
           severity: 'blocking',
           message:
-            'This V4 website does not use both rk-hero and rk-hero-title. Apply the compiler-owned hero contract with exactly two direct children so generated CSS cannot collapse the first viewport.',
+            'This generated website does not use both rk-hero and rk-hero-title. Apply the compiler-owned hero contract with exactly two direct children so generated CSS cannot collapse the first viewport.',
         });
       }
       if (
@@ -242,10 +257,17 @@ export function auditDesignQuality(
           !/\brk-header-actions\b/.test(markup))
       ) {
         issues.push({
-          code: 'missing-v4-header-contract',
+          code: 'missing-design-header-contract',
           severity: 'blocking',
           message:
             'The header bypasses the compiler-owned composition. Apply rk-site-header, rk-header-inner, rk-site-nav and rk-header-actions so brand, navigation and actions cannot fall into raw document flow.',
+        });
+      }
+      if (/<(?:div|article)[^>]*\brk-card\b[^>]*>[\s\S]{0,1200}<[^>]*\brk-card\b/i.test(markup)) {
+        issues.push({
+          code: 'nested-cards',
+          severity: 'blocking',
+          message: 'Card surfaces are nested. Remove the inner card chrome and restore one clear grouping level.',
         });
       }
 
@@ -329,6 +351,32 @@ export function auditDesignQuality(
         severity: 'warning',
         message:
           'Several sections force a full viewport height. Size sections from their content and use a deliberate spacing scale.',
+      });
+    }
+
+    if (/\bbento\b/i.test(visual) && !/dashboard|analytics|comparison/i.test(visual)) {
+      issues.push({
+        code: 'unearned-bento',
+        severity: 'warning',
+        message: 'A bento grid is used without a dense comparison need. Choose a subject-led composition from the storyboard.',
+      });
+    }
+
+    const radii = distinctCssValues(visual, 'border-radius');
+    if (radii > 7) {
+      issues.push({
+        code: 'radius-drift',
+        severity: 'warning',
+        message: `${radii} border-radius values bypass one coherent shape system. Consolidate them into DesignDNA component tokens.`,
+      });
+    }
+
+    const shadows = distinctCssValues(visual, 'box-shadow');
+    if (shadows > 6) {
+      issues.push({
+        code: 'shadow-drift',
+        severity: 'warning',
+        message: `${shadows} shadow values create inconsistent elevation. Keep only semantic subtle, raised, and overlay levels.`,
       });
     }
 

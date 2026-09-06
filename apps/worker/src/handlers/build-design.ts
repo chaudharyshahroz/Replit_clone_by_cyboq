@@ -15,14 +15,16 @@ import {
   drawArtwork,
   createCheckpoint,
   syncPreview,
-  captureRenderedPreview,
-  reviewRenderedDesign,
+  captureRenderedPreviews,
+  reviewRenderedDesignSet,
   createDesignContract,
   fallbackBrief,
   evaluatePremiumGate,
   createDesignEngineV4,
   DESIGN_ENGINE_V4_REVISION,
   DesignEngineV4Schema,
+  DesignEngineV5Schema,
+  createDesignEngineV5,
   runDesignPass,
   mergeTree,
   normalizeGeneratedTree,
@@ -50,6 +52,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   const analysis = (project.codebaseAnalysis ?? {}) as Record<string, unknown>;
   const engine = DesignEngineV4Schema.safeParse(analysis.designEngineV4);
   if (!engine.success) return { status: 'legacy' };
+  const storedV5 = DesignEngineV5Schema.safeParse(analysis.designEngineV5);
   const brief = (project.brief as BuildBrief | null) ?? fallbackBrief('Build a website');
   const designEngine =
     engine.data.revision >= DESIGN_ENGINE_V4_REVISION
@@ -58,6 +61,9 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
           { ...engine.data.product, identitySeed: brief.product },
           buildProjectId,
         );
+  const designEngineV5 = storedV5.success && engine.data.revision >= DESIGN_ENGINE_V4_REVISION
+    ? storedV5.data
+    : createDesignEngineV5(designEngine.product, buildProjectId);
   await context.throwIfCancelled();
   await context.reportStage('creating_assets');
   const tree = await loadTree(buildProjectId, workspaceId);
@@ -99,8 +105,18 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         bytes: image.bytes,
       };
     },
+    undefined,
+    {
+      priority: 'all',
+      maxAssets: 8,
+      artDirection: {
+        photography: designEngineV5.artDirection.photographyDirection,
+        palette: designEngineV5.artDirection.paletteDirection,
+        composition: designEngineV5.assetPlan[0]?.composition,
+      },
+    },
   );
-  const workingFiles = normalizeGeneratedTree(compileDesignTree(assets.files, designEngine));
+  const workingFiles = normalizeGeneratedTree(compileDesignTree(assets.files, designEngine, designEngineV5));
   const compilerChanged = JSON.stringify(workingFiles) !== JSON.stringify(assets.files);
   await context.throwIfCancelled();
   if (!(await current())) return { status: 'superseded' };
@@ -121,8 +137,8 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   await context.reportStage('updating_preview');
   await syncPreview({ buildProjectId, workspaceId });
   await context.reportStage('reviewing_design');
-  let screenshot: Awaited<ReturnType<typeof captureRenderedPreview>> = undefined;
-  let review: Awaited<ReturnType<typeof reviewRenderedDesign>> | undefined = undefined;
+  let screenshots: Awaited<ReturnType<typeof captureRenderedPreviews>> = [];
+  let review: Awaited<ReturnType<typeof reviewRenderedDesignSet>> | undefined = undefined;
   let reviewModel: ReturnType<typeof selectableModels>[number] | undefined;
   let repairModel: ReturnType<typeof selectableModels>[number] | undefined;
   let reviewUnavailable: string | undefined;
@@ -171,18 +187,18 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
     reviewModel = providerModels
       .filter((model) => model.supportsVision)
       .sort((left, right) => rank(right) - rank(left) || left.sortOrder - right.sortOrder)[0];
-    screenshot = reviewModel
-      ? await captureRenderedPreview({ buildProjectId, workspaceId })
-      : undefined;
+    screenshots = reviewModel
+      ? await captureRenderedPreviews({ buildProjectId, workspaceId, widths: [1440, 1024, 768, 430, 390] })
+      : [];
     review =
-      reviewModel && screenshot
-        ? await reviewRenderedDesign({
+      reviewModel && screenshots.length
+        ? await reviewRenderedDesignSet({
             brief,
             contract: {
               ...createDesignContract(brief),
               concept: designEngine.dna.visualDirection,
             },
-            screenshot,
+            screenshots,
             model: reviewModel,
           })
         : undefined;
@@ -251,6 +267,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         model: repairModel,
         contract: createDesignContract(brief),
         designEngineV4: designEngine,
+        designEngineV5,
         feedback,
       });
       await recordUsage({
@@ -269,7 +286,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
       if (polished.changed > 0) {
         const beforeReview = review;
         const revised = normalizeGeneratedTree(
-          compileDesignTree(mergeTree(workingFiles, polished.files), designEngine),
+          compileDesignTree(mergeTree(workingFiles, polished.files), designEngine, designEngineV5),
         );
         const revisedSourceIssues = auditDesignQuality(brief, revised);
         const previousBlockingCodes = new Set(
@@ -291,18 +308,18 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
         });
         versionId = saved.version.id;
         await syncPreview({ buildProjectId, workspaceId });
-        const revisedScreenshot = reviewModel
-          ? await captureRenderedPreview({ buildProjectId, workspaceId })
-          : undefined;
+        const revisedScreenshots = reviewModel
+          ? await captureRenderedPreviews({ buildProjectId, workspaceId, widths: [1440, 1024, 768, 430, 390] })
+          : [];
         const revisedReview =
-          reviewModel && revisedScreenshot
-            ? await reviewRenderedDesign({
+          reviewModel && revisedScreenshots.length
+            ? await reviewRenderedDesignSet({
                 brief,
                 contract: {
                   ...createDesignContract(brief),
                   concept: designEngine.dna.visualDirection,
                 },
-                screenshot: revisedScreenshot,
+                screenshots: revisedScreenshots,
                 model: reviewModel,
               })
             : undefined;
@@ -343,7 +360,7 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
           review = beforeReview;
         } else {
           sourceIssues = revisedSourceIssues;
-          screenshot = revisedScreenshot;
+          screenshots = revisedScreenshots;
           review = revisedReview;
         }
       }
@@ -358,15 +375,13 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
   await context.throwIfCancelled();
   const gate = evaluatePremiumGate({
     renders:
-      screenshot && review
-        ? [
-            {
-              width: screenshot.width,
-              fullPage: false,
-              score: review.score,
-              criticalFindings: review.criticalFindings ?? [],
-            },
-          ]
+      screenshots.length && review
+        ? screenshots.map((screenshot) => ({
+            width: screenshot.width,
+            fullPage: false,
+            score: review.viewportScores?.[String(screenshot.width)] ?? review.score,
+            criticalFindings: review.criticalFindings ?? [],
+          }))
         : [],
     assets: assets.failures.map((f) => ({
       id: f.path,
@@ -398,12 +413,12 @@ export async function buildDesignHandler(context: JobContext<'build_design'>) {
     reviewUnavailable,
     sourceIssues,
     evidenceScope:
-      'desktop screen only; full-page, responsive, decode and interaction verification still required',
+      'five responsive viewport captures reviewed; full-page, decoded-asset and interaction verification still required',
   };
   await db
     .update(buildProjects)
     .set({
-      codebaseAnalysis: sql`coalesce(${buildProjects.codebaseAnalysis}, '{}'::jsonb) || ${JSON.stringify({ designEngineV4: designEngine, designQuality: quality, designJobVersion: versionId })}::jsonb`,
+      codebaseAnalysis: sql`coalesce(${buildProjects.codebaseAnalysis}, '{}'::jsonb) || ${JSON.stringify({ designEngineV4: designEngine, designEngineV5, designQuality: quality, designJobVersion: versionId })}::jsonb`,
     })
     .where(predicate());
   return quality;

@@ -127,6 +127,22 @@ describe('what the image model is asked for', () => {
     // These sit behind real headings, and a picture with its own text fights them.
     expect(prompt).toMatch(/no text/i);
   });
+
+  it('uses the selected site art direction instead of one universal photo style', () => {
+    const prompt = artworkPrompt(
+      { path: 'public/generated/hero.png', description: 'a barista pouring a cortado', shape: 'landscape' },
+      'Coffino',
+      {
+        photography: 'documentary close crop with window light',
+        palette: 'charcoal, parchment, and vermilion punctuation',
+        composition: 'subject on the right with clear negative space on the left',
+      },
+    );
+    expect(prompt).toContain('documentary close crop');
+    expect(prompt).toContain('vermilion');
+    expect(prompt).toContain('negative space on the left');
+    expect(prompt).not.toContain('shallow depth');
+  });
 });
 
 describe('drawing them', () => {

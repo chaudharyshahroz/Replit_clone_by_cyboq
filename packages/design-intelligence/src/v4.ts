@@ -984,14 +984,23 @@ export function compileDesignStyles(engine: DesignEngineV4): string {
   const fontImport = families.length
     ? `@import url("https://fonts.googleapis.com/css2?${families.map((font) => `family=${encodeURIComponent(font).replace(/%20/g, '+')}:wght@400;600;700`).join('&')}&display=swap");`
     : '';
-  return `/* Reklu Design Engine V4: compiler-owned */
+  return `/* Reklu Design Engine compiler: primitive -> semantic -> component tokens */
 ${fontImport}
 :root {
-  --rk-ink: ${dna.colors.text}; --rk-paper: ${dna.colors.background}; --rk-brand: ${dna.colors.primary};
+  /* Primitive layer: immutable values selected by DesignDNA. */
+  --rk-primitive-ink: ${dna.colors.text}; --rk-primitive-paper: ${dna.colors.background};
+  --rk-primitive-surface: ${dna.colors.surfaceRaised}; --rk-primitive-brand: ${dna.colors.primary};
+  --rk-primitive-accent: ${dna.colors.warning}; --rk-primitive-muted: ${dna.colors.muted};
+  --rk-primitive-radius-sm: ${dna.radius.sm}px; --rk-primitive-radius-md: ${dna.radius.md}px;
+  --rk-primitive-radius-lg: ${dna.radius.lg}px; --rk-primitive-radius-pill: ${dna.radius.pill}px;
+  --rk-primitive-space-1: .25rem; --rk-primitive-space-2: .5rem; --rk-primitive-space-3: .75rem;
+  --rk-primitive-space-4: 1rem; --rk-primitive-space-6: 1.5rem; --rk-primitive-space-8: 2rem;
+  /* Semantic layer: purpose, never component names. */
+  --rk-ink: var(--rk-primitive-ink); --rk-paper: var(--rk-primitive-paper); --rk-brand: var(--rk-primitive-brand);
   --color-background: var(--rk-paper); --color-foreground: var(--rk-ink);
   --color-primary: var(--rk-brand); --color-on-primary: ${dna.colors.onPrimary};
-  --color-accent: ${dna.colors.warning};
-  --color-surface: ${dna.colors.surfaceRaised}; --color-muted-foreground: ${dna.colors.muted};
+  --color-accent: var(--rk-primitive-accent);
+  --color-surface: var(--rk-primitive-surface); --color-muted-foreground: var(--rk-primitive-muted);
   --color-inverse: var(--color-foreground); --color-on-inverse: var(--color-background);
   --color-on-inverse-muted: color-mix(in srgb, var(--color-background) 76%, var(--color-foreground));
   --font-display: "${dna.typography.display}", ${serif ? 'Georgia, serif' : 'system-ui, sans-serif'};
@@ -1000,8 +1009,10 @@ ${fontImport}
   --type-h1: var(--type-hero); --type-h2: clamp(2rem, 1.3rem + 1.6vw, 3rem);
   --type-h3: clamp(1.25rem, 1rem + .6vw, 1.5rem); --type-body: 1rem;
   --spacing-section: clamp(3.5rem, 6vw, 6.5rem); --spacing-gutter: clamp(1.25rem, 3vw, 3rem);
+  /* Component layer: recipes consume semantic roles. */
   --button-bg: var(--color-primary); --button-fg: var(--color-on-primary);
-  --card-padding: clamp(1.25rem, 2.2vw, 2rem); --card-radius: ${dna.radius.md}px;
+  --button-radius: ${buttonRadius}px; --button-min-height: 44px;
+  --card-padding: clamp(1.25rem, 2.2vw, 2rem); --card-radius: var(--rk-primitive-radius-md);
   --card-border: ${cardBorder}; --card-shadow: ${cardShadow};
   --header-bg: var(--color-background); --footer-bg: var(--color-inverse);
   --footer-fg: var(--color-on-inverse); --footer-muted: var(--color-on-inverse-muted);
@@ -1025,10 +1036,10 @@ ${fontImport}
 .rk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, ${engine.layout.cardMin}px), 1fr)); gap: 1.5rem; align-items: stretch; }
 .rk-grid > * { min-width: 0; }
 .rk-card { min-width: 0; padding: var(--card-padding); background: var(--color-surface); border: var(--card-border); border-radius: var(--card-radius); box-shadow: var(--card-shadow); }
-.rk-button { display: inline-flex; align-items: center; justify-content: center; gap: .625rem; min-height: 44px; padding: .75rem 1.5rem; background: var(--button-bg); color: var(--button-fg); border: 1px solid transparent; border-radius: ${buttonRadius}px; text-decoration: none; font: inherit; font-weight: 700; text-transform: ${buttonTransform}; letter-spacing: ${buttonTracking}; cursor: pointer; }
+.rk-button { display: inline-flex; align-items: center; justify-content: center; gap: .625rem; min-height: var(--button-min-height); padding: .75rem 1.5rem; background: var(--button-bg); color: var(--button-fg); border: 1px solid transparent; border-radius: var(--button-radius); text-decoration: none; font: inherit; font-weight: 700; text-transform: ${buttonTransform}; letter-spacing: ${buttonTracking}; cursor: pointer; transition: transform 180ms ease, filter 180ms ease; }
 .rk-button-secondary { background: transparent; color: var(--color-foreground); border-color: color-mix(in srgb, var(--color-foreground) 42%, transparent); }
 .rk-button svg { width: 20px; height: 20px; flex: none; }
-.rk-button:hover { filter: brightness(.92); }
+.rk-button:hover { filter: brightness(.92); transform: translateY(-1px); }
 .rk-button:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 .rk-button:disabled { opacity: .55; cursor: not-allowed; }
 .rk-surface-primary { background: var(--color-primary); color: var(--color-on-primary); }
@@ -1044,8 +1055,11 @@ ${fontImport}
 .rk-media { display: grid; overflow: hidden; background: var(--color-surface); color: var(--color-foreground); border-radius: var(--card-radius); }
 .rk-media img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
 .rk-media-fallback { padding: 1.5rem; align-self: center; text-align: center; }
+.rk-icon { width: 22px; height: 22px; flex: none; stroke-width: 1.75; }
+.rk-reveal { animation: rk-reveal 520ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rk-reveal { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 959px) { .rk-hero { grid-template-columns: minmax(0, 1fr) !important; } .rk-hero-title { max-width: 100% !important; } }
 @media (max-width: 767px) { .rk-header-inner { grid-template-columns: minmax(0, 1fr) auto; padding-block: .75rem; } .rk-site-nav { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; overflow-x: auto; padding-bottom: .25rem; } }
-@media (prefers-reduced-motion: reduce) { .rk-button { transition: none; } [data-section-id] { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { .rk-button { transition: none; transform: none; } .rk-reveal { animation: none; } [data-section-id] { scroll-behavior: auto; } }
 `;
 }

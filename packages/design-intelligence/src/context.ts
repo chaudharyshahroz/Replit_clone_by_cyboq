@@ -170,6 +170,18 @@ export function understandProduct(input: ProductInput): ProductDesignContext {
     },
   };
   const profile = profiles[productType] ?? profiles.default!;
+  const inferredPages = [
+    { name: 'Home', purpose: profile.primaryGoal },
+    ...(has(text, /menu|restaurant|caf[eé]|coffee shop|bakery|bistro/)
+      ? [{ name: 'Menu', purpose: 'Show the current food and drink offer' }]
+      : []),
+    ...(has(text, /shop|store|commerce|product catalog|checkout|online (?:bean|coffee|merch)/)
+      ? [{ name: 'Shop', purpose: 'Let customers browse and buy products' }]
+      : []),
+    ...(has(text, /location|find us|visit|restaurant|caf[eé]|coffee shop/)
+      ? [{ name: 'Locations', purpose: 'Show addresses, hours, and visit details' }]
+      : []),
+  ].filter((page, index, pages) => pages.findIndex((candidate) => candidate.name === page.name) === index);
 
   return {
     productType,
@@ -177,7 +189,7 @@ export function understandProduct(input: ProductInput): ProductDesignContext {
     audience: input.userRoles?.length ? [...input.userRoles] : ['Prospective users'],
     requiredPages: input.pages?.length
       ? [...input.pages]
-      : [{ name: 'Home', purpose: profile.primaryGoal }],
+      : inferredPages,
     userReferences: [],
     competitorReferences: [],
     existingBrand: false,

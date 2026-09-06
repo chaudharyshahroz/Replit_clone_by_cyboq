@@ -103,14 +103,31 @@ function shapeFor(element: string, reference: string): ArtworkRequest['shape'] {
 }
 
 /** What to ask an image model for, given what the page says the picture shows. */
-export function artworkPrompt(request: ArtworkRequest, subject: string): string {
+export interface ArtworkDirection {
+  readonly photography: string;
+  readonly palette: string;
+  readonly composition?: string;
+}
+
+export function artworkPrompt(
+  request: ArtworkRequest,
+  subject: string,
+  direction?: ArtworkDirection,
+): string {
   return [
     `A high-quality photograph for the website of ${subject}.`,
     '',
     `The picture must show: ${request.description}`,
     '',
-    'Realistic, professionally lit, shot on a full-frame camera with shallow depth',
-    'of field. Natural colour. No text, no watermark, no logo, no lettering of any',
+    ...(direction
+      ? [
+          `Art direction: ${direction.photography}`,
+          `Palette relationship: ${direction.palette}`,
+          ...(direction.composition ? [`Composition: ${direction.composition}`] : []),
+          '',
+        ]
+      : ['Realistic, professionally lit, with natural colour and subject-specific framing.', '']),
+    'Avoid generic commercial-stock staging. No text, no watermark, no logo, no lettering of any',
     'kind anywhere in the frame — this sits behind real headings on a real page.',
   ].join('\n');
 }
@@ -143,6 +160,7 @@ export async function drawArtwork(
   options?: {
     readonly priority?: 'critical' | 'optional' | 'all';
     readonly maxAssets?: number;
+    readonly artDirection?: ArtworkDirection;
   },
 ): Promise<ArtworkResult> {
   const existing = new Set(files.filter((file) => file.binary).map((file) => file.path));
@@ -172,7 +190,7 @@ export async function drawArtwork(
     );
 
     try {
-      const binary = await draw(request, artworkPrompt(request, subject));
+      const binary = await draw(request, artworkPrompt(request, subject, options?.artDirection));
       if (!binary) throw new Error('The image service returned no asset.');
       drawn.set(request.path, binary);
     } catch (error) {

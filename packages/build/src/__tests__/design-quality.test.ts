@@ -159,7 +159,7 @@ describe('design quality critic', () => {
     expect(issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'missing-v4-hero-contract',
+          code: 'missing-design-hero-contract',
           severity: 'blocking',
         }),
       ]),
@@ -179,7 +179,7 @@ describe('design quality critic', () => {
     expect(issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'missing-v4-header-contract',
+          code: 'missing-design-header-contract',
           severity: 'blocking',
         }),
         expect.objectContaining({
@@ -239,6 +239,17 @@ describe('design quality critic', () => {
     ];
     expect(evaluateGenericity(files).rejected).toBe(false);
     expect(auditDesignQuality(website, files)).toEqual([]);
+  });
+
+  it('rejects nested card chrome and flags unearned bento composition', () => {
+    const files = [
+      v4(),
+      page('<main><section className="rk-hero"><div><h1 className="rk-hero-title">Distinct coffee</h1><a href="/shop">Shop</a></div><img src="/coffee.jpg" alt="Coffee"/></section><div className="bento"><article className="rk-card"><div className="rk-card">Nested</div></article></div></main>'),
+    ];
+    expect(auditDesignQuality(website, files)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'nested-cards', severity: 'blocking' }),
+      expect.objectContaining({ code: 'unearned-bento', severity: 'warning' }),
+    ]));
   });
 
   it('blocks browser storage in a useState initializer before preview', () => {

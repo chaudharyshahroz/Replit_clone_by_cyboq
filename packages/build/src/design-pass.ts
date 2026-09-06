@@ -30,8 +30,10 @@ import { designFeedbackPrompt, type DesignQualityIssue } from './design-quality'
 import {
   designEngineV3Prompt,
   designEngineV4Prompt,
+  designEngineV5Prompt,
   type DesignEngineV3,
   type DesignEngineV4,
+  type DesignEngineV5,
 } from '@reklu/design-intelligence';
 
 /**
@@ -144,6 +146,7 @@ export async function runDesignPass(options: {
   readonly contract?: DesignContract;
   readonly designEngineV3?: DesignEngineV3;
   readonly designEngineV4?: DesignEngineV4 | undefined;
+  readonly designEngineV5?: DesignEngineV5 | undefined;
   readonly feedback?: readonly DesignQualityIssue[];
   readonly signal?: AbortSignal;
 }): Promise<DesignPassResult> {
@@ -193,7 +196,9 @@ export async function runDesignPass(options: {
      */
     system: [
       DESIGN_PROMPT,
-      ...(options.designEngineV4
+      ...(options.designEngineV5
+        ? [designEngineV5Prompt(options.designEngineV5), designEngineV4Prompt(options.designEngineV5.compiler.engine)]
+        : options.designEngineV4
         ? [designEngineV4Prompt(options.designEngineV4)]
         : [
             directionPrompt(direction, options.brief.target),
