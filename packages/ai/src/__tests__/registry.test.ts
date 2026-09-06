@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { groupByProvider, selectableModels, type RegisteredModel } from '../registry';
+import {
+  autoRoutableModels,
+  groupByProvider,
+  selectableModels,
+  type RegisteredModel,
+} from '../registry';
 import type { PlanLimits } from '@reklu/database';
 
 const model = (over: Partial<RegisteredModel> & { key: string }): RegisteredModel => ({
@@ -104,5 +109,26 @@ describe('groupByProvider', () => {
 
   it('returns nothing for an empty registry', () => {
     expect(groupByProvider([])).toEqual([]);
+  });
+});
+
+describe('autoRoutableModels', () => {
+  it('requires explicit selection before spending official DeepSeek or Kimi keys', () => {
+    const candidates = [
+      model({ key: 'claude', providerKey: 'anthropic' }),
+      model({ key: 'deepseek', providerKey: 'deepseek' }),
+      model({ key: 'kimi', providerKey: 'kimi' }),
+      model({ key: 'mock', providerKey: 'dev', isDevelopmentMock: true }),
+    ];
+
+    expect(autoRoutableModels(candidates).map((candidate) => candidate.key)).toEqual([
+      'claude',
+      'mock',
+    ]);
+  });
+
+  it('does not remove explicit-provider models from the selectable list', () => {
+    const candidates = [model({ key: 'deepseek', providerKey: 'deepseek' })];
+    expect(selectableModels(candidates, limits([]))).toHaveLength(1);
   });
 });

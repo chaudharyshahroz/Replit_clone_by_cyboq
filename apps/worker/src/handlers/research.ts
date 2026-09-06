@@ -11,7 +11,13 @@
  * sees exactly where the worker is.
  */
 import { eq } from 'drizzle-orm';
-import { loadRegistry, recordUsage, selectableModels, type RegisteredModel } from '@reklu/ai';
+import {
+  autoRoutableModels,
+  loadRegistry,
+  recordUsage,
+  selectableModels,
+  type RegisteredModel,
+} from '@reklu/ai';
 import { createArtifact } from '@reklu/artifacts';
 import {
   db,
@@ -49,10 +55,16 @@ export async function deepResearchHandler(
     throw new Error('No AI provider is configured; deep research cannot run.');
   }
 
+  const automatic = autoRoutableModels(allowed);
+  if (automatic.length === 0) {
+    throw new Error(
+      'No automatic-routing AI provider is configured; select DeepSeek or Kimi explicitly in a supported feature.',
+    );
+  }
   const model: RegisteredModel =
-    allowed.find((m) => m.bestFor.includes('research')) ??
-    allowed.find((m) => m.bestFor.includes('reasoning')) ??
-    allowed[0]!;
+    automatic.find((m) => m.bestFor.includes('research')) ??
+    automatic.find((m) => m.bestFor.includes('reasoning')) ??
+    automatic[0]!;
 
   const adapters = [
     createWebAdapter(),

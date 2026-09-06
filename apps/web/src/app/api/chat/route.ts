@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  autoRoutableModels,
   autoSelect,
   checkQuota,
   findModel,
@@ -297,10 +298,18 @@ export async function POST(request: Request): Promise<Response> {
     const autoRouted = !body.modelKey || body.modelKey === 'auto';
 
     if (autoRouted) {
+      const automatic = autoRoutableModels(allowed);
+      if (automatic.length === 0) {
+        throw errors.notConfigured({
+          feature: 'Chat automatic routing',
+          requiredEnv: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
+          docsPath: '/settings',
+        });
+      }
       const decision = autoSelect({
         messages: modelMessages,
         system: SYSTEM_PROMPT,
-        candidates: allowed,
+        candidates: automatic,
         limits,
       });
       model = decision.model;

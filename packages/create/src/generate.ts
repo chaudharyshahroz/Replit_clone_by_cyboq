@@ -6,6 +6,7 @@
  * shaped prompts and a parser; it is not a second content system.
  */
 import {
+  autoRoutableModels,
   checkQuota,
   getProvider,
   loadRegistry,
@@ -79,12 +80,24 @@ async function pickModel(preferred?: string): Promise<RegisteredModel> {
     });
   }
 
-  return (
-    allowed.find((model) => model.key === preferred) ??
-    allowed.find((model) => model.bestFor.includes('writing')) ??
-    allowed.find((model) => model.bestFor.includes('reasoning')) ??
-    allowed[0]!
-  );
+  const explicitlySelected = preferred
+    ? allowed.find((model) => model.key === preferred)
+    : undefined;
+  if (explicitlySelected) return explicitlySelected;
+
+  const automatic = autoRoutableModels(allowed);
+  const selected =
+    automatic.find((model) => model.bestFor.includes('writing')) ??
+    automatic.find((model) => model.bestFor.includes('reasoning')) ??
+    automatic[0];
+  if (!selected) {
+    throw errors.notConfigured({
+      feature: 'Create automatic routing',
+      requiredEnv: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
+      docsPath: '/settings',
+    });
+  }
+  return selected;
 }
 
 const DOCUMENT_PROMPT = `You write clear, well-structured documents.

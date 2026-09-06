@@ -6,6 +6,7 @@ import { after } from 'next/server';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { enqueue } from '@reklu/queue';
 import {
+  autoRoutableModels,
   checkQuota,
   loadRegistry,
   recordUsage,
@@ -194,12 +195,25 @@ async function pickModel(
    * failing: the key names a model that may since have been disabled, and a
    * build is not the place to refuse work over a stale selection.
    */
-  return (
-    (requested && requested !== 'auto' ? allowed.find((m) => m.key === requested) : undefined) ??
-    allowed.find((m) => m.bestFor.includes('coding')) ??
-    allowed.find((m) => m.bestFor.includes('reasoning')) ??
-    allowed[0]!
-  );
+  const explicitlySelected =
+    requested && requested !== 'auto' ? allowed.find((model) => model.key === requested) : undefined;
+  if (explicitlySelected) return explicitlySelected;
+
+  const automatic = autoRoutableModels(allowed);
+  const selected =
+    automatic.find((model) => model.bestFor.includes('coding')) ??
+    automatic.find((model) => model.bestFor.includes('reasoning')) ??
+    automatic[0];
+  if (!selected) {
+    throw errors.notConfigured({
+      feature: needsVision ? 'Build image input automatic routing' : 'Build automatic routing',
+      requiredEnv: needsVision
+        ? ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY']
+        : ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
+      docsPath: '/settings',
+    });
+  }
+  return selected;
 }
 
 /**

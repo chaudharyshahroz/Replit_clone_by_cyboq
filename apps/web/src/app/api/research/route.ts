@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  autoRoutableModels,
   checkQuota,
   findModel,
   loadRegistry,
@@ -128,10 +129,18 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // Research benefits from a strong model; prefer one tagged for it.
+    const automatic = autoRoutableModels(allowed);
+    if (automatic.length === 0) {
+      throw errors.notConfigured({
+        feature: 'Research automatic routing',
+        requiredEnv: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
+        docsPath: '/settings',
+      });
+    }
     const model: RegisteredModel =
-      allowed.find((m) => m.bestFor.includes('research')) ??
-      allowed.find((m) => m.bestFor.includes('reasoning')) ??
-      allowed[0]!;
+      automatic.find((m) => m.bestFor.includes('research')) ??
+      automatic.find((m) => m.bestFor.includes('reasoning')) ??
+      automatic[0]!;
 
     // ---- Sources -----------------------------------------------------------
     const webAdapter = createWebAdapter();

@@ -11,7 +11,14 @@
  * steps loses nothing, because the next call reads the row and continues.
  */
 import { and, asc, eq } from 'drizzle-orm';
-import { checkQuota, getProvider, loadRegistry, recordUsage, selectableModels } from '@reklu/ai';
+import {
+  autoRoutableModels,
+  checkQuota,
+  getProvider,
+  loadRegistry,
+  recordUsage,
+  selectableModels,
+} from '@reklu/ai';
 import { agentApprovals, agentRuns, agentSteps, db } from '@reklu/database';
 import { executeTool, usableTools, type RiskClass } from '@reklu/mcp';
 import { enqueue } from '@reklu/queue';
@@ -65,7 +72,7 @@ async function assertWithinQuota(workspaceId: string): Promise<Date> {
 
 async function pickModel() {
   const registry = await loadRegistry();
-  const allowed = selectableModels(registry, undefined);
+  const allowed = autoRoutableModels(selectableModels(registry, undefined));
   if (allowed.length === 0) {
     throw errors.notConfigured({
       feature: 'Agents',
