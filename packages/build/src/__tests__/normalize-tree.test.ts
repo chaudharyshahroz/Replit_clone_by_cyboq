@@ -52,4 +52,28 @@ describe('shared generated tree normalization', () => {
     );
     expect(normalizeGeneratedTree(result)).toEqual(result);
   });
+
+  it('repairs missing Prisma relation opposites before a historical tree reaches preview install', () => {
+    const result = normalizeGeneratedTree([
+      file(
+        'prisma/schema.prisma',
+        `model Address {
+  id String @id
+}
+
+model Order {
+  id String @id
+  shippingAddressId String?
+  billingAddressId String?
+  shippingAddress Address? @relation("OrderShippingAddress", fields: [shippingAddressId], references: [id])
+  billingAddress Address? @relation("OrderBillingAddress", fields: [billingAddressId], references: [id])
+}
+`,
+      ),
+    ]);
+    const schema = result[0]!.content;
+    expect(schema).toContain('ordersAsShippingAddress Order[] @relation("OrderShippingAddress")');
+    expect(schema).toContain('ordersAsBillingAddress Order[] @relation("OrderBillingAddress")');
+    expect(normalizeGeneratedTree(result)).toEqual(result);
+  });
 });

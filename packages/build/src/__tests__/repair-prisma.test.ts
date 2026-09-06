@@ -15,7 +15,12 @@
  * The schema below is the one a real build produced.
  */
 import { describe, expect, it } from 'vitest';
-import { repairPrismaSchema, repairPrismaSchemas, splitDeclarations } from '../repair-prisma';
+import {
+  repairPrismaRelationOpposites,
+  repairPrismaSchema,
+  repairPrismaSchemas,
+  splitDeclarations,
+} from '../repair-prisma';
 import type { GeneratedFile } from '../parse';
 
 const BROKEN = `generator client { provider = "prisma-client-js" }
@@ -43,7 +48,9 @@ describe('reformatting a compact schema', () => {
      * between assignments. Splitting on either naively produces a schema that
      * is differently broken — and still does not parse.
      */
-    expect(fixed).toContain('datasource db {\n  provider = "postgresql"\n  url = env("DATABASE_URL")\n}');
+    expect(fixed).toContain(
+      'datasource db {\n  provider = "postgresql"\n  url = env("DATABASE_URL")\n}',
+    );
   });
 
   it('splits enum members, which are separated by spaces alone', () => {
@@ -104,5 +111,51 @@ describe('across a tree', () => {
   it('returns the same object when a file needed no change', () => {
     const files = [file('prisma/schema.prisma', 'model A {\n  id String @id\n}\n')];
     expect(repairPrismaSchemas(files)[0]).toBe(files[0]);
+  });
+});
+
+describe('repairing missing relation opposites', () => {
+  const relations = `model Category {
+  id String @id
+}
+
+model MenuItem {
+  id String @id
+  categoryId String
+  category Category @relation(fields: [categoryId], references: [id])
+}
+
+model Address {
+  id String @id
+}
+
+model Order {
+  id String @id
+  shippingAddressId String?
+  billingAddressId String?
+  shippingAddress Address? @relation("OrderShippingAddress", fields: [shippingAddressId], references: [id])
+  billingAddress Address? @relation("OrderBillingAddress", fields: [billingAddressId], references: [id])
+}
+`;
+
+  it('adds an unnamed inverse relation to the target model', () => {
+    const fixed = repairPrismaRelationOpposites(relations);
+    expect(fixed).toContain('model Category {\n  id String @id\n  menuItems MenuItem[]\n}');
+  });
+
+  it('adds distinct named inverses when two fields point at the same model', () => {
+    const fixed = repairPrismaRelationOpposites(relations);
+    expect(fixed).toContain('ordersAsShippingAddress Order[] @relation("OrderShippingAddress")');
+    expect(fixed).toContain('ordersAsBillingAddress Order[] @relation("OrderBillingAddress")');
+  });
+
+  it('is idempotent after adding inverse fields', () => {
+    const once = repairPrismaRelationOpposites(relations);
+    expect(repairPrismaRelationOpposites(once)).toBe(once);
+  });
+
+  it('uses an optional singular inverse for a unique foreign key', () => {
+    const schema = `model User {\n  id String @id\n}\n\nmodel Profile {\n  id String @id\n  userId String @unique\n  user User @relation(fields: [userId], references: [id])\n}\n`;
+    expect(repairPrismaRelationOpposites(schema)).toContain('profiles Profile?');
   });
 });

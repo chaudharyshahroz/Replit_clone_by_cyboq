@@ -52,6 +52,7 @@ export const CORE_ENGINEERING: BuildSkill = {
     'Persist to a real database only when the brief asks for one. A marketing site that stores a contact form submission needs an API route and a service, not a database engine embedded in the application.',
     'An application that uses a database must still start without one. The preview has no database server, so read DATABASE_URL and, where it is missing, render an explicit "Not configured — set DATABASE_URL" state on the pages that need it. A page that throws on a missing connection takes the whole site down, including the pages that never needed the database.',
     'A Prisma schema is line-based: every declaration inside a block goes on its own line. `generator client { provider = "prisma-client-js" }` written on one line does not parse, and because the parser never sees the block close it reports every later line as broken too — during npm install, not at run time.',
+    'Every Prisma relation must be declared on both models. If `MenuItem` has `category Category`, then `Category` also needs `menuItems MenuItem[]`. When two fields connect the same models — such as shipping and billing addresses — give each relation a distinct explicit name and repeat that exact name on its inverse field.',
   ],
 };
 
