@@ -113,11 +113,12 @@ describe('groupByProvider', () => {
 });
 
 describe('autoRoutableModels', () => {
-  it('requires explicit selection before spending official DeepSeek or Kimi keys', () => {
+  it('requires explicit selection before spending separately funded providers', () => {
     const candidates = [
       model({ key: 'claude', providerKey: 'anthropic' }),
       model({ key: 'deepseek', providerKey: 'deepseek' }),
       model({ key: 'kimi', providerKey: 'kimi' }),
+      model({ key: 'openrouter', providerKey: 'openrouter' }),
       model({ key: 'mock', providerKey: 'dev', isDevelopmentMock: true }),
     ];
 

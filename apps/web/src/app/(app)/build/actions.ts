@@ -175,7 +175,7 @@ async function pickModel(
 ): Promise<RegisteredModel> {
   const registry = await loadRegistry();
   const excluded = new Set(excludeKeys);
-  const allowed = selectableModels(registry, undefined).filter(
+  const allowed = autoRoutableModels(selectableModels(registry, undefined)).filter(
     (model) => !excluded.has(model.key) && (!needsVision || model.supportsVision),
   );
   if (allowed.length === 0) {
@@ -269,7 +269,7 @@ async function pickStrategyModel(fallback: RegisteredModel): Promise<RegisteredM
 
 async function pickVisionModel(): Promise<RegisteredModel | undefined> {
   const registry = await loadRegistry();
-  return selectableModels(registry, undefined)
+  return autoRoutableModels(selectableModels(registry, undefined))
     .filter(
       (model) =>
         model.supportsVision && model.inputCostPerMillion === 0 && model.outputCostPerMillion === 0,
