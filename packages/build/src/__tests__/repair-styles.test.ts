@@ -55,4 +55,18 @@ describe('Tailwind stylesheet repair', () => {
 
     expect(result.find((entry) => entry.path === 'app/globals.css')!.content).toMatch(/^@import "tailwindcss";/);
   });
+
+  it('rewrites the Tailwind 4 PostCSS plugin when the project uses Tailwind 3', () => {
+    const result = repairGlobalStyles([
+      file('package.json', JSON.stringify({ devDependencies: { tailwindcss: '^3.4.0' } })),
+      file(
+        'postcss.config.js',
+        "module.exports = { plugins: { '@tailwindcss/postcss': {} } };",
+      ),
+    ]);
+
+    const config = result.find((entry) => entry.path === 'postcss.config.js')!.content;
+    expect(config).toContain("'tailwindcss'");
+    expect(config).not.toContain('@tailwindcss/postcss');
+  });
 });

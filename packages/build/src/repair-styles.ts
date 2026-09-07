@@ -57,13 +57,23 @@ function addTailwindEntry(content: string, version: string): string {
 export function repairGlobalStyles(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   const manifest = packageManifest(files);
   const tailwindVersion = dependencyVersion(manifest, 'tailwindcss');
+  const tailwindMajor = Number(/\d+/.exec(tailwindVersion)?.[0] ?? 0);
   const missingTailwindEntry = tailwindStylesProblem(files) !== undefined;
   const tailwindStylesheet = files.find((file) => /(?:^|\/)(?:globals|index)\.css$/.test(file.path));
-  let repaired = files.map((file) =>
-    file.path === tailwindStylesheet?.path && tailwindVersion && missingTailwindEntry
-      ? { ...file, content: addTailwindEntry(file.content, tailwindVersion) }
-      : file,
-  );
+  let repaired = files.map((file) => {
+    let content = file.content;
+    if (file.path === tailwindStylesheet?.path && tailwindVersion && missingTailwindEntry) {
+      content = addTailwindEntry(content, tailwindVersion);
+    }
+    if (
+      tailwindMajor > 0 &&
+      tailwindMajor < 4 &&
+      /(?:^|\/)postcss\.config\.(?:[cm]?js|ts)$/.test(file.path)
+    ) {
+      content = content.replaceAll('@tailwindcss/postcss', 'tailwindcss');
+    }
+    return content === file.content ? file : { ...file, content };
+  });
 
   const layout = LAYOUTS.find((path) => repaired.some((file) => file.path === path));
   if (!layout) return repaired;

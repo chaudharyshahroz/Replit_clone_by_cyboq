@@ -32,6 +32,10 @@ const KNOWN: Readonly<Record<string, string>> = {
   swr: '^2.2.5',
   nanoid: '^5.0.8',
   slugify: '^1.6.6',
+  tailwindcss: '^4.1.0',
+  '@tailwindcss/postcss': '^4.1.0',
+  postcss: '^8.4.47',
+  autoprefixer: '^10.4.20',
 };
 
 /**
@@ -76,6 +80,27 @@ export function importedPackages(files: readonly GeneratedFile[]): ReadonlySet<s
   return found;
 }
 
+/**
+ * Config files often name plugins as object keys instead of importing them.
+ * Those references are executable dependency edges too, but only exact names
+ * from the audited allowlist are accepted here.
+ */
+function configuredPackages(files: readonly GeneratedFile[]): ReadonlySet<string> {
+  const found = new Set<string>();
+  for (const file of files) {
+    const isToolConfig = /(?:^|\/)(?:postcss|tailwind|next)\.config\.(?:[cm]?js|ts)$/.test(file.path);
+    const isStylesheet = /\.css$/.test(file.path);
+    if (!isToolConfig && !isStylesheet) continue;
+
+    for (const name of Object.keys(KNOWN)) {
+      if (file.content.includes(`'${name}'`) || file.content.includes(`"${name}"`)) {
+        found.add(name);
+      }
+    }
+  }
+  return found;
+}
+
 export function repairMissingDependencies(
   files: readonly GeneratedFile[],
 ): readonly GeneratedFile[] {
@@ -92,9 +117,18 @@ export function repairMissingDependencies(
 
   const dependencies = { ...((manifest.dependencies ?? {}) as Record<string, string>) };
   const dev = (manifest.devDependencies ?? {}) as Record<string, string>;
+  const referenced = new Set([...importedPackages(files), ...configuredPackages(files)]);
+  const tailwindVersion = dependencies.tailwindcss ?? dev.tailwindcss ?? '';
+  const tailwindMajor = Number(/\d+/.exec(tailwindVersion)?.[0] ?? 0);
 
-  const missing = [...importedPackages(files)].filter(
-    (name) => KNOWN[name] && !dependencies[name] && !dev[name],
+  const missing = [...referenced].filter(
+    (name) =>
+      KNOWN[name] &&
+      !dependencies[name] &&
+      !dev[name] &&
+      // Tailwind 3 uses tailwindcss itself as the PostCSS plugin. A later
+      // normalization step rewrites this common mixed-version config.
+      !(name === '@tailwindcss/postcss' && tailwindMajor > 0 && tailwindMajor < 4),
   );
 
   if (missing.length === 0) return files;

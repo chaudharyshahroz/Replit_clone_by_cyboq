@@ -62,6 +62,30 @@ describe('repairing the manifest', () => {
     expect(depsOf(result).next).toBe('14.2.5');
   });
 
+  it('adds an allowlisted PostCSS plugin referenced as a config object key', () => {
+    const result = repairMissingDependencies([
+      file(
+        'postcss.config.js',
+        "module.exports = { plugins: { '@tailwindcss/postcss': {} } };",
+      ),
+      manifest({ devDependencies: { tailwindcss: '^4.1.0' }, dependencies: {} }),
+    ]);
+
+    expect(depsOf(result)['@tailwindcss/postcss']).toBe('^4.1.0');
+  });
+
+  it('does not add the Tailwind 4 PostCSS plugin to a Tailwind 3 project', () => {
+    const files = [
+      file(
+        'postcss.config.js',
+        "module.exports = { plugins: { '@tailwindcss/postcss': {} } };",
+      ),
+      manifest({ devDependencies: { tailwindcss: '^3.4.0' }, dependencies: {} }),
+    ];
+
+    expect(depsOf(repairMissingDependencies(files))['@tailwindcss/postcss']).toBeUndefined();
+  });
+
   /*
    * The refusal that matters. An unrecognised name is left to fail as a compile
    * error naming the package, which beats installing something arbitrary.

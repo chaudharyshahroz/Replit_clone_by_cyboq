@@ -20,6 +20,24 @@ describe('shared generated tree normalization', () => {
     ).toBe('^2.11.3');
   });
 
+  it('adds a PostCSS plugin named by generated Tailwind 4 configuration', () => {
+    const result = normalizeGeneratedTree([
+      file(
+        'package.json',
+        '{"devDependencies":{"tailwindcss":"^4.1.0"},"dependencies":{}}',
+      ),
+      file(
+        'postcss.config.js',
+        "module.exports = { plugins: { '@tailwindcss/postcss': {} } };",
+      ),
+    ]);
+    expect(
+      JSON.parse(result.find((entry) => entry.path === 'package.json')!.content).dependencies[
+        '@tailwindcss/postcss'
+      ],
+    ).toBe('^4.1.0');
+  });
+
   it('repairs historical trees with missing dependencies, CSS imports, and JSX extensions together', () => {
     const tree = [
       file('package.json', '{"dependencies":{"next":"14.2.3"}}'),
