@@ -120,6 +120,13 @@
       "when": 1788670800000,
       "tag": "0016_credit_plan_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788746400000,
+      "tag": "0017_update_google_model",
+      "breakpoints": true
     }
   ]
 }

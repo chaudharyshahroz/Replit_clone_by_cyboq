@@ -28,6 +28,12 @@ const FULL: ProviderCapabilities = {
 
 const cache = new Map<string, AIProvider>();
 
+/* Google retires model IDs over time. Keep a compatibility alias so a stale
+ * database row cannot take the whole build down before the next seed/migration. */
+const GOOGLE_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  'gemini-2.5-pro': 'gemini-3.1-pro-preview',
+};
+
 /**
  * Build a provider by key, or undefined when this instance has no credential
  * for it. Callers turn `undefined` into a NOT_CONFIGURED error naming the
@@ -72,7 +78,7 @@ export function getProvider(providerKey: string): AIProvider | undefined {
           key: 'google',
           displayName: 'Google',
           capabilities: { ...FULL, embeddings: true },
-          model: google,
+          model: (id: string) => google(GOOGLE_MODEL_ALIASES[id] ?? id),
           embeddingModel: (id) => google.textEmbeddingModel(id),
         });
       }
