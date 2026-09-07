@@ -166,14 +166,18 @@ describe('repairing unavailable dependency versions', () => {
     });
   });
 
-  it('does not use another package release or cross a major version', () => {
+  it('ignores another package release but accepts registry evidence across a missing major', () => {
     const files = [manifest({ dependencies: { '@next-auth/prisma-adapter': '^1.0.25' } })];
-    for (const reported of ['The latest release of other-package is "1.0.7".',
-      'The latest release of @next-auth/prisma-adapter is "2.0.0".']) {
-      expect(repairUnavailableDependencyVersions(files,
-        'No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it\n' + reported,
-      )).toEqual(files);
-    }
+    expect(repairUnavailableDependencyVersions(files,
+      'No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it\n' +
+      'The latest release of other-package is "1.0.7".',
+    )).toEqual(files);
+
+    const repaired = repairUnavailableDependencyVersions(files,
+      'No matching version found for @next-auth/prisma-adapter@^1.0.25 while fetching it\n' +
+      'The latest release of @next-auth/prisma-adapter is "2.0.0".',
+    );
+    expect(JSON.parse(repaired[0]!.content).dependencies['@next-auth/prisma-adapter']).toBe('^2.0.0');
   });
 
   it('repairs the confirmed TypeScript version hole before a cold install', () => {
@@ -182,6 +186,13 @@ describe('repairing unavailable dependency versions', () => {
     ]);
     const parsed = JSON.parse(result[0]!.content);
     expect(parsed.devDependencies.typescript).toBe('^5.4.0');
+  });
+
+  it('repairs the commonly invented Auth.js adapter 1.x range before install', () => {
+    const result = repairUnavailableDependencyVersions([
+      manifest({ dependencies: { '@auth/prisma-adapter': '^1.9.2' } }),
+    ]);
+    expect(JSON.parse(result[0]!.content).dependencies['@auth/prisma-adapter']).toBe('^2.11.3');
   });
 
   it('uses package-manager evidence to repair another unavailable exact pin', () => {

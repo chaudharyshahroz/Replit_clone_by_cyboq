@@ -1881,6 +1881,33 @@ export async function startPreviewAction(
 
   try {
     /*
+     * Persist deterministic manifest repairs before provisioning anything.
+     * startPreview also normalizes defensively, but keeping that correction
+     * only inside a disposable sandbox meant every restart restored the bad
+     * package.json and paid for the same failed install again.
+     */
+    const normalizedTree = normalizeGeneratedTree(tree);
+    const originalManifest = tree.find((file) => file.path === 'package.json')?.content;
+    const normalizedManifest = normalizedTree.find((file) => file.path === 'package.json')?.content;
+    if (normalizedManifest && normalizedManifest !== originalManifest) {
+      const checkpoint = await createCheckpoint({
+        buildProjectId: buildId,
+        workspaceId: workspace.workspaceId,
+        userId: user.id,
+        files: normalizedTree,
+        changeSummary: 'Repaired preview manifest before dependency installation',
+        checksPassed: null,
+      });
+      tree = normalizedTree;
+      await recordStep({
+        buildId,
+        workspaceId: workspace.workspaceId,
+        kind: 'note',
+        message: `Normalized dependency versions in checkpoint ${checkpoint.version.version} before preview.`,
+      });
+    }
+
+    /*
      * Repair an incomplete generated tree before spending time provisioning a
      * sandbox. A Next process with configs and components but no page starts
      * perfectly and serves only its own 404 screen — exactly the shape that

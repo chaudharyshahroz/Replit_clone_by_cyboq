@@ -150,15 +150,18 @@ export function repairUnavailableDependencyVersions(
     const name = match[1];
     const version = match[2];
     if (!name || !version) continue;
-    // pnpm supplies an authoritative release when a model invents a range
-    // whose minimum is above every published release (e.g. ^1.0.25).
-    // Only use it for this exact dependency and never cross a major version.
+    // pnpm supplies an authoritative release when a model invents a range.
+    // Prefer a same-major repair, but if that release line does not exist the
+    // registry-confirmed latest release is the only deterministic installable
+    // recovery. The package must already be declared and named by pnpm; this
+    // never installs a package inferred from arbitrary generated source text.
     const requested = /^([~^]?)(\d+)\.\d+\.\d+$/.exec(version);
     const latest = [...installOutput.matchAll(
       /The latest release of ((?:@[^/\s]+\/)?[^\s]+) is "(\d+\.\d+\.\d+)"/g,
     )].find((release) => release[1] === name)?.[2];
-    if (requested && latest && latest.split('.')[0] === requested[2]) {
-      replacements.set(`${name}@${version}`, `${requested[1]}${latest}`);
+    if (requested && latest) {
+      const sameMajor = latest.split('.')[0] === requested[2];
+      replacements.set(`${name}@${version}`, `${sameMajor ? requested[1] : '^'}${latest}`);
       continue;
     }
     if (name && version && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
@@ -175,7 +178,13 @@ export function repairUnavailableDependencyVersions(
     const dependencies = { ...(original as Record<string, unknown>) };
     for (const [name, spec] of Object.entries(dependencies)) {
       if (typeof spec !== 'string') continue;
-      const replacement = replacements.get(`${name}@${spec}`);
+      const replacement = replacements.get(`${name}@${spec}`) ??
+        // Providers confuse this with the older @next-auth adapter and invent
+        // many different stable 1.x ranges. Repair the whole impossible line,
+        // not only the exact ^1.7.0 observed in one build.
+        (name === '@auth/prisma-adapter' && /^[~^]?1\.\d+\.\d+$/.test(spec)
+          ? '^2.11.3'
+          : undefined);
       if (!replacement) continue;
       dependencies[name] = replacement;
       changed = true;

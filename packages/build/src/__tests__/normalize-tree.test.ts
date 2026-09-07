@@ -9,6 +9,17 @@ const file = (path: string, content: string): GeneratedFile => ({
 });
 
 describe('shared generated tree normalization', () => {
+  it('repairs an impossible Auth.js adapter line before a preview install', () => {
+    const result = normalizeGeneratedTree([
+      file('package.json', '{"dependencies":{"@auth/prisma-adapter":"^1.7.0"}}'),
+    ]);
+    expect(
+      JSON.parse(result.find((entry) => entry.path === 'package.json')!.content).dependencies[
+        '@auth/prisma-adapter'
+      ],
+    ).toBe('^2.11.3');
+  });
+
   it('repairs historical trees with missing dependencies, CSS imports, and JSX extensions together', () => {
     const tree = [
       file('package.json', '{"dependencies":{"next":"14.2.3"}}'),
