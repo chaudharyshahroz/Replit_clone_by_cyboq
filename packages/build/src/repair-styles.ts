@@ -53,6 +53,101 @@ function addTailwindEntry(content: string, version: string): string {
   return `${imports}${entry}${content.slice(imports.length)}`;
 }
 
+/**
+ * CSS requires every top-level @import to appear before ordinary rules. Models
+ * commonly append a design-system import after the stylesheet body, which
+ * causes PostCSS/Turbopack to reject the entire application. Hoist imports
+ * deterministically so both newly generated and historical trees can start.
+ */
+function hoistCssImports(content: string): string {
+  const imports: string[] = [];
+  const spans: Array<[number, number]> = [];
+  let depth = 0;
+  let quote = '';
+  let inComment = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index]!;
+    const next = content[index + 1];
+    if (inComment) {
+      if (char === '*' && next === '/') {
+        inComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      inComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+    if (char === '}') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (
+      depth !== 0 ||
+      !content.startsWith('@import', index) ||
+      /[\w-]/.test(content[index - 1] ?? '') ||
+      /[\w-]/.test(content[index + 7] ?? '')
+    ) {
+      continue;
+    }
+
+    let end = index + 7;
+    let importQuote = '';
+    let parentheses = 0;
+    for (; end < content.length; end += 1) {
+      const importChar = content[end]!;
+      if (importQuote) {
+        if (importChar === '\\') end += 1;
+        else if (importChar === importQuote) importQuote = '';
+      } else if (importChar === '"' || importChar === "'") {
+        importQuote = importChar;
+      } else if (importChar === '(') {
+        parentheses += 1;
+      } else if (importChar === ')') {
+        parentheses = Math.max(0, parentheses - 1);
+      } else if (importChar === ';' && parentheses === 0) {
+        break;
+      }
+    }
+    if (end >= content.length) continue;
+
+    imports.push(content.slice(index, end + 1).trim());
+    spans.push([index, end + 1]);
+    index = end;
+  }
+
+  if (imports.length === 0) return content;
+
+  const characters = [...content];
+  for (const [start, end] of spans) {
+    for (let index = start; index < end; index += 1) {
+      if (characters[index] !== '\n' && characters[index] !== '\r') characters[index] = '';
+    }
+  }
+  let remainder = characters.join('').trim();
+  const charset = /^(\s*@charset\s+[^;]+;)\s*/i.exec(remainder);
+  const prefix = charset?.[1]?.trim() ?? '';
+  if (charset) remainder = remainder.slice(charset[0].length).trim();
+
+  return [prefix, ...imports, remainder].filter(Boolean).join('\n');
+}
+
 /** Ensure a generated Next App Router application actually loads its global CSS. */
 export function repairGlobalStyles(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   const manifest = packageManifest(files);
@@ -61,7 +156,7 @@ export function repairGlobalStyles(files: readonly GeneratedFile[]): readonly Ge
   const missingTailwindEntry = tailwindStylesProblem(files) !== undefined;
   const tailwindStylesheet = files.find((file) => /(?:^|\/)(?:globals|index)\.css$/.test(file.path));
   let repaired = files.map((file) => {
-    let content = file.content;
+    let content = /\.css$/i.test(file.path) ? hoistCssImports(file.content) : file.content;
     if (file.path === tailwindStylesheet?.path && tailwindVersion && missingTailwindEntry) {
       content = addTailwindEntry(content, tailwindVersion);
     }

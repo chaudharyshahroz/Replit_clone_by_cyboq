@@ -80,4 +80,32 @@ describe('Tailwind stylesheet repair', () => {
     expect(config).toContain("'@tailwindcss/postcss':");
     expect(config).not.toMatch(/\btailwindcss\s*:/);
   });
+
+  it('hoists a generated design import that was appended after CSS rules', () => {
+    const files = [
+      file(
+        'src/app/globals.css',
+        'body { margin: 0; }\n.card { display: grid; }\n@import "./reklu-design.css";\n.footer { color: black; }',
+      ),
+    ];
+
+    const once = repairGlobalStyles(files);
+    const css = once[0]!.content;
+    expect(css).toMatch(/^@import "\.\/reklu-design\.css";/);
+    expect(css.indexOf('@import')).toBeLessThan(css.indexOf('body'));
+    expect(repairGlobalStyles(once)).toEqual(once);
+  });
+
+  it('keeps charset first while hoisting multiple imports', () => {
+    const result = repairGlobalStyles([
+      file(
+        'app/globals.css',
+        '@charset "UTF-8";\nbody {}\n@import url("https://fonts.example/a.css");\n@import "./theme.css";',
+      ),
+    ]);
+
+    expect(result[0]!.content).toMatch(
+      /^@charset "UTF-8";\n@import url\("https:\/\/fonts\.example\/a\.css"\);\n@import "\.\/theme\.css";\nbody \{\}/,
+    );
+  });
 });

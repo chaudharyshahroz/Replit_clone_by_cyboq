@@ -66,6 +66,30 @@ describe('shared generated tree normalization', () => {
     expect(normalizeGeneratedTree(result)).toEqual(result);
   });
 
+  it('repairs the late Reklu design import seen in failed preview compiler output', () => {
+    const tree = [
+      file(
+        'package.json',
+        '{"devDependencies":{"tailwindcss":"^3.4.17"},"dependencies":{}}',
+      ),
+      file(
+        'postcss.config.js',
+        "module.exports = { plugins: { '@tailwindcss/postcss': {} } };",
+      ),
+      file('src/app/layout.tsx', "import './globals.css'; export default function Layout() {}"),
+      file(
+        'src/app/globals.css',
+        '@import "tailwindcss";\n@theme { --color-foreground: #211913; }\nbody { color: var(--color-foreground); }\n@import "./reklu-design.css";',
+      ),
+    ];
+    const result = normalizeGeneratedTree(tree);
+    const css = result.find((entry) => entry.path === 'src/app/globals.css')!.content;
+
+    expect(css).toMatch(/^@import "tailwindcss";\n@import "\.\/reklu-design\.css";/);
+    expect(css.indexOf('@import "./reklu-design.css"')).toBeLessThan(css.indexOf('@theme'));
+    expect(normalizeGeneratedTree(result)).toEqual(result);
+  });
+
   it('repairs historical trees with missing dependencies, CSS imports, and JSX extensions together', () => {
     const tree = [
       file('package.json', '{"dependencies":{"next":"14.2.3"}}'),

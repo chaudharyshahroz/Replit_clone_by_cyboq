@@ -1881,21 +1881,23 @@ export async function startPreviewAction(
 
   try {
     /*
-     * Persist deterministic manifest repairs before provisioning anything.
-     * startPreview also normalizes defensively, but keeping that correction
-     * only inside a disposable sandbox meant every restart restored the bad
-     * package.json and paid for the same failed install again.
+     * Persist every deterministic repair before provisioning anything.
+     * startPreview also normalizes defensively, but keeping CSS, source, or
+     * manifest corrections only inside a disposable sandbox meant every
+     * restart restored the same compiler failure.
      */
     const normalizedTree = normalizeGeneratedTree(tree);
-    const originalManifest = tree.find((file) => file.path === 'package.json')?.content;
-    const normalizedManifest = normalizedTree.find((file) => file.path === 'package.json')?.content;
-    if (normalizedManifest && normalizedManifest !== originalManifest) {
+    const originalFiles = new Map(tree.map((file) => [file.path, file.content]));
+    const treeChanged =
+      normalizedTree.length !== tree.length ||
+      normalizedTree.some((file) => originalFiles.get(file.path) !== file.content);
+    if (treeChanged) {
       const checkpoint = await createCheckpoint({
         buildProjectId: buildId,
         workspaceId: workspace.workspaceId,
         userId: user.id,
         files: normalizedTree,
-        changeSummary: 'Repaired preview manifest before dependency installation',
+        changeSummary: 'Repaired generated files before preview startup',
         checksPassed: null,
       });
       tree = normalizedTree;
@@ -1903,7 +1905,7 @@ export async function startPreviewAction(
         buildId,
         workspaceId: workspace.workspaceId,
         kind: 'note',
-        message: `Normalized dependency versions in checkpoint ${checkpoint.version.version} before preview.`,
+        message: `Persisted deterministic preview repairs in checkpoint ${checkpoint.version.version}.`,
       });
     }
 
