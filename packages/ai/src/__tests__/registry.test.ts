@@ -119,6 +119,7 @@ describe('autoRoutableModels', () => {
       model({ key: 'deepseek', providerKey: 'deepseek' }),
       model({ key: 'kimi', providerKey: 'kimi' }),
       model({ key: 'openrouter', providerKey: 'openrouter' }),
+      model({ key: 'bai', providerKey: 'bai' }),
       model({ key: 'mock', providerKey: 'dev', isDevelopmentMock: true }),
     ];
 

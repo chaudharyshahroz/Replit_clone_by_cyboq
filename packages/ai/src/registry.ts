@@ -181,13 +181,14 @@ export function selectableModels(
 /**
  * Models Reklu may choose without a person naming the model.
  *
- * DeepSeek, Kimi, and OpenRouter use separately funded provider accounts (and
- * OpenRouter may route to an overloaded upstream). Merely configuring those
- * credentials must not authorize background jobs or Reklu Auto to spend them.
- * They remain visible and selectable; only an explicit model key can opt a
- * request into those providers.
+ * DeepSeek, Kimi, OpenRouter, and B.AI use separately funded provider
+ * accounts (and OpenRouter/B.AI may reject requests for upstream capacity or
+ * balance). Merely configuring those credentials must not authorize
+ * background jobs or Reklu Auto to spend them. They remain visible and
+ * selectable; only an explicit model key can opt a request into those
+ * providers.
  */
-const EXPLICIT_SELECTION_PROVIDER_KEYS = new Set(['deepseek', 'kimi', 'openrouter']);
+const EXPLICIT_SELECTION_PROVIDER_KEYS = new Set(['deepseek', 'kimi', 'openrouter', 'bai']);
 
 export function autoRoutableModels(
   models: readonly RegisteredModel[],
