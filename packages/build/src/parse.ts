@@ -78,20 +78,39 @@ export function parseGeneratedFiles(response: string): ParseResult {
   const rejected: { path: string; reason: string }[] = [];
   const commentaryParts: string[] = [];
 
+  // The main pattern also captures the line before a fence. Give a response
+  // that begins directly with a fence an empty preceding line to capture.
+  const source = response.startsWith('```') ? `\n${response}` : response;
+
   // Match fences along with whatever line preceded them.
   const pattern = /(^|\n)([^\n]*)\n```([^\n]*)\n([\s\S]*?)(?:```|$)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = pattern.exec(response)) !== null) {
+  while ((match = pattern.exec(source)) !== null) {
     const precedingLine = (match[2] ?? '').trim();
     const infoString = (match[3] ?? '').trim();
-    const content = match[4] ?? '';
+    let content = match[4] ?? '';
 
-    commentaryParts.push(response.slice(lastIndex, match.index));
+    commentaryParts.push(source.slice(lastIndex, match.index));
     lastIndex = pattern.lastIndex;
 
-    const path = extractPath(precedingLine, infoString);
+    let path = extractPath(precedingLine, infoString);
+    if (!path) {
+      /*
+       * Several reasoning/coding models put the path comment as the first line
+       * inside the fence even when shown the canonical format. Accept that
+       * common variant without treating arbitrary first-line source code as a
+       * filename: extractPath still requires a path shape, and the explicit
+       * decoration check requires a comment/File/Path label.
+       */
+      const newline = content.indexOf('\n');
+      const firstLine = (newline === -1 ? content : content.slice(0, newline)).trim();
+      if (/^(?:\/\/|#|<!--|File\s*:|Path\s*:)/i.test(firstLine)) {
+        path = extractPath(firstLine, '');
+        if (path) content = newline === -1 ? '' : content.slice(newline + 1);
+      }
+    }
     if (!path) {
       // A fence with no path is illustrative code, not a file.
       continue;
@@ -114,7 +133,7 @@ export function parseGeneratedFiles(response: string): ParseResult {
     }
   }
 
-  commentaryParts.push(response.slice(lastIndex));
+  commentaryParts.push(source.slice(lastIndex));
 
   return {
     files: deduplicateByPath(files),

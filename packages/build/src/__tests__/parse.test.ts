@@ -4,6 +4,16 @@ import { parseGeneratedFiles } from '../parse';
 const fence = (info: string, body: string) => '```' + info + '\n' + body + '\n```';
 
 describe('parseGeneratedFiles — recognised shapes', () => {
+  it('accepts a path comment as the first line inside a fence', () => {
+    const result = parseGeneratedFiles(
+      ['```json', '// package.json', '{ "name": "reklu-site" }', '```'].join('\n'),
+    );
+
+    expect(result.files).toEqual([
+      expect.objectContaining({ path: 'package.json', content: '{ "name": "reklu-site" }' }),
+    ]);
+  });
+
   it('reads a path from a preceding comment', () => {
     const result = parseGeneratedFiles(
       `Here is the page.\n\n// src/app/page.tsx\n${fence('tsx', 'export default function Page() {}')}`,

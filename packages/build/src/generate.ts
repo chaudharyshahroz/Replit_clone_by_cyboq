@@ -99,6 +99,19 @@ const GENERATION_PROMPT = [
   '- Do not emit .env, .git, or any credential file.',
 ].join('\n');
 
+/*
+ * Repeated at the very end of the system prompt. Design Engine V5 contributes
+ * a large art-direction contract, and reasoning models can otherwise lose the
+ * wire format that appeared thousands of tokens earlier. The last instruction
+ * is deliberately short and mechanical.
+ */
+const FINAL_OUTPUT_CONTRACT = [
+  'FINAL OUTPUT CONTRACT:',
+  'Your response must begin exactly with: // package.json',
+  'Put each path comment immediately before its fenced file contents.',
+  'Return files only. Do not return a plan, analysis, explanation, or summary.',
+].join('\n');
+
 export interface GenerateBuildOptions {
   readonly brief: BuildBrief;
   readonly prompt: string;
@@ -328,6 +341,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
           ...(options.designDNA ? [designDNAPrompt(options.designDNA)] : []),
           ...(options.designEngineV3 ? [designEngineV3Prompt(options.designEngineV3)] : []),
         ]),
+    FINAL_OUTPUT_CONTRACT,
   ].join('\n');
 
   /*
@@ -504,7 +518,6 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
         modelIdentifier: options.model.modelIdentifier,
         messages: [
           ...messages,
-          { role: 'assistant', content: [{ type: 'text', text: text.slice(0, 4_000) }] },
           {
             role: 'user',
             content: [
@@ -525,6 +538,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
                   '',
                   'If you cannot fit the whole application, emit the most important',
                   'files complete rather than all of them truncated.',
+                  'Your first response characters must be exactly: // package.json',
                 ].join('\n'),
               },
             ],
@@ -667,21 +681,19 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
   }
 
   if (options.requireFiles && parsed.files.length === 0) {
+    const diagnostics: GenerationDiagnostics = {
+      responseChars: text.length,
+      sawFence: text.includes('```'),
+      finishReason,
+      retried,
+      preview: text.slice(0, 400),
+    };
+    const detail = describeEmptyGeneration(diagnostics, parsed.rejected.length);
     throw errors.providerError({
       provider: options.model.providerKey,
       model: options.model.modelIdentifier,
-      detail: describeEmptyGeneration(
-        {
-          responseChars: text.length,
-          sawFence: text.includes('```'),
-          finishReason,
-          retried,
-          preview: text.slice(0, 400),
-        },
-        parsed.rejected.length,
-      ),
-      userMessage:
-        'The selected model did not return usable code. Retry it or choose another coding model.',
+      detail,
+      userMessage: `${options.model.displayName}: ${detail}`,
       retryable: true,
     });
   }

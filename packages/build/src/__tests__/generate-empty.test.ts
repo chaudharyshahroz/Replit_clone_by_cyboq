@@ -42,6 +42,7 @@ const brief = {
 
 const model = {
   key: 'test',
+  displayName: 'Test Model',
   providerKey: 'test',
   modelIdentifier: 'test-1',
   maxOutputTokens: 8_000,
@@ -335,7 +336,8 @@ describe('when the second attempt fails too', () => {
     ).rejects.toMatchObject({
       code: 'PROVIDER_ERROR',
       retryable: true,
-      userMessage: 'The selected model did not return usable code. Retry it or choose another coding model.',
+      userMessage:
+        'Test Model: The model returned an empty response. This is usually the provider refusing the request — try another model.',
     });
   });
 
