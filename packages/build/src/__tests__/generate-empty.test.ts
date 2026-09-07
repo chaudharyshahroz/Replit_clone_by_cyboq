@@ -186,6 +186,42 @@ describe('asking again', () => {
     expect(last).toContain('package.json');
   });
 
+  it('recovers files emitted in a reasoning model channel', async () => {
+    stream.mockImplementation(async function* () {
+      yield { type: 'reasoning-delta', text: FILE };
+      yield { type: 'finish', finishReason: 'stop', usage: {} };
+    });
+    getProvider.mockReturnValue({ stream, generate });
+
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: async () => {},
+      requireFiles: true,
+    });
+
+    expect(result.files.map((file) => file.path)).toEqual(['package.json']);
+    expect(result.commentary).toBe('');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('recovers reasoning-channel files from the corrective request', async () => {
+    responds(['I will plan the application first.']);
+    generate.mockResolvedValue({ text: '', reasoning: FILE, finishReason: 'stop' });
+
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: async () => {},
+      requireFiles: true,
+    });
+
+    expect(result.files.map((file) => file.path)).toEqual(['package.json']);
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
   it('reports the files the retry produced, so the log is not silent', async () => {
     responds(['Planning…'], 'length');
     generate.mockResolvedValue({ text: FILE, finishReason: 'stop' });

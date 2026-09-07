@@ -190,6 +190,33 @@ const addUsage = (left: TokenUsage, right?: TokenUsage): TokenUsage => ({
 });
 
 /**
+ * Some reasoning models, including Kimi coding models, occasionally emit the
+ * requested file blocks in the reasoning channel and leave the final text
+ * empty. Prefer normal answer text, but recover those files when it contains
+ * none. The ordinary parser still validates every path, and the generated tree
+ * still goes through import, install, typecheck, and preview verification.
+ */
+function parseCodeResponse(text: string, reasoning?: string) {
+  const answer = parseGeneratedFiles(text);
+  if (answer.files.length > 0 || !reasoning) {
+    return { text, parsed: answer, usedReasoning: false };
+  }
+
+  const thought = parseGeneratedFiles(reasoning);
+  if (thought.files.length === 0) {
+    return { text, parsed: answer, usedReasoning: false };
+  }
+
+  return {
+    text: reasoning,
+    // Reasoning outside file blocks is implementation metadata, not a user-facing
+    // change summary. Recover only the validated files from this channel.
+    parsed: { ...thought, commentary: '' },
+    usedReasoning: true,
+  };
+}
+
+/**
  * What the model said before it wrote anything.
  *
  * Everything up to the first file's path line. Taken from the response rather
@@ -309,6 +336,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
    * file appearing at once when the call returns.
    */
   let text = '';
+  let reasoningText = '';
   const announced = new Set<string>();
   let narrated = false;
   let finishReason: FinishReason = 'unknown';
@@ -329,6 +357,10 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
     if (event.type === 'finish') {
       finishReason = event.finishReason;
       usage = addUsage(usage, event.usage);
+    }
+    if (event.type === 'reasoning-delta') {
+      reasoningText += event.text;
+      continue;
     }
     if (event.type !== 'text-delta') continue;
     text += event.text;
@@ -365,7 +397,23 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
     }
   }
 
-  let parsed = parseGeneratedFiles(text);
+  const initial = parseCodeResponse(text, reasoningText);
+  let parsed = initial.parsed;
+  if (initial.usedReasoning) {
+    text = initial.text;
+    logger.info('Recovered generated files from the model reasoning channel', {
+      provider: options.model.providerKey,
+      model: options.model.modelIdentifier,
+      files: parsed.files.length,
+    });
+    if (options.onFile) {
+      for (const file of parsed.files) {
+        if (announced.has(file.path)) continue;
+        announced.add(file.path);
+        await options.onFile(file.path);
+      }
+    }
+  }
   let retried = false;
 
   /*
@@ -403,10 +451,11 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
       ...(options.signal ? { signal: options.signal } : {}),
     });
     usage = addUsage(usage, completed?.usage);
-    const replacement = parseGeneratedFiles(completed?.text ?? '').files.find(
+    const completedResponse = parseCodeResponse(completed?.text ?? '', completed?.reasoning);
+    const replacement = completedResponse.parsed.files.find(
       (file) => file.path === incompletePath,
     );
-    if (!replacement || incompleteFinalFile(completed?.text ?? '')) {
+    if (!replacement || incompleteFinalFile(completedResponse.text)) {
       throw errors.providerError({
         provider: options.model.providerKey,
         model: options.model.modelIdentifier,
@@ -420,7 +469,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
       ...parsed,
       files: parsed.files.map((file) => (file === partial ? replacement : file)),
     };
-    text = `${text}\n${completed.text}`;
+    text = `${text}\n${completedResponse.text}`;
     finishReason = completed.finishReason ?? 'stop';
   }
 
@@ -487,10 +536,11 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
       });
       usage = addUsage(usage, retry?.usage);
 
-      const second = parseGeneratedFiles(retry?.text ?? '');
+      const retryResponse = parseCodeResponse(retry?.text ?? '', retry?.reasoning);
+      const second = retryResponse.parsed;
       if (second.files.length > 0) {
         parsed = second;
-        text = retry.text;
+        text = retryResponse.text;
         finishReason = retry.finishReason ?? 'stop';
 
         if (options.onFile) {
@@ -569,14 +619,18 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
       });
       usage = addUsage(usage, completion?.usage);
 
-      const supplemental = parseGeneratedFiles(completion?.text ?? '');
+      const completionResponse = parseCodeResponse(
+        completion?.text ?? '',
+        completion?.reasoning,
+      );
+      const supplemental = completionResponse.parsed;
       if (supplemental.files.length === 0) break;
       parsed = {
         files: mergeTree(parsed.files, supplemental.files),
         rejected: [...parsed.rejected, ...supplemental.rejected],
         commentary: parsed.commentary,
       };
-      text = `${text}\n${completion.text}`;
+      text = `${text}\n${completionResponse.text}`;
       finishReason = completion.finishReason ?? finishReason;
 
       if (options.onFile) {
