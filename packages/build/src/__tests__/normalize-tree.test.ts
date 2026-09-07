@@ -38,6 +38,34 @@ describe('shared generated tree normalization', () => {
     ).toBe('^4.1.0');
   });
 
+  it('normalizes a Tailwind 3 manifest when Design V5 CSS uses Tailwind 4 syntax', () => {
+    const tree = [
+      file(
+        'package.json',
+        '{"devDependencies":{"tailwindcss":"^3.4.17"},"dependencies":{}}',
+      ),
+      file(
+        'postcss.config.js',
+        "module.exports = { plugins: { '@tailwindcss/postcss': {} } };",
+      ),
+      file(
+        'src/app/globals.css',
+        '@import "tailwindcss";\n@theme { --color-background: #f8f7f3; }',
+      ),
+    ];
+    const result = normalizeGeneratedTree(tree);
+    const manifest = JSON.parse(
+      result.find((entry) => entry.path === 'package.json')!.content,
+    );
+
+    expect(manifest.devDependencies.tailwindcss).toBe('^4.1.0');
+    expect(manifest.dependencies['@tailwindcss/postcss']).toBe('^4.1.0');
+    expect(result.find((entry) => entry.path === 'postcss.config.js')!.content).toContain(
+      '@tailwindcss/postcss',
+    );
+    expect(normalizeGeneratedTree(result)).toEqual(result);
+  });
+
   it('repairs historical trees with missing dependencies, CSS imports, and JSX extensions together', () => {
     const tree = [
       file('package.json', '{"dependencies":{"next":"14.2.3"}}'),

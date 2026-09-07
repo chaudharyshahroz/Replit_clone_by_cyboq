@@ -116,10 +116,41 @@ export function repairMissingDependencies(
   }
 
   const dependencies = { ...((manifest.dependencies ?? {}) as Record<string, string>) };
-  const dev = (manifest.devDependencies ?? {}) as Record<string, string>;
+  const dev = { ...((manifest.devDependencies ?? {}) as Record<string, string>) };
   const referenced = new Set([...importedPackages(files), ...configuredPackages(files)]);
-  const tailwindVersion = dependencies.tailwindcss ?? dev.tailwindcss ?? '';
+  const usesTailwindFourCss = files.some(
+    (file) =>
+      /\.css$/.test(file.path) &&
+      (/@theme\s*\{/.test(file.content) || /@import\s+['"]tailwindcss['"]/.test(file.content)),
+  );
+  let changed = false;
+
+  // Design V5 emits @theme tokens. A provider can still pin Tailwind 3 in the
+  // manifest, which makes Next resolve `@import "tailwindcss"` as client CSS
+  // and attempt to bundle Tailwind's Node-only fs/v8 modules in the browser.
+  // Normalize the whole toolchain to v4 rather than treating those built-ins
+  // as missing browser packages.
+  if (usesTailwindFourCss) {
+    if (dependencies.tailwindcss && Number(/\d+/.exec(dependencies.tailwindcss)?.[0] ?? 0) < 4) {
+      dependencies.tailwindcss = '^4.1.0';
+      changed = true;
+    } else if (dev.tailwindcss && Number(/\d+/.exec(dev.tailwindcss)?.[0] ?? 0) < 4) {
+      dev.tailwindcss = '^4.1.0';
+      changed = true;
+    } else if (!dependencies.tailwindcss && !dev.tailwindcss) {
+      referenced.add('tailwindcss');
+    }
+  }
+
+  const tailwindVersion = dependencies.tailwindcss ?? dev.tailwindcss ??
+    (referenced.has('tailwindcss') ? KNOWN.tailwindcss! : '');
   const tailwindMajor = Number(/\d+/.exec(tailwindVersion)?.[0] ?? 0);
+  if (
+    tailwindMajor >= 4 &&
+    files.some((file) => /(?:^|\/)postcss\.config\.(?:[cm]?js|ts)$/.test(file.path))
+  ) {
+    referenced.add('@tailwindcss/postcss');
+  }
 
   const missing = [...referenced].filter(
     (name) =>
@@ -131,11 +162,18 @@ export function repairMissingDependencies(
       !(name === '@tailwindcss/postcss' && tailwindMajor > 0 && tailwindMajor < 4),
   );
 
-  if (missing.length === 0) return files;
+  if (missing.length === 0 && !changed) return files;
 
-  for (const name of missing) dependencies[name] = KNOWN[name]!;
+  for (const name of missing) {
+    dependencies[name] = KNOWN[name]!;
+    changed = true;
+  }
 
-  const repaired = { ...manifest, dependencies };
+  const repaired = {
+    ...manifest,
+    dependencies,
+    ...(manifest.devDependencies ? { devDependencies: dev } : {}),
+  };
 
   return files.map((file) =>
     file.path === 'package.json'

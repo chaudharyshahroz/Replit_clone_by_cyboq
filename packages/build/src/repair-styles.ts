@@ -72,6 +72,16 @@ export function repairGlobalStyles(files: readonly GeneratedFile[]): readonly Ge
     ) {
       content = content.replaceAll('@tailwindcss/postcss', 'tailwindcss');
     }
+    if (
+      tailwindMajor >= 4 &&
+      /(?:^|\/)postcss\.config\.(?:[cm]?js|ts)$/.test(file.path)
+    ) {
+      content = content
+        .replace(/(['"])tailwindcss\1/g, (_match, quote: string) =>
+          `${quote}@tailwindcss/postcss${quote}`,
+        )
+        .replace(/\btailwindcss\s*:/g, "'@tailwindcss/postcss':");
+    }
     return content === file.content ? file : { ...file, content };
   });
 

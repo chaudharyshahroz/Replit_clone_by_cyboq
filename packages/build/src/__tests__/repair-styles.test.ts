@@ -69,4 +69,15 @@ describe('Tailwind stylesheet repair', () => {
     expect(config).toContain("'tailwindcss'");
     expect(config).not.toContain('@tailwindcss/postcss');
   });
+
+  it('rewrites a legacy PostCSS plugin key when the project uses Tailwind 4', () => {
+    const result = repairGlobalStyles([
+      file('package.json', JSON.stringify({ devDependencies: { tailwindcss: '^4.1.0' } })),
+      file('postcss.config.js', "module.exports = { plugins: { tailwindcss: {} } };"),
+    ]);
+
+    const config = result.find((entry) => entry.path === 'postcss.config.js')!.content;
+    expect(config).toContain("'@tailwindcss/postcss':");
+    expect(config).not.toMatch(/\btailwindcss\s*:/);
+  });
 });
