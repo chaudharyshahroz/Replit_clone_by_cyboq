@@ -66,6 +66,38 @@ beforeEach(() => {
 const FILE = ['// package.json', '```json', '{ "name": "coffee" }', '```'].join('\n');
 
 describe('asking again', () => {
+  it('completes a component-only response into an installable application', async () => {
+    responds(['// src/components/Hero.tsx\n```tsx\nexport function Hero() { return <main>Home</main>; }\n```']);
+    generate.mockResolvedValue({
+      text: [
+        '// package.json',
+        '```json',
+        '{ "scripts": { "dev": "next dev" }, "dependencies": { "next": "14.2.5" } }',
+        '```',
+        '// src/app/page.tsx',
+        '```tsx',
+        "import { Hero } from '@/components/Hero';",
+        'export default function Page() { return <Hero />; }',
+        '```',
+      ].join('\n'),
+      finishReason: 'stop',
+    });
+
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: async () => {},
+      requireFiles: true,
+    });
+
+    expect(result.files.map((file) => file.path)).toHaveLength(3);
+    expect(result.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining(['src/components/Hero.tsx', 'package.json', 'src/app/page.tsx']),
+    );
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
   it('uses one V4 contract and actually inserts compiler artifacts', async () => {
     responds([
       '// src/app/layout.tsx\n```tsx\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n```',
@@ -91,6 +123,7 @@ describe('asking again', () => {
   it('requests locally imported files that the model omitted before accepting the tree', async () => {
     responds([
       [
+        FILE,
         '// src/app/page.tsx',
         '```tsx',
         "import { Hero } from '@/components/sections/Hero';",
@@ -117,6 +150,7 @@ describe('asking again', () => {
     });
 
     expect(result.files.map((entry) => entry.path)).toEqual([
+      'package.json',
       'src/app/page.tsx',
       'src/components/sections/Hero.tsx',
     ]);
@@ -128,7 +162,14 @@ describe('asking again', () => {
 
   it('rejects a file tree that remains incomplete after bounded completion attempts', async () => {
     responds([
-      '// src/app/page.tsx\n```tsx\nimport Missing from "./Missing";\nexport default Missing;\n```',
+      [
+        FILE,
+        '// src/app/page.tsx',
+        '```tsx',
+        'import Missing from "./Missing";',
+        'export default Missing;',
+        '```',
+      ].join('\n'),
     ]);
     generate.mockResolvedValue({ text: 'No files.', finishReason: 'stop' });
 

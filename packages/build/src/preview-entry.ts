@@ -19,6 +19,12 @@ function dependencyNames(files: readonly GeneratedFile[]): Set<string> {
  */
 export function previewEntryProblem(files: readonly GeneratedFile[]): string | undefined {
   const paths = new Set(files.map((file) => file.path));
+  if (!paths.has('package.json')) {
+    return (
+      'The application has no root package.json. Add package.json with valid dependency and dev-script entries, ' +
+      'plus the framework root layout and homepage entry required to render /.'
+    );
+  }
   const dependencies = dependencyNames(files);
 
   if (dependencies.has('next') && !files.some((file) => NEXT_HOME.test(file.path))) {

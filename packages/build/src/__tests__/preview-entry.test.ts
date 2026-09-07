@@ -12,6 +12,10 @@ const manifest = (dependencies: Record<string, string>) =>
   file('package.json', JSON.stringify({ dependencies }));
 
 describe('preview entry validation', () => {
+  it('rejects a tree with no root package manifest', () => {
+    expect(previewEntryProblem([file('src/components/Hero.tsx')])).toContain('no root package.json');
+  });
+
   it('rejects a Next tree made only of configuration and components', () => {
     expect(
       previewEntryProblem([

@@ -43,6 +43,7 @@ import {
 } from '@reklu/design-intelligence';
 import { unresolvedLocalImports } from './repair-imports';
 import { compileDesignTree } from './design-compiler';
+import { previewEntryProblem } from './preview-entry';
 
 export type BuildStage =
   | 'interpreting_product'
@@ -594,6 +595,91 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
       ],
     };
   }
+
+  /*
+   * Files are not an application unless the sandbox can install and start
+   * them. Models occasionally emit only design components; accepting those
+   * made the build look successful until Preview reported "No package.json to
+   * install." Complete the runnable shell while the generating model and full
+   * brief are still in context, before checkpointing or starting a sandbox.
+   */
+  if (options.requireFiles && parsed.files.length > 0 && !options.signal?.aborted) {
+    let shellProblem = previewEntryProblem(
+      mergeTree(options.existingFiles ?? [], parsed.files),
+    );
+
+    for (let attempt = 1; attempt <= 2 && shellProblem; attempt++) {
+      retried = true;
+      logger.warn('Generation omitted the runnable application shell; requesting it', {
+        attempt,
+        problem: shellProblem,
+      });
+
+      const completion = await provider.generate({
+        modelIdentifier: options.model.modelIdentifier,
+        messages: [
+          ...messages,
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: [
+                  'The generated tree cannot be installed and rendered:',
+                  shellProblem,
+                  '',
+                  'Emit every missing runnable-shell file now. At minimum this must include a valid',
+                  'root package.json with a dev script and the framework homepage that renders /.',
+                  'Include complete files only, using path comments and fenced blocks. No prose.',
+                ].join('\n'),
+              },
+            ],
+          },
+        ],
+        system,
+        maxOutputTokens: Math.min(options.model.maxOutputTokens, 16_000),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      usage = addUsage(usage, completion?.usage);
+
+      const completionResponse = parseCodeResponse(
+        completion?.text ?? '',
+        completion?.reasoning,
+      );
+      if (completionResponse.parsed.files.length === 0) break;
+
+      parsed = {
+        files: mergeTree(parsed.files, completionResponse.parsed.files),
+        rejected: [...parsed.rejected, ...completionResponse.parsed.rejected],
+        commentary: parsed.commentary,
+      };
+      text = `${text}\n${completionResponse.text}`;
+      finishReason = completion?.finishReason ?? finishReason;
+
+      if (options.onFile) {
+        for (const file of completionResponse.parsed.files) {
+          if (announced.has(file.path)) continue;
+          announced.add(file.path);
+          await options.onFile(file.path);
+        }
+      }
+
+      shellProblem = previewEntryProblem(
+        mergeTree(options.existingFiles ?? [], parsed.files),
+      );
+    }
+
+    if (shellProblem) {
+      throw errors.providerError({
+        provider: options.model.providerKey,
+        model: options.model.modelIdentifier,
+        detail: shellProblem,
+        userMessage: `${options.model.displayName} returned files, but not a runnable application: ${shellProblem}`,
+        retryable: true,
+      });
+    }
+  }
+
   if (options.requireFiles && parsed.files.length > 0 && !options.signal?.aborted) {
     let missing = unresolvedLocalImports(mergeTree(options.existingFiles ?? [], parsed.files));
 
