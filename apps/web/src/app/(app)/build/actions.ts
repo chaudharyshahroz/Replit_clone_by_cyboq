@@ -412,6 +412,10 @@ const STAGE_LABELS: Record<string, string> = {
   starting_preview: 'Starting the preview',
 };
 
+/* A provider stream without a deadline leaves the build in “Writing the code”
+ * forever when an upstream accepts the socket but never returns a token. */
+const BUILD_GENERATION_TIMEOUT_MS = 180_000;
+
 export interface BuildStep {
   readonly id: string;
   readonly kind: string;
@@ -1066,6 +1070,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       designEngineV3,
       designEngineV4,
       designEngineV5,
+      signal: AbortSignal.timeout(BUILD_GENERATION_TIMEOUT_MS),
       /*
        * Each stage is written down as it is entered, in the words a reader would
        * use. The status alone said "generating" for the whole of a two-minute

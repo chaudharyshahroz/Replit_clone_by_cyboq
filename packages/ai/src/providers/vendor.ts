@@ -180,6 +180,17 @@ function toProviderError(key: string, error: unknown): ProviderCallError {
   const status = anyError?.statusCode ?? anyError?.status;
   const message = anyError?.message ?? String(error);
 
+  const timedOut =
+    anyError?.name === 'TimeoutError' || /\b(?:timed?\s*out|timeout)\b/i.test(message);
+  if (timedOut) {
+    return new ProviderCallError({
+      providerKey: key,
+      message: 'The provider did not respond before the request deadline.',
+      retryable: true,
+      cause: error,
+    });
+  }
+
   if (anyError?.name === 'AbortError') {
     return new ProviderCallError({
       providerKey: key,

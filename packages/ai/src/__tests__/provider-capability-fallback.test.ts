@@ -19,6 +19,10 @@ describe('provider capability fallback', () => {
     expect(isRetryableProviderFailure(408, 'Request timeout')).toBe(true);
   });
 
+  it('retries a provider timeout that has no HTTP response', () => {
+    expect(isRetryableProviderFailure(undefined, 'The operation timed out')).toBe(true);
+  });
+
   it('retries OpenRouter image endpoint mismatches on another vision model', () => {
     expect(
       isRetryableProviderFailure(404, 'No endpoints found that support image input'),
