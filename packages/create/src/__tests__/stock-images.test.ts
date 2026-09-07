@@ -149,7 +149,14 @@ describe('generating without a key', () => {
 
   it('needs no credential to be available', () => {
     /* The entire reason it is here — a site that costs nothing to illustrate. */
-    expect(source).toMatch(/IMAGE_PROVIDER === 'pollinations'[\s\S]{0,200}available: true/);
+    expect(source).toMatch(/provider === 'pollinations'[\s\S]{0,200}available: true/);
+  });
+
+  it('supports the official Google AI Studio image provider', () => {
+    expect(source).toContain('generateWithGoogle');
+    expect(source).toContain('GOOGLE_IMAGE_MODEL');
+    expect(source).toContain("'x-goog-api-key'");
+    expect(source).toContain("responseModalities: ['TEXT', 'IMAGE']");
   });
 
   it('suppresses the watermark', () => {

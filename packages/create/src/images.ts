@@ -33,19 +33,28 @@ export interface GeneratedImage {
 const MAX_PROMPT_CHARS = 4_000;
 const TIMEOUT_MS = 120_000;
 
+/** Prefer a configured Google key when the legacy OpenAI default has no key. */
+function selectedImageProvider(env: ReturnType<typeof loadServerEnv>): 'openai' | 'google' | 'pollinations' {
+  if (env.IMAGE_PROVIDER === 'openai' && !env.OPENAI_API_KEY && env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return 'google';
+  }
+  return env.IMAGE_PROVIDER;
+}
+
 /** Whether image generation can run at all, and why not when it cannot. */
 export function imageAvailability(): { available: boolean; detail: string } {
   const env = loadServerEnv();
+  const provider = selectedImageProvider(env);
 
   /*
    * Pollinations needs no credential at all, which is the whole reason it is
    * here — with it, a generated site costs nothing to illustrate.
    */
-  if (env.IMAGE_PROVIDER === 'pollinations') {
+  if (provider === 'pollinations') {
     return { available: true, detail: 'Images are generated free through Pollinations.' };
   }
 
-  if (env.IMAGE_PROVIDER === 'openai') {
+  if (provider === 'openai') {
     return env.OPENAI_API_KEY
       ? { available: true, detail: 'OpenAI image generation is configured.' }
       : { available: false, detail: 'IMAGE_PROVIDER=openai requires OPENAI_API_KEY.' };
@@ -61,13 +70,14 @@ export function imageAvailability(): { available: boolean; detail: string } {
 
 export async function generateImage(input: GenerateImageInput): Promise<GeneratedImage> {
   const env = loadServerEnv();
+  const provider = selectedImageProvider(env);
   const availability = imageAvailability();
 
   if (!availability.available) {
     // Names the variable rather than reporting a generic failure (spec §25).
     throw errors.notConfigured({
       feature: 'Image generation',
-      requiredEnv: env.IMAGE_PROVIDER === 'openai' ? ['OPENAI_API_KEY'] : ['GOOGLE_GENERATIVE_AI_API_KEY'],
+      requiredEnv: provider === 'openai' ? ['OPENAI_API_KEY'] : ['GOOGLE_GENERATIVE_AI_API_KEY'],
       docsPath: '/settings',
     });
   }
@@ -79,16 +89,12 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
 
   const size = input.size ?? '1024x1024';
 
-  if (env.IMAGE_PROVIDER === 'pollinations') {
+  if (provider === 'pollinations') {
     return generateWithPollinations({ ...input, prompt, size });
   }
 
-  if (env.IMAGE_PROVIDER !== 'openai') {
-    throw errors.notConfigured({
-      feature: 'Google image generation',
-      requiredEnv: ['IMAGE_PROVIDER=openai'],
-      docsPath: '/settings',
-    });
+  if (provider === 'google') {
+    return generateWithGoogle({ ...input, prompt, size });
   }
 
   const started = Date.now();
@@ -160,6 +166,80 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
     size,
     revisedPrompt: first.revised_prompt,
   };
+}
+
+/**
+ * Generate with the official Google AI Studio Gemini image endpoint.
+ *
+ * Keep this as a direct server-side request instead of exposing the key to a
+ * generated site. Gemini image models return inline image bytes, so the same
+ * durable storage path used by OpenAI/Pollinations keeps preview and exports
+ * independent of provider-hosted URLs.
+ */
+async function generateWithGoogle(input: {
+  readonly workspaceId: string;
+  readonly prompt: string;
+  readonly size: ImageSize;
+}): Promise<GeneratedImage> {
+  const env = loadServerEnv();
+  const started = Date.now();
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.GOOGLE_IMAGE_MODEL)}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': env.GOOGLE_GENERATIVE_AI_API_KEY!,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: input.prompt.slice(0, MAX_PROMPT_CHARS) }] }],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw errors.validation(
+      `Google image generation failed (HTTP ${response.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> } }>;
+  };
+  const part = payload.candidates?.[0]?.content?.parts?.find((candidate) => candidate.inlineData?.data);
+  const data = part?.inlineData?.data;
+  if (!data) throw errors.internal('Google returned no image data.');
+
+  const body = Buffer.from(data, 'base64');
+  const contentType = part.inlineData?.mimeType?.startsWith('image/')
+    ? part.inlineData.mimeType
+    : 'image/png';
+  const key = buildKey({
+    workspaceId: input.workspaceId,
+    scope: 'media',
+    fileId: newId('file'),
+    suffix: contentType === 'image/jpeg' ? 'generated.jpg' : 'generated.png',
+  });
+
+  await storage().put({
+    key,
+    body,
+    contentType,
+    filename: contentType === 'image/jpeg' ? 'generated.jpg' : 'generated.png',
+    metadata: { source: 'google-ai-studio', model: env.GOOGLE_IMAGE_MODEL },
+  });
+  logger.info('Generated an image', {
+    workspaceId: input.workspaceId,
+    provider: 'google',
+    model: env.GOOGLE_IMAGE_MODEL,
+    bytes: body.byteLength,
+    durationMs: Date.now() - started,
+  });
+
+  return { storageKey: key, contentType, bytes: body.byteLength, size: input.size };
 }
 
 /**

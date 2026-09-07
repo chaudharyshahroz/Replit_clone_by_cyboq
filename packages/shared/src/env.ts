@@ -189,6 +189,8 @@ const serverSchema = z.object({
   EMBEDDING_MODEL: z.string().trim().default('text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: intWithDefault(1536),
   IMAGE_PROVIDER: enumWithDefault(['openai', 'google', 'pollinations'], 'openai'),
+  /** Google AI Studio image model used when IMAGE_PROVIDER=google. */
+  GOOGLE_IMAGE_MODEL: z.string().trim().default('gemini-3.1-flash-image'),
   VIDEO_PROVIDER: optionalString,
 
   // ---- Research ------------------------------------------------------------
