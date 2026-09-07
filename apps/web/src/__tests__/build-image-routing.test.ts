@@ -8,7 +8,7 @@ describe('Build image model routing', () => {
 
     expect(source).toContain('(!needsVision || model.supportsVision)');
     expect(source).toContain("file.contentType.startsWith('image/')");
-    expect(source).toContain('pickModel(request.modelKey, [], needsVision)');
+    expect(source).toContain('pickModel(requestedModel, [], needsVision)');
     expect(source).toContain('pickModel(undefined, attempted, images.length > 0)');
   });
 });

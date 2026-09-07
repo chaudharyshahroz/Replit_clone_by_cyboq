@@ -531,6 +531,7 @@ export async function POST(request: Request): Promise<Response> {
               status: 'briefing',
               brief: brief as unknown as Record<string, unknown>,
               framework: brief.stack[0] ?? null,
+              modelKey: autoRouted ? null : model.key,
               createdBy: user.id,
             });
 

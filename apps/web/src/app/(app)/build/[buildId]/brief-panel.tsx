@@ -22,6 +22,7 @@ export function BriefPanel({
   hasFiles,
   status,
   models,
+  initialModelKey,
 }: {
   brief: BuildBrief;
   buildId: string;
@@ -31,6 +32,8 @@ export function BriefPanel({
   hasFiles: boolean;
   /** The project's stored status, which says whether a build has been tried. */
   status: string;
+  /** Model selected before the user entered the build workspace, if any. */
+  initialModelKey?: string | null;
 }) {
   const [open, setOpen] = useState(true);
   const [prompt, setPrompt] = useState('');
@@ -40,7 +43,7 @@ export function BriefPanel({
   const [steps, setSteps] = useState<readonly BuildStep[]>([]);
   const [attachments, setAttachments] = useState<readonly UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [modelKey, setModelKey] = useState('auto');
+  const [modelKey, setModelKey] = useState(initialModelKey ?? 'auto');
   const fileInput = useRef<HTMLInputElement>(null);
 
   /*

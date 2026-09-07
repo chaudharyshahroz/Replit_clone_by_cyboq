@@ -222,6 +222,7 @@ export default async function BuildDetailPage({
               models={models}
               hasFiles={files.length > 0}
               status={project.status}
+              initialModelKey={project.modelKey}
             />
           ) : null}
         </div>

@@ -175,10 +175,10 @@ async function pickModel(
 ): Promise<RegisteredModel> {
   const registry = await loadRegistry();
   const excluded = new Set(excludeKeys);
-  const allowed = autoRoutableModels(selectableModels(registry, undefined)).filter(
+  const selectable = selectableModels(registry, undefined).filter(
     (model) => !excluded.has(model.key) && (!needsVision || model.supportsVision),
   );
-  if (allowed.length === 0) {
+  if (selectable.length === 0) {
     throw errors.notConfigured({
       feature: needsVision ? 'Build image input' : 'Build',
       requiredEnv: needsVision
@@ -198,10 +198,13 @@ async function pickModel(
    * build is not the place to refuse work over a stale selection.
    */
   const explicitlySelected =
-    requested && requested !== 'auto' ? allowed.find((model) => model.key === requested) : undefined;
+    requested && requested !== 'auto'
+      ? selectable.find((model) => model.key === requested)
+      : undefined;
   if (explicitlySelected) return explicitlySelected;
 
-  const automatic = autoRoutableModels(allowed);
+  const allowed = autoRoutableModels(selectable);
+  const automatic = allowed;
   const selected =
     automatic.find((model) => model.bestFor.includes('coding')) ??
     automatic.find((model) => model.bestFor.includes('reasoning')) ??
@@ -367,6 +370,7 @@ export async function createBuildAction(
       status: 'briefing',
       brief: brief as unknown as Record<string, unknown>,
       framework: brief.stack[0] ?? null,
+      modelKey: requestedModel && requestedModel !== 'auto' ? model.key : null,
       createdBy: user.id,
     });
 
@@ -840,7 +844,9 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         file.contentType.startsWith('image/'),
       )
     : false;
-  let model = await pickModel(request.modelKey, [], needsVision);
+  /* Preserve the model selected in Chat when the build workspace is opened. */
+  const requestedModel = request.modelKey ?? project.modelKey ?? undefined;
+  let model = await pickModel(requestedModel, [], needsVision);
   /*
    * Typed, not `never`. The cast used to erase the brief entirely, so the
    * target — which decides the stack, the standards and whether a design pass
@@ -1114,7 +1120,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     generated = await generateWith(model);
   } catch (error) {
     const normalized = toRekluError(error);
-    const mayFallback = normalized.retryable && (!request.modelKey || request.modelKey === 'auto');
+    const mayFallback = normalized.retryable && (!requestedModel || requestedModel === 'auto');
     if (!mayFallback) throw error;
 
     const attempted = [model.key];
@@ -1159,7 +1165,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     model,
     generated.usage,
     'Build generation',
-    !request.modelKey || request.modelKey === 'auto',
+    !requestedModel || requestedModel === 'auto',
   );
   await performance.mark('generation_completed', `${generated.files.length} files`);
 
@@ -1619,7 +1625,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
           'design. Change nothing unrelated.',
         origin: 'auto',
         repairPass: true,
-        modelKey: request.modelKey,
+        modelKey: requestedModel,
       });
     }
 

@@ -127,6 +127,13 @@
       "when": 1788746400000,
       "tag": "0017_update_google_model",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788822000000,
+      "tag": "0018_build_project_model",
+      "breakpoints": true
     }
   ]
 }

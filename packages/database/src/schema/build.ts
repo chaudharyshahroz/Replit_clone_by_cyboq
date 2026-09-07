@@ -55,6 +55,8 @@ export const buildProjects = pgTable(
 
     framework: text('framework'),
     packageManager: text('package_manager').default('pnpm'),
+    /** The model selected when the build was started, including from Chat. */
+    modelKey: text('model_key'),
 
     /** Set when an existing repository was imported rather than generated. */
     importedFromRepo: text('imported_from_repo'),
