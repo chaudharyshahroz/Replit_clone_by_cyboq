@@ -61,11 +61,10 @@ export type BuildFileReporter = (path: string) => void | Promise<void>;
 const GENERATION_PROMPT = [
   'You generate a complete, working application from a build brief.',
   '',
-  'Begin with two or three sentences, in plain prose, saying what you are about',
-  'to build and the decisions you have made about it — the kind of thing you',
-  'would say to a colleague before opening the editor. Write it as yourself,',
-  'in the present tense. No headings, no bullet list, no restating the brief',
-  'back. Then start emitting files and add no further commentary between them.',
+  'Start with the package.json path comment immediately. Do not begin with a',
+  'plan, reasoning, greeting, summary, or any other prose. The response is',
+  'parsed by a build system, so every file must use the exact format below.',
+  'After the first file, emit only more files in the same format.',
   '',
   'Output format — one block per file:',
   '',
@@ -413,7 +412,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
         model: options.model.modelIdentifier,
         detail: `Output stopped inside ${incompletePath} and the completion retry did not return a complete file.`,
         userMessage:
-          'This model stopped halfway through a file. Reklu Auto is trying another coding model.',
+          'The selected model stopped halfway through a file. Retry it or choose another coding model.',
         retryable: true,
       });
     }
@@ -599,7 +598,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
           .map((entry) => `${entry.importer} -> ${entry.reference}`)
           .join(', ')}`,
         userMessage:
-          'This model returned an incomplete file tree. Reklu Auto is trying another coding model.',
+          'The selected model returned an incomplete file tree. Retry it or choose another coding model.',
         retryable: true,
       });
     }
@@ -628,7 +627,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
         parsed.rejected.length,
       ),
       userMessage:
-        'This model did not return usable code. Reklu Auto is trying another coding model.',
+        'The selected model did not return usable code. Retry it or choose another coding model.',
       retryable: true,
     });
   }

@@ -296,7 +296,11 @@ describe('when the second attempt fails too', () => {
         report: async () => {},
         requireFiles: true,
       }),
-    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR', retryable: true });
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+      retryable: true,
+      userMessage: 'The selected model did not return usable code. Retry it or choose another coding model.',
+    });
   });
 
   it('reports the first diagnosis rather than throwing away the build', async () => {
