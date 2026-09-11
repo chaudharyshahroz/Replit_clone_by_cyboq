@@ -428,11 +428,26 @@ function providerCallFailure(thrown: unknown): RekluError | undefined {
   if (upstream) return upstream;
 
   const status = typeof error.statusCode === 'number' ? ` (${error.statusCode})` : '';
+  const detail = typeof error.message === 'string' ? error.message.trim() : '';
+
+  /*
+   * Say what went wrong, not merely that something did.
+   *
+   * The adapter already wrote a specific, safe sentence for each of these —
+   * "The provider did not respond before the request deadline", or the vendor's
+   * own words — and this threw all of it away for "could not generate this
+   * build. Try Reklu Auto again", which is the same message for a timeout, a
+   * cancelled request and a stream that died halfway. A reader cannot tell
+   * which happened, so they cannot tell whether waiting, retrying, or changing
+   * model is the thing to do.
+   */
+  const said = detail && detail !== 'No detail given' ? ` ${detail.slice(0, 300)}` : '';
+
   return errors.providerError({
     provider: error.providerKey,
-    detail: typeof error.message === 'string' ? error.message : 'No detail given',
+    detail: detail || 'No detail given',
     userMessage:
-      `The ${error.providerKey} model provider could not generate this build${status}. ` +
+      `The ${error.providerKey} model provider could not generate this build${status}.${said} ` +
       'Try Reklu Auto again or choose another model.',
     retryable: error.retryable === true,
   });

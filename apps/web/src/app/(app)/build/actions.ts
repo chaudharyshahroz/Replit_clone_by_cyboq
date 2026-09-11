@@ -7,6 +7,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { enqueue } from '@reklu/queue';
 import {
   autoRoutableModels,
+  mayStandInFor,
   checkQuota,
   loadRegistry,
   recordUsage,
@@ -174,11 +175,29 @@ async function pickModel(
   requested?: string,
   excludeKeys: readonly string[] = [],
   needsVision = false,
+  /*
+   * How far a fallback from a deliberately chosen model may wander.
+   *
+   * Two limits, each answering a different objection to substituting at all.
+   * Price, because swapping in a dearer model spends money nobody agreed to —
+   * compared as numbers rather than by tier label, since "economy" holds both
+   * zero-cost models and paid ones. And provider, because OpenRouter and B.AI
+   * are deliberately kept out of automatic routing so that merely configuring
+   * a key never authorises Reklu to spend it; picking one of their models is
+   * that authorisation, and it extends to that provider, not to every other.
+   */
+  within?: Pick<
+    RegisteredModel,
+    'providerKey' | 'inputCostPerMillion' | 'outputCostPerMillion' | 'key'
+  >,
 ): Promise<RegisteredModel> {
   const registry = await loadRegistry();
   const excluded = new Set(excludeKeys);
   const selectable = selectableModels(registry, undefined).filter(
-    (model) => !excluded.has(model.key) && (!needsVision || model.supportsVision),
+    (model) =>
+      !excluded.has(model.key) &&
+      (!needsVision || model.supportsVision) &&
+      (!within || mayStandInFor(model, within)),
   );
   if (selectable.length === 0) {
     throw errors.notConfigured({
@@ -205,8 +224,11 @@ async function pickModel(
       : undefined;
   if (explicitlySelected) return explicitlySelected;
 
-  const allowed = autoRoutableModels(selectable);
-  const automatic = allowed;
+  /*
+   * Staying inside a provider the person already chose is not automatic
+   * routing, so the explicit-selection filter does not apply to it.
+   */
+  const automatic = within ? selectable : autoRoutableModels(selectable);
   const selected =
     automatic.find((model) => model.bestFor.includes('coding')) ??
     automatic.find((model) => model.bestFor.includes('reasoning')) ??
@@ -1127,8 +1149,20 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     generated = await generateWith(model);
   } catch (error) {
     const normalized = toRekluError(error);
-    const mayFallback = normalized.retryable && (!requestedModel || requestedModel === 'auto');
-    if (!mayFallback) throw error;
+    const automatic = !requestedModel || requestedModel === 'auto';
+    if (!normalized.retryable) throw error;
+
+    /*
+     * A model the person chose still gets a fallback, within its price.
+     *
+     * Refusing to fall back left the build dead and the message advising them
+     * to "try Reklu Auto" — asking someone to do by hand what Reklu can do in
+     * the same second, on free endpoints that fail constantly. What made the
+     * refusal right was the spending risk, not the choice itself, so the
+     * ceiling addresses that directly: a free model only ever falls back to
+     * another free one, and every substitution is written into the build log.
+     */
+    const within = automatic ? undefined : model;
 
     const attempted = [model.key];
     /* Names, not keys: this list is shown to a person if every model fails. */
@@ -1139,7 +1173,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     /* Free providers are capacity-constrained. Try several distinct coding
      * models so one overloaded endpoint does not strand an otherwise valid build. */
     for (let fallbackAttempt = 0; fallbackAttempt < 3; fallbackAttempt++) {
-      const fallback = await pickModel(undefined, attempted, images.length > 0).catch(
+      const fallback = await pickModel(undefined, attempted, images.length > 0, within).catch(
         () => undefined,
       );
       if (!fallback) break;

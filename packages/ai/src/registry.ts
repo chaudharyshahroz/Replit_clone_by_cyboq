@@ -199,6 +199,38 @@ export function autoRoutableModels(
   );
 }
 
+/**
+ * May this model stand in for one the person deliberately chose?
+ *
+ * Refusing every substitution left a failed build and a message telling the
+ * reader to "try Reklu Auto" — asking them to do by hand what Reklu could do
+ * in the same second, on free endpoints that fail constantly. What made the
+ * refusal right was never the choice itself but two things it protected:
+ *
+ *   Money. A dearer stand-in spends what nobody agreed to, so prices are
+ *   compared as numbers. Tier labels will not do: "economy" holds zero-cost
+ *   models and paid ones together.
+ *
+ *   Consent to a provider. OpenRouter and B.AI stay out of automatic routing
+ *   so that configuring a key never authorises Reklu to spend it. Choosing one
+ *   of their models is that authorisation — and it reaches that provider, not
+ *   every other one, so a substitute must come from the same place.
+ */
+export function mayStandInFor(
+  candidate: RegisteredModel,
+  chosen: Pick<
+    RegisteredModel,
+    'providerKey' | 'inputCostPerMillion' | 'outputCostPerMillion' | 'key'
+  >,
+): boolean {
+  if (candidate.key === chosen.key) return false;
+  if (candidate.providerKey !== chosen.providerKey) return false;
+  return (
+    candidate.inputCostPerMillion <= chosen.inputCostPerMillion &&
+    candidate.outputCostPerMillion <= chosen.outputCostPerMillion
+  );
+}
+
 export function findModel(
   registry: readonly RegisteredModel[],
   key: string,

@@ -9,6 +9,12 @@ describe('Build image model routing', () => {
     expect(source).toContain('(!needsVision || model.supportsVision)');
     expect(source).toContain("file.contentType.startsWith('image/')");
     expect(source).toContain('pickModel(requestedModel, [], needsVision)');
-    expect(source).toContain('pickModel(undefined, attempted, images.length > 0)');
+    /*
+     * The fallback must still ask for vision when the turn carries an image.
+     * Matched without the closing bracket because the call also passes what a
+     * substitute may cost and which provider it may come from; pinning the
+     * whole call text made an unrelated argument break this guard.
+     */
+    expect(source).toContain('pickModel(undefined, attempted, images.length > 0');
   });
 });

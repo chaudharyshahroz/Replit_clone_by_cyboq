@@ -172,3 +172,49 @@ describe('the adapter’s verdict on retrying', () => {
     );
   });
 });
+
+describe('a provider failure with no HTTP response', () => {
+  /**
+   * A timeout, a cancelled request and a stream that died halfway all produced
+   * the same sentence: "could not generate this build. Try Reklu Auto again or
+   * choose another model." The adapter had already written a specific, safe
+   * description of each, and it was discarded — so a reader could not tell
+   * whether waiting, retrying, or changing model was the thing to do.
+   */
+  function callError(message: string, retryable = false): Error {
+    return Object.assign(new Error(message), {
+      name: 'ProviderCallError',
+      providerKey: 'openrouter',
+      retryable,
+      message,
+    });
+  }
+
+  it('says the provider timed out, rather than only that it failed', () => {
+    const normalized = toRekluError(
+      callError('The provider did not respond before the request deadline.', true),
+    );
+
+    expect(normalized.userMessage).toContain('did not respond before the request deadline');
+    expect(normalized.userMessage).toContain('openrouter');
+  });
+
+  it('keeps the advice, which is still worth giving', () => {
+    expect(toRekluError(callError('Upstream connection reset.')).userMessage).toContain(
+      'Reklu Auto',
+    );
+  });
+
+  it('does not pad the message when there is nothing to add', () => {
+    const normalized = toRekluError(callError('No detail given'));
+
+    expect(normalized.userMessage).not.toContain('No detail given');
+    expect(normalized.userMessage).toContain('could not generate this build');
+  });
+
+  it('caps a long provider message rather than pasting an essay', () => {
+    const normalized = toRekluError(callError('x'.repeat(1_000)));
+
+    expect(normalized.userMessage.length).toBeLessThan(450);
+  });
+});
