@@ -33,3 +33,33 @@ describe('provider capability fallback', () => {
     expect(isRetryableProviderFailure(404, 'Model not found')).toBe(false);
   });
 });
+
+describe('a model that has been retired', () => {
+  /**
+   * OpenRouter retires a free variant and answers 404 with the replacement
+   * slug in prose. Reklu's router already knows how to move to another model;
+   * classified as a plain 404 it never got the chance, so one stale slug failed
+   * a whole build with the provider's message pasted into the interface.
+   */
+  const RETIRED =
+    'This model is unavailable for free. The paid version is available now - use this slug instead: minimax/minimax-m2.7';
+
+  it('lets the router move to another model', () => {
+    expect(isRetryableProviderFailure(404, RETIRED)).toBe(true);
+  });
+
+  it('recognises the other ways a provider says the same thing', () => {
+    expect(isRetryableProviderFailure(404, 'This model has been deprecated')).toBe(true);
+    expect(isRetryableProviderFailure(400, 'openai/gpt-4 is no longer available')).toBe(true);
+  });
+
+  it('still refuses to fall back on a plainly wrong identifier', () => {
+    /*
+     * A typo'd or invented model name is a mistake to surface, not to paper
+     * over by spending budget on three more models. The distinction is that a
+     * retired model was valid and stopped serving; this one never was.
+     */
+    expect(isRetryableProviderFailure(404, 'Model not found')).toBe(false);
+    expect(isRetryableProviderFailure(404, 'No such model: foo/bar')).toBe(false);
+  });
+});

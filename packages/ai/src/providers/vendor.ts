@@ -160,6 +160,24 @@ export function isRetryableProviderFailure(
   const modelCapabilityMismatch =
     (status === 400 || status === 404) &&
     /(?:no endpoints? found[^.]*image|support image input|vision|multimodal)/i.test(message);
+  /*
+   * A model that is in the catalogue but can no longer serve this account.
+   *
+   * OpenRouter retires a free variant and answers 404 with "This model is
+   * unavailable for free. The paid version is available now — use this slug
+   * instead: …". Reklu's router already knows how to move to another model;
+   * classified as a plain 404 it never got the chance, so one retired slug
+   * failed the whole build with a provider message pasted into the UI.
+   *
+   * Deliberately narrower than "Model not found", which stays non-retryable:
+   * a genuinely wrong identifier is a mistake to surface, not to paper over by
+   * spending budget on three more models.
+   */
+  const modelRetired =
+    (status === 400 || status === 404) &&
+    /(?:unavailable for free|use this slug instead|no longer (?:available|supported)|has been (?:deprecated|retired)|deprecated)/i.test(
+      message,
+    );
   // Streaming can fail after HTTP headers have already reported success.
   // Classify the error event, not merely its transport's original 200 status.
   // Do not reinterpret authentication, billing or invalid-request failures.
@@ -168,6 +186,7 @@ export function isRetryableProviderFailure(
     /\b(?:overloaded|temporarily unavailable|service unavailable|rate limit(?:ed| exceeded)?|too many requests|upstream (?:error|timeout)|connection reset|timed out)\b/i.test(message);
   return (
     modelCapabilityMismatch ||
+    modelRetired ||
     transientStreamFailure ||
     status === 408 ||
     status === 429 ||

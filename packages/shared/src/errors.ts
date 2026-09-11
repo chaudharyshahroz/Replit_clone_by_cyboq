@@ -345,7 +345,7 @@ function formatDate(date: Date): string {
  * Turning those into "something failed on our side" was the difference between
  * a message that fixes the problem and one that starts an investigation.
  */
-function providerRejection(thrown: unknown): RekluError | undefined {
+function providerRejection(thrown: unknown, retryableOverride?: boolean): RekluError | undefined {
   const error = thrown as {
     name?: unknown;
     statusCode?: unknown;
@@ -382,8 +382,13 @@ function providerRejection(thrown: unknown): RekluError | undefined {
     provider,
     detail,
     userMessage: `${provider} refused the request (${error.statusCode}): ${detail.slice(0, 300)}`,
-    /* 429 and 5xx are worth trying again; a 4xx about the request is not. */
-    retryable: error.statusCode === 429 || error.statusCode >= 500,
+    /*
+     * 429 and 5xx are worth trying again; a 4xx about the request is not —
+     * unless the adapter, which read the provider's prose rather than only its
+     * status code, already decided otherwise. Status alone cannot tell a model
+     * that has been retired from one that never existed.
+     */
+    retryable: retryableOverride ?? (error.statusCode === 429 || error.statusCode >= 500),
   });
 }
 
@@ -406,8 +411,20 @@ function providerCallFailure(thrown: unknown): RekluError | undefined {
     return undefined;
   }
 
-  /* The original AI SDK error has the useful HTTP response and safe advice. */
-  const upstream = providerRejection(error.cause);
+  /*
+   * The original AI SDK error has the useful HTTP response and safe advice.
+   *
+   * Its verdict on retryability is kept, though. The adapter classified this
+   * failure by reading what the provider actually said; rebuilding the answer
+   * from the status code alone threw that away, and with it every fallback the
+   * adapter existed to enable — a 404 saying "no endpoints support image
+   * input" was marked retryable there and non-retryable by the time any caller
+   * saw it, so the vision fallback could never fire.
+   */
+  const upstream = providerRejection(
+    error.cause,
+    error.retryable === true ? true : undefined,
+  );
   if (upstream) return upstream;
 
   const status = typeof error.statusCode === 'number' ? ` (${error.statusCode})` : '';

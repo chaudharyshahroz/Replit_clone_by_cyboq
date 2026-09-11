@@ -105,3 +105,70 @@ describe('a provider rejection', () => {
     expect(error.code).toBe('INTERNAL');
   });
 });
+
+describe('the adapter’s verdict on retrying', () => {
+  /**
+   * The adapter reads the provider's prose; this function only sees the status
+   * code. Rebuilding the answer from the status alone discarded the better
+   * judgement, and with it every fallback the adapter existed to enable.
+   *
+   * The vision fallback is the proof. `isRetryableProviderFailure` marks a 404
+   * saying "no endpoints found that support image input" retryable, and has a
+   * test saying so — but by the time a caller read the normalized error it was
+   * non-retryable again, so the fallback could never fire.
+   */
+  function wrapped(cause: Error, retryable: boolean): Error {
+    return Object.assign(new Error(cause.message), {
+      name: 'ProviderCallError',
+      providerKey: 'openrouter',
+      statusCode: (cause as Error & { statusCode?: number }).statusCode,
+      retryable,
+      cause,
+    });
+  }
+
+  it('keeps a retryable verdict the adapter already reached', () => {
+    const retired = apiCallError({
+      status: 404,
+      message:
+        'This model is unavailable for free. The paid version is available now - use this slug instead: minimax/minimax-m2.7',
+    });
+
+    expect(toRekluError(wrapped(retired, true)).retryable).toBe(true);
+  });
+
+  it('keeps the vision mismatch retryable, which is why that branch exists', () => {
+    const vision = apiCallError({
+      status: 404,
+      message: 'No endpoints found that support image input',
+    });
+
+    expect(toRekluError(wrapped(vision, true)).retryable).toBe(true);
+  });
+
+  it('still shows the provider’s own sentence, not a generic one', () => {
+    const retired = apiCallError({
+      status: 404,
+      message: 'This model is unavailable for free.',
+    });
+
+    const normalized = toRekluError(wrapped(retired, true));
+    expect(normalized.userMessage).toContain('unavailable for free');
+    expect(normalized.userMessage).toContain('openrouter.ai');
+  });
+
+  it('does not invent a retry the adapter did not ask for', () => {
+    /*
+     * A plainly wrong model name stays non-retryable: it is a mistake to
+     * surface, not one to paper over by spending budget on three more models.
+     */
+    const missing = apiCallError({ status: 404, message: 'Model not found' });
+
+    expect(toRekluError(wrapped(missing, false)).retryable).toBe(false);
+    // And an unwrapped rejection is still judged by its status alone.
+    expect(toRekluError(missing).retryable).toBe(false);
+    expect(toRekluError(apiCallError({ status: 429, message: 'Rate limited' })).retryable).toBe(
+      true,
+    );
+  });
+});
