@@ -5,6 +5,7 @@ import {
   auditDesignQuality,
   designFeedbackPrompt,
   evaluateGenericity,
+  genericityFindings,
   hydrationSafetyIssues,
 } from '../design-quality';
 import type { GeneratedFile } from '../parse';
@@ -283,5 +284,108 @@ describe('design quality critic', () => {
       }
     `);
     expect(hydrationSafetyIssues([provider])).toEqual([]);
+  });
+});
+
+describe('a page that is generic without being faulty', () => {
+  /**
+   * The gap these cover was found by running both detectors over the same
+   * files rather than by reading them.
+   *
+   * `evaluateGenericity` scored a page 45 out of 100, set `rejected`, and that
+   * verdict went into the build analytics and nowhere else. Because no single
+   * finding was blocking, the revision pass never ran: every section centred, a
+   * stock gradient headline and eight radius values shipped exactly as written.
+   *
+   * And the gradient — the clearest tell that nobody decided how this product
+   * should look — was known only to the detector that does not act, so it
+   * survived every revision the critic ever ran.
+   */
+  const genericStyling = [
+    page(
+      [
+        '<section className="text-center py-24">',
+        '<h1 className="bg-gradient-to-r from-violet-500 to-blue-600 bg-clip-text text-transparent">',
+        'Coffino roasts in Hackney every Tuesday</h1>',
+        '<a href="/order">Order a bag</a>',
+        '<img src="/generated/hero.png" alt="a barista pouring" width="1200" height="600" />',
+        '</section>',
+        '<section className="text-center py-24"><h2>Our Ethiopian single origin</h2></section>',
+        '<section className="text-center py-24"><h2>Find us on Mare Street</h2></section>',
+      ].join(''),
+    ),
+    {
+      path: 'src/app/globals.css',
+      content: [
+        '@import "tailwindcss";',
+        '.a{border-radius:2px} .b{border-radius:4px} .c{border-radius:6px} .d{border-radius:8px}',
+        '.e{border-radius:10px} .f{border-radius:12px} .g{border-radius:16px} .h{border-radius:24px}',
+      ].join('\n'),
+      language: 'css',
+    } satisfies GeneratedFile,
+  ];
+
+  it('has no blocking fault, which is why it used to ship untouched', () => {
+    // The copy is specific and credible; there are no fabricated counters.
+    // Nothing here is wrong on its own, and that was the problem.
+    const blocking = auditDesignQuality(website, genericStyling).filter(
+      (issue) => issue.severity === 'blocking',
+    );
+    expect(blocking).toEqual([]);
+  });
+
+  it('is nonetheless judged a template, and now says so in findings that act', () => {
+    const report = evaluateGenericity(genericStyling);
+    expect(report.rejected).toBe(true);
+
+    const findings = genericityFindings(report);
+    expect(findings.length).toBeGreaterThan(0);
+    // Blocking, because the revision pass only reads blocking findings — the
+    // reason to act is the accumulation, not any single choice.
+    expect(findings.every((finding) => finding.severity === 'blocking')).toBe(true);
+    expect(findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining(['generic-gradient-treatment', 'repeated-centered-sections']),
+    );
+  });
+
+  it('tells the acting critic about the stock gradient, not only the scorer', () => {
+    expect(auditDesignQuality(website, genericStyling)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'generic-gradient-treatment' })]),
+    );
+  });
+
+  it('leaves a page with a point of view alone', () => {
+    /*
+     * A revision costs a model call, so the bar has to separate "looks
+     * machine-made" from "looks different to what I would have done".
+     */
+    const distinctive = [
+      page(
+        [
+          '<section className="rk-hero grid md:grid-cols-[7fr_5fr] gap-12 py-28">',
+          '<h1>Coffino roasts in Hackney every Tuesday</h1>',
+          '<p>Bags ship the same afternoon. Collection from Mare Street until six.</p>',
+          '<a href="/order">Order a bag</a>',
+          '<img src="/generated/roastery.png" alt="a roaster tipping beans" width="720" height="900" />',
+          '</section>',
+          '<section className="py-24"><h2>The Ethiopian we cannot keep in stock</h2></section>',
+          '<section className="py-24 md:flex md:gap-16"><h2>Where the beans come from</h2></section>',
+        ].join(''),
+      ),
+      {
+        path: 'src/app/globals.css',
+        content: '@import "tailwindcss";\n.card{border-radius:12px} .pill{border-radius:999px}',
+        language: 'css',
+      } satisfies GeneratedFile,
+    ];
+
+    const report = evaluateGenericity(distinctive);
+    expect(report.score).toBe(0);
+    expect(genericityFindings(report)).toEqual([]);
+    expect(auditDesignQuality(website, distinctive)).toEqual([]);
+  });
+
+  it('returns nothing for a page it did not reject, whatever it scored', () => {
+    expect(genericityFindings({ score: 30, genericityIssues: [], rejected: false })).toEqual([]);
   });
 });

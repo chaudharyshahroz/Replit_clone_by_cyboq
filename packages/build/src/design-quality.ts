@@ -40,6 +40,17 @@ const GENERIC_COPY = [
   /why choose us/i,
 ];
 
+/**
+ * The stock gradient treatment, which is the clearest tell of a machine-made page.
+ *
+ * A violet-to-blue headline clipped to text, or a coloured glow shadow, is what
+ * a model reaches for when nothing told it what this particular product should
+ * look like. It was detected by `evaluateGenericity` and by nothing that acts,
+ * so it survived every revision the critic ever ran.
+ */
+const GENERIC_GRADIENT =
+  /bg-gradient-to-|text-transparent\s+bg-clip-text|shadow-[^"'\s]*\[(?:.*(?:purple|violet|blue))/i;
+
 /** Emoji pictographs used as decoration rather than ordinary punctuation. */
 const UI_EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 
@@ -150,11 +161,7 @@ export function evaluateGenericity(files: readonly GeneratedFile[]): GenericityR
       'Multiple unsupported round-number claims resemble template filler.',
     );
   }
-  if (
-    /bg-gradient-to-|text-transparent\s+bg-clip-text|shadow-[^"'\s]*\[(?:.*(?:purple|violet|blue))/i.test(
-      visual,
-    )
-  ) {
+  if (GENERIC_GRADIENT.test(visual)) {
     add(
       'generic-gradient-treatment',
       15,
@@ -312,6 +319,15 @@ export function auditDesignQuality(
       });
     }
 
+    if (GENERIC_GRADIENT.test(visual)) {
+      issues.push({
+        code: 'generic-gradient-treatment',
+        severity: 'warning',
+        message:
+          'A stock gradient or coloured glow stands in for art direction. Take the palette from the design direction and let one accent carry the primary action.',
+      });
+    }
+
     const genericCopy = GENERIC_COPY.find((pattern) => pattern.test(visual));
     if (genericCopy) {
       issues.push({
@@ -390,6 +406,29 @@ export function auditDesignQuality(
   }
 
   return issues;
+}
+
+/**
+ * The genericity verdict as critic findings the design pass can act on.
+ *
+ * `evaluateGenericity` scores a page and sets `rejected` past its threshold,
+ * and that verdict went into the build analytics and nowhere else. A page the
+ * system itself scored 45 out of 100 for template-likeness shipped untouched,
+ * because no single finding was blocking — three warnings that together say
+ * "this reads as a template" triggered nothing.
+ *
+ * They are raised to blocking deliberately. Individually each is a defensible
+ * choice; the reason to act is that they have accumulated, and the revision
+ * pass only looks at blocking findings.
+ */
+export function genericityFindings(report: GenericityReport): readonly DesignQualityIssue[] {
+  if (!report.rejected) return [];
+
+  return report.genericityIssues.map((issue) => ({
+    code: issue.code,
+    severity: 'blocking' as const,
+    message: issue.message,
+  }));
 }
 
 export function designFeedbackPrompt(issues: readonly DesignQualityIssue[]): string {

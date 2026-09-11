@@ -26,6 +26,7 @@ import {
   auditDesignQuality,
   hydrationSafetyIssues,
   evaluateGenericity,
+  genericityFindings,
   describeDirection,
   describeEmptyGeneration,
   generateFiles,
@@ -1274,13 +1275,29 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
        * indefinitely on aesthetic judgment.
        */
       const findings = auditDesignQuality(brief, merged);
-      const blockingFindings = findings.filter((finding) => finding.severity === 'blocking');
+      const auditBlocking = findings.filter((finding) => finding.severity === 'blocking');
+
+      /*
+       * Individually defensible choices still add up to a template.
+       *
+       * The genericity score is the system's own verdict on that, and it was
+       * computed, written to analytics, and never acted on: a page scoring 45
+       * out of 100 — every section centred, a stock gradient headline, radii
+       * drifting — shipped with no revision at all, because not one of those
+       * findings was blocking on its own. Accumulation is the signal here.
+       */
+      const genericVerdict = genericityFindings(evaluateGenericity(merged));
+      const blockingFindings = auditBlocking.length > 0 ? auditBlocking : genericVerdict;
+
       if (blockingFindings.length > 0) {
         await recordStep({
           buildId,
           workspaceId: workspace.workspaceId,
           kind: 'stage',
-          message: `Design review found ${blockingFindings.length} blocking issue${blockingFindings.length === 1 ? '' : 's'}; refining the interface`,
+          message:
+            auditBlocking.length > 0
+              ? `Design review found ${auditBlocking.length} blocking issue${auditBlocking.length === 1 ? '' : 's'}; refining the interface`
+              : 'Design review found the page reads as a template; refining the interface',
         });
 
         const refined = await runDesignPass({
