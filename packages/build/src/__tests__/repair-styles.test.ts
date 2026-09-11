@@ -109,3 +109,115 @@ describe('Tailwind stylesheet repair', () => {
     );
   });
 });
+
+describe('an entry for the wrong Tailwind', () => {
+  /**
+   * A stylesheet whose directives the installed Tailwind ignores generates no
+   * utilities at all, and the page arrives with none of its classes applied:
+   * unstyled blue links, and an icon carrying `w-8 h-8` expanding to fill the
+   * viewport because that class meant nothing.
+   *
+   * Checking only that *some* entry existed passed this. Worse, the pipeline
+   * produces it on its own: Design V5 asks for a `@theme` block, repair-deps
+   * sees `@theme` and upgrades the toolchain to Tailwind 4, and the stylesheet
+   * keeps the `@tailwind` directives that version dropped.
+   */
+  const manifest = (tailwind: string): GeneratedFile =>
+    file(
+      'package.json',
+      JSON.stringify({ dependencies: { next: '14.2.0' }, devDependencies: { tailwindcss: tailwind } }),
+    );
+
+  const page = file(
+    'src/app/page.tsx',
+    'export default function P() { return <div className="min-h-screen" />; }',
+  );
+
+  it('reports v3 directives under a v4 toolchain', () => {
+    const problem = tailwindStylesProblem([
+      manifest('^4.1.0'),
+      page,
+      file('src/app/globals.css', '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n'),
+    ]);
+
+    expect(problem).toMatch(/Tailwind 3 @tailwind directives/);
+    expect(problem).toMatch(/ignores them/);
+  });
+
+  it('reports a v4 import under a v3 toolchain', () => {
+    const problem = tailwindStylesProblem([
+      manifest('^3.4.1'),
+      page,
+      file('src/app/globals.css', '@import "tailwindcss";\n'),
+    ]);
+
+    expect(problem).toMatch(/Tailwind 4 @import/);
+  });
+
+  it('rewrites v3 directives to the v4 entry, keeping everything else', () => {
+    const repaired = repairGlobalStyles([
+      manifest('^4.1.0'),
+      page,
+      file(
+        'src/app/globals.css',
+        '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n@theme {\n  --color-brand: #1d4ed8;\n}\n',
+      ),
+    ]);
+
+    const css = repaired.find((entry) => entry.path === 'src/app/globals.css')!.content;
+    expect(css).toContain('@import "tailwindcss";');
+    expect(css).not.toMatch(/@tailwind\s+(?:base|components|utilities)/);
+    // The design tokens are the point of the stylesheet; they must survive.
+    expect(css).toContain('--color-brand: #1d4ed8');
+    // One entry, not three.
+    expect(css.match(/@import\s+"tailwindcss"/g)).toHaveLength(1);
+  });
+
+  it('rewrites the v4 entry back to directives under Tailwind 3', () => {
+    const repaired = repairGlobalStyles([
+      manifest('^3.4.1'),
+      page,
+      file('src/app/globals.css', '@import "tailwindcss";\n\nbody { margin: 0; }\n'),
+    ]);
+
+    const css = repaired.find((entry) => entry.path === 'src/app/globals.css')!.content;
+    expect(css).toContain('@tailwind base;');
+    expect(css).toContain('@tailwind utilities;');
+    expect(css).toContain('body { margin: 0; }');
+  });
+
+  it('leaves a stylesheet that already agrees with its toolchain', () => {
+    const files = [
+      manifest('^4.1.0'),
+      page,
+      file('src/app/globals.css', '@import "tailwindcss";\n\nbody { margin: 0; }\n'),
+    ];
+
+    expect(tailwindStylesProblem(files)).toBeUndefined();
+
+    const once = repairGlobalStyles(files);
+    const css = once.find((entry) => entry.path === 'src/app/globals.css')!.content;
+
+    /*
+     * The entry is left as it is, and the rules with it. Blank lines may move —
+     * import hoisting rewrites whitespace for every stylesheet — so this checks
+     * the substance rather than the formatting.
+     */
+    expect(css).toContain('@import "tailwindcss";');
+    expect(css).not.toMatch(/@tailwind\s+base/);
+    expect(css).toContain('body { margin: 0; }');
+    expect(repairGlobalStyles(once)).toEqual(once);
+  });
+
+  it('still adds an entry when there is none at all', () => {
+    const repaired = repairGlobalStyles([
+      manifest('^4.1.0'),
+      page,
+      file('src/app/globals.css', 'body { margin: 0; }\n'),
+    ]);
+
+    expect(repaired.find((entry) => entry.path === 'src/app/globals.css')!.content).toMatch(
+      /^@import "tailwindcss";/,
+    );
+  });
+});

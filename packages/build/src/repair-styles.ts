@@ -23,10 +23,16 @@ function dependencyVersion(manifest: Record<string, unknown> | undefined, name: 
   return '';
 }
 
+/** The Tailwind 3 entry directives. */
+const V3_DIRECTIVES = /@tailwind\s+(?:base|components|utilities)\s*;?/g;
+/** The Tailwind 4 entry. */
+const V4_ENTRY = /@import\s+['"]tailwindcss['"]\s*;?/;
+
 export function tailwindStylesProblem(files: readonly GeneratedFile[]): string | undefined {
   const manifest = packageManifest(files);
   const version = dependencyVersion(manifest, 'tailwindcss');
   if (!version) return undefined;
+  const major = Number(/\d+/.exec(version)?.[0] ?? 0);
 
   const visual = files
     .filter((file) => /\.(?:tsx|jsx|html)$/.test(file.path))
@@ -35,11 +41,69 @@ export function tailwindStylesProblem(files: readonly GeneratedFile[]): string |
   if (!/(?:className|class)\s*=/.test(visual)) return undefined;
 
   const stylesheets = files.filter((file) => /(?:^|\/)(?:globals|index)\.css$/.test(file.path));
-  if (stylesheets.some((file) => /@tailwind\s+(?:base|components|utilities)|@import\s+['"]tailwindcss['"]/.test(file.content))) {
-    return undefined;
+  const hasV3 = stylesheets.some((file) => new RegExp(V3_DIRECTIVES.source).test(file.content));
+  const hasV4 = stylesheets.some((file) => V4_ENTRY.test(file.content));
+
+  if (!hasV3 && !hasV4) {
+    return 'Components use Tailwind utility classes, but globals.css never loads Tailwind, so those classes compile to no CSS.';
   }
 
-  return 'Components use Tailwind utility classes, but globals.css never loads Tailwind, so those classes compile to no CSS.';
+  /*
+   * An entry for the wrong major is the same failure wearing a disguise.
+   *
+   * Checking only that *some* entry exists passed a stylesheet whose directives
+   * the installed Tailwind ignores, and the page rendered with no utilities at
+   * all: unstyled blue links, and an icon with `w-8 h-8` expanding to fill the
+   * viewport because the class meant nothing.
+   *
+   * The pipeline could produce this on its own. Design V5 asks for a `@theme`
+   * block; repair-deps sees `@theme` and upgrades the toolchain to Tailwind 4;
+   * and the stylesheet keeps the `@tailwind base` directives that version
+   * dropped.
+   */
+  if (major >= 4 && hasV3 && !hasV4) {
+    return 'globals.css uses the Tailwind 3 @tailwind directives while the project installs Tailwind 4, which ignores them, so no utility classes are generated.';
+  }
+  if (major > 0 && major < 4 && hasV4 && !hasV3) {
+    return 'globals.css uses the Tailwind 4 @import while the project installs Tailwind 3, which does not understand it, so no utility classes are generated.';
+  }
+
+  return undefined;
+}
+
+/**
+ * Make the stylesheet entry agree with the Tailwind that is installed.
+ *
+ * Rewriting the entry rather than the manifest, because by this point in the
+ * pipeline the manifest is the decided fact: repair-deps has already
+ * reconciled the version against the CSS features in use, and the postcss
+ * plugin below is chosen from it too.
+ */
+function reconcileTailwindEntry(content: string, major: number): string {
+  if (major >= 4) {
+    if (V4_ENTRY.test(content)) return content;
+    if (!new RegExp(V3_DIRECTIVES.source).test(content)) return content;
+
+    /* The three directives collapse into the single v4 entry, in their place. */
+    let replaced = false;
+    return content
+      .replace(new RegExp(V3_DIRECTIVES.source, 'g'), () => {
+        if (replaced) return '';
+        replaced = true;
+        return '@import "tailwindcss";';
+      })
+      /* Blank lines the removed directives left behind. */
+      .replace(/\n{3,}/g, '\n\n');
+  }
+
+  if (major > 0 && V4_ENTRY.test(content) && !new RegExp(V3_DIRECTIVES.source).test(content)) {
+    return content.replace(
+      V4_ENTRY,
+      '@tailwind base;\n@tailwind components;\n@tailwind utilities;',
+    );
+  }
+
+  return content;
 }
 
 function addTailwindEntry(content: string, version: string): string {
@@ -153,12 +217,20 @@ export function repairGlobalStyles(files: readonly GeneratedFile[]): readonly Ge
   const manifest = packageManifest(files);
   const tailwindVersion = dependencyVersion(manifest, 'tailwindcss');
   const tailwindMajor = Number(/\d+/.exec(tailwindVersion)?.[0] ?? 0);
-  const missingTailwindEntry = tailwindStylesProblem(files) !== undefined;
+  const stylesheetsForEntry = files.filter((file) =>
+    /(?:^|\/)(?:globals|index)\.css$/.test(file.path),
+  );
+  const missingTailwindEntry = !stylesheetsForEntry.some(
+    (file) =>
+      new RegExp(V3_DIRECTIVES.source).test(file.content) || V4_ENTRY.test(file.content),
+  );
   const tailwindStylesheet = files.find((file) => /(?:^|\/)(?:globals|index)\.css$/.test(file.path));
   let repaired = files.map((file) => {
     let content = /\.css$/i.test(file.path) ? hoistCssImports(file.content) : file.content;
-    if (file.path === tailwindStylesheet?.path && tailwindVersion && missingTailwindEntry) {
-      content = addTailwindEntry(content, tailwindVersion);
+    if (file.path === tailwindStylesheet?.path && tailwindVersion) {
+      content = missingTailwindEntry
+        ? addTailwindEntry(content, tailwindVersion)
+        : reconcileTailwindEntry(content, tailwindMajor);
     }
     if (
       tailwindMajor > 0 &&
