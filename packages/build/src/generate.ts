@@ -806,6 +806,30 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
  * single message — "try describing the app in more detail" — was the wrong
  * advice for both.
  */
+/**
+ * What to say when every model Reklu tried has failed.
+ *
+ * Each individual failure ends in "try another model". That is sound advice
+ * for one refusal and actively misleading once four have been tried: the
+ * reader switches model, watches the same chain run again, and reads it as the
+ * same single model failing. Free endpoints are rate-limited and go down
+ * together, so an exhausted chain is the common case rather than the rare one.
+ *
+ * Naming the models is the point — it is the only way the message distinguishes
+ * itself from the single-failure one it would otherwise be mistaken for.
+ */
+export function describeExhaustedFallback(
+  attempted: readonly string[],
+  lastMessage: string,
+): string {
+  return (
+    `None of the ${attempted.length} models Reklu tried could generate this build ` +
+    `(${attempted.join(', ')}). The last said: ${lastMessage} ` +
+    'Free endpoints are often busy at the same time, so waiting a few minutes — or choosing a paid model — ' +
+    'is more likely to help than switching between free ones.'
+  );
+}
+
 export function describeEmptyGeneration(
   diagnostics: GenerationDiagnostics,
   rejected: number,

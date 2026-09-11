@@ -19,7 +19,12 @@ const getProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('@reklu/ai', () => ({ getProvider }));
 
-import { describeEmptyGeneration, generateFiles, incompleteFinalFile } from '../generate';
+import {
+  describeEmptyGeneration,
+  describeExhaustedFallback,
+  generateFiles,
+  incompleteFinalFile,
+} from '../generate';
 import type { GenerationDiagnostics } from '../generate';
 import type { BuildBrief } from '../brief';
 import { createDesignEngineV4, understandProduct } from '@reklu/design-intelligence';
@@ -411,5 +416,45 @@ describe('when the second attempt fails too', () => {
     await expect(
       generateFiles({ brief, prompt: 'build it', model, report: async () => {} }),
     ).resolves.toMatchObject({ files: [] });
+  });
+});
+
+describe('when every model has been tried', () => {
+  /**
+   * Each individual failure ends in "try another model". Sound for one
+   * refusal; misleading once Reklu has already tried four, because the reader
+   * switches model, watches the same chain run again, and reads it as the same
+   * single model failing.
+   *
+   * Free endpoints are rate-limited and go down together, so this is the
+   * common case rather than the rare one.
+   */
+  const attempted = [
+    'Nemotron 3 Ultra (free)',
+    'Laguna S 2.1 (free)',
+    'Inkling (free)',
+    'Nemotron 3.5 Lightning (free)',
+  ];
+
+  it('says how many were tried, and names them', () => {
+    const message = describeExhaustedFallback(attempted, 'The model returned an empty response.');
+
+    expect(message).toContain('4 models');
+    for (const name of attempted) expect(message).toContain(name);
+  });
+
+  it('keeps the last provider’s own sentence', () => {
+    // It is the only evidence of what actually went wrong.
+    expect(describeExhaustedFallback(attempted, 'Rate limit exceeded.')).toContain(
+      'Rate limit exceeded.',
+    );
+  });
+
+  it('does not repeat the advice that has already been taken', () => {
+    const message = describeExhaustedFallback(attempted, 'The model returned an empty response.');
+
+    // "Try another model" is what the caller just did four times.
+    expect(message).not.toMatch(/try another model/i);
+    expect(message).toMatch(/waiting a few minutes|paid model/i);
   });
 });

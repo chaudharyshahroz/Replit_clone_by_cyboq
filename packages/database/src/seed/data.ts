@@ -625,15 +625,22 @@ export const MODELS: readonly ModelSeed[] = [
   },
   {
     ...base,
-    key: 'openrouter-dots3-note-free',
+    key: 'openrouter-nemotron-lightning-free',
     providerKey: 'openrouter',
-    modelIdentifier: 'dots-studio/dots-3-note-preview:free',
-    displayName: 'Dots3 Note (free)',
+    modelIdentifier: 'nvidia/nemotron-3.5-lightning:free',
+    displayName: 'Nemotron 3.5 Lightning (free)',
+    /*
+     * Chosen from a family this account already generates with rather than on
+     * the spec sheet alone. The slot previously held a preview build from a
+     * studio with no track record here, picked on its output budget, and it
+     * returned empty responses — capacity numbers say nothing about whether a
+     * model answers.
+     */
     description:
-      'Free through OpenRouter. Reads images and answers in one long pass, so a multi-page site arrives in fewer turns.',
-    contextWindow: 512_000,
+      'Free through OpenRouter. A million tokens of context from the Nemotron family, which already serves this account.',
+    contextWindow: 1_000_000,
     maxOutputTokens: 32_000,
-    supportsVision: true,
+    supportsVision: false,
     supportsReasoning: true,
     speed: 'slow',
     costTier: 'economy',
@@ -698,7 +705,7 @@ export const PLANS: readonly PlanSeed[] = [
         'openrouter-inkling-free',
         'openrouter-north-mini-code-free',
         'openrouter-nemotron-super-free',
-        'openrouter-dots3-note-free',
+        'openrouter-nemotron-lightning-free',
         'bai-deepseek-v4-flash',
         'bai-deepseek-v4-flash-vision',
         'bai-glm-53-flash',

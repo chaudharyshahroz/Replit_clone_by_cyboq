@@ -29,6 +29,7 @@ import {
   genericityFindings,
   describeDirection,
   describeEmptyGeneration,
+  describeExhaustedFallback,
   generateFiles,
   isVisualTarget,
   instrumentForVisualSelection,
@@ -1130,6 +1131,8 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
     if (!mayFallback) throw error;
 
     const attempted = [model.key];
+    /* Names, not keys: this list is shown to a person if every model fails. */
+    const attemptedNames = [model.displayName];
     let lastError: unknown = error;
     let completed = false;
 
@@ -1141,6 +1144,7 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
       );
       if (!fallback) break;
       attempted.push(fallback.key);
+      attemptedNames.push(fallback.displayName);
       await recordStep({
         buildId,
         workspaceId: workspace.workspaceId,
@@ -1163,7 +1167,28 @@ async function runGeneration(buildId: string, request: BuildRequest): Promise<Ge
         if (!toRekluError(fallbackError).retryable) throw fallbackError;
       }
     }
-    if (!completed) throw lastError;
+    /*
+     * Say how many models were tried, not just which one failed last.
+     *
+     * Every one of these messages ends in "try another model", which is sound
+     * advice for a single failure and actively misleading once Reklu has
+     * already tried four: the reader changes the model, watches the same chain
+     * run again, and reads it as the same one model failing. Free endpoints go
+     * down together, so this is the common case, not the rare one.
+     */
+    if (!completed) {
+      if (attemptedNames.length > 1) {
+        const normalizedLast = toRekluError(lastError);
+        throw errors.providerError({
+          provider: model.providerKey,
+          model: model.modelIdentifier,
+          detail: normalizedLast.message,
+          userMessage: describeExhaustedFallback(attemptedNames, normalizedLast.userMessage),
+          retryable: true,
+        });
+      }
+      throw lastError;
+    }
   }
 
   if (!generated) throw errors.internal('Build generation returned no result.');
