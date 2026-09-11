@@ -20,6 +20,7 @@ import {
 import { sandbox, type SandboxHandle } from '@reklu/sandbox';
 import { errors, logger } from '@reklu/shared';
 import { briefToContext, type BuildBrief } from './brief';
+import { truncatedFiles, truncationOf } from './truncation';
 import { skillGuidanceFor } from './build-skills';
 import {
   chooseDirection,
@@ -437,7 +438,29 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
    * chain of preview repair calls. Complete that one file now, before the tree
    * is checkpointed or any sandbox is started.
    */
-  const incompletePath = finishReason === 'length' ? incompleteFinalFile(text) : undefined;
+  /*
+   * Ask the files, not the response around them.
+   *
+   * Truncation used to be inferred from an odd number of code fences and from
+   * `finishReason === 'length'`. Both lie: the fence count is even again the
+   * moment a model closes the fence it was cut off inside, and free providers
+   * routinely report `stop` after ending a stream early. When both missed, half
+   * a file went into the sandbox and the reader got a compiler error three
+   * layers from the cause — "Unexpected token `div`. Expected jsx identifier",
+   * naming an ordinary tag, which is what SWC says when an element never closes.
+   */
+  const structurallyTruncated = truncatedFiles(parsed.files);
+  const incompletePath =
+    (finishReason === 'length' ? incompleteFinalFile(text) : undefined) ??
+    structurallyTruncated[0]?.path;
+
+  if (structurallyTruncated.length > 0) {
+    logger.warn('Generated files stopped early', {
+      files: structurallyTruncated.map((entry) => `${entry.path} (${entry.reason})`),
+      finishReason,
+    });
+  }
+
   if (incompletePath && !options.signal?.aborted) {
     retried = true;
     const partial = parsed.files.find((file) => file.path === incompletePath);
@@ -470,7 +493,7 @@ export async function generateFiles(options: GenerateBuildOptions): Promise<Gene
     const replacement = completedResponse.parsed.files.find(
       (file) => file.path === incompletePath,
     );
-    if (!replacement || incompleteFinalFile(completedResponse.text)) {
+    if (!replacement || incompleteFinalFile(completedResponse.text) || truncationOf(replacement)) {
       throw errors.providerError({
         provider: options.model.providerKey,
         model: options.model.modelIdentifier,

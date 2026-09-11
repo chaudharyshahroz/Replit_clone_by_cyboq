@@ -1,4 +1,5 @@
 export * from './parse';
+export * from './truncation';
 export * from './versions';
 export * from './brief';
 export * from './generate';

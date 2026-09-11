@@ -458,3 +458,70 @@ describe('when every model has been tried', () => {
     expect(message).toMatch(/waiting a few minutes|paid model/i);
   });
 });
+
+describe('a file that stopped arriving', () => {
+  /**
+   * The provider said `stop`, the fence count was even, and half a file went
+   * into the sandbox. Next then reported "Unexpected token `div`. Expected jsx
+   * identifier" — naming an ordinary tag, three layers from the cause.
+   */
+  const TRUNCATED = [
+    '// src/app/page.tsx',
+    '```tsx',
+    'export default function HomePage() {',
+    '  return (',
+    '    <div className="min-h-screen">',
+    '      <Header />',
+    '```',
+  ].join('\n');
+
+  const WHOLE = [
+    '// src/app/page.tsx',
+    '```tsx',
+    'export default function HomePage() {',
+    '  return <div className="min-h-screen">done</div>;',
+    '}',
+    '```',
+  ].join('\n');
+
+  it('asks for the file again even when the provider claims it finished', () => {
+    responds([TRUNCATED], 'stop');
+    generate.mockResolvedValue({ text: WHOLE, finishReason: 'stop' });
+
+    return generateFiles({ brief, prompt: 'build it', model, report: async () => {} }).then(
+      (result) => {
+        expect(generate).toHaveBeenCalledTimes(1);
+        const asked = generate.mock.calls[0]?.[0] as { messages: { content: { text: string }[] }[] };
+        const last = asked.messages[asked.messages.length - 1]?.content[0]?.text ?? '';
+        expect(last).toContain('src/app/page.tsx');
+
+        // And the whole file is what survives, not the fragment.
+        expect(result.files[0]?.content).toContain('</div>');
+      },
+    );
+  });
+
+  it('does not ask again when every file is whole', async () => {
+    responds([WHOLE], 'stop');
+
+    const result = await generateFiles({
+      brief,
+      prompt: 'build it',
+      model,
+      report: async () => {},
+    });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(result.files).toHaveLength(1);
+  });
+
+  it('refuses a completion that is itself cut off', async () => {
+    // Shipping a second fragment would be the same failure with an extra call.
+    responds([TRUNCATED], 'stop');
+    generate.mockResolvedValue({ text: TRUNCATED, finishReason: 'stop' });
+
+    await expect(
+      generateFiles({ brief, prompt: 'build it', model, report: async () => {} }),
+    ).rejects.toThrow();
+  });
+});
