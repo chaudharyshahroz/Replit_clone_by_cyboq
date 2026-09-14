@@ -99,11 +99,23 @@ const config: NextConfig = {
     const previewDomain = process.env.SANDBOX_PREVIEW_DOMAIN?.trim();
     const previewFrameSrc = previewDomain ? ` https://*.${previewDomain}` : '';
 
+    /*
+     * 'unsafe-eval' in development only, never in production.
+     *
+     * It is the difference between an injected string and injected code, so
+     * production does not get it. But React's development build calls eval()
+     * to rebuild call stacks across environments, and without it every page in
+     * `next dev` opened with "eval() is not supported in this environment" —
+     * an error overlay on Reklu's own screens that had nothing to do with any
+     * change being worked on. React never uses eval() in a production build,
+     * so this costs production nothing.
+     */
+    const development = process.env.NODE_ENV === 'development';
+    const evalSource = development ? " 'unsafe-eval'" : '';
+
     const csp = [
       "default-src 'self'",
-      // 'unsafe-eval' is NOT granted: nothing in Reklu needs it, and it is the
-      // difference between an injected string and injected code.
-      "script-src 'self' 'unsafe-inline' https://js.whop.com",
+      `script-src 'self' 'unsafe-inline'${evalSource} https://js.whop.com`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",

@@ -10,9 +10,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import config from '../../next.config';
 
-async function cspFor(previewDomain?: string): Promise<string> {
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+
+async function cspFor(
+  previewDomain?: string,
+  nodeEnv: 'production' | 'development' = 'production',
+): Promise<string> {
   if (previewDomain) process.env.SANDBOX_PREVIEW_DOMAIN = previewDomain;
   else delete process.env.SANDBOX_PREVIEW_DOMAIN;
+  (process.env as Record<string, string | undefined>).NODE_ENV = nodeEnv;
 
   const headers = await config.headers!();
   const global = headers.find((entry) => entry.source === '/(.*)') ?? headers.at(-1)!;
@@ -23,6 +29,7 @@ async function cspFor(previewDomain?: string): Promise<string> {
 
 afterEach(() => {
   delete process.env.SANDBOX_PREVIEW_DOMAIN;
+  (process.env as Record<string, string | undefined>).NODE_ENV = ORIGINAL_NODE_ENV;
 });
 
 describe('framing build previews', () => {
@@ -51,8 +58,24 @@ describe('framing build previews', () => {
 
 describe('the rest of the policy', () => {
   /* The one that matters most: an injected string must not become code. */
-  it('never grants unsafe-eval', async () => {
-    expect(await cspFor('preview.reklu.app')).not.toContain('unsafe-eval');
+  it('never grants unsafe-eval in production', async () => {
+    expect(await cspFor('preview.reklu.app', 'production')).not.toContain('unsafe-eval');
+  });
+
+  it('grants unsafe-eval to the development server, where React needs it', async () => {
+    /*
+     * React's development build calls eval() to rebuild call stacks, so
+     * without this every page in `next dev` opened on an error overlay.
+     */
+    const scriptSrc =
+      (await cspFor(undefined, 'development')).split(';').find((part) => part.includes('script-src')) ?? '';
+    expect(scriptSrc).toContain("'unsafe-eval'");
+  });
+
+  it('grants it only to scripts, never anywhere else', async () => {
+    const csp = await cspFor(undefined, 'development');
+    const others = csp.split(';').filter((part) => !part.includes('script-src'));
+    expect(others.join(';')).not.toContain('unsafe-eval');
   });
 
   it('keeps scripts to Reklu and Whop', async () => {
