@@ -14,15 +14,25 @@ import { cancelPlanAction, resumePlanAction } from '@/app/(app)/settings/billing
  * Cancelling asks first. It is not destructive — nothing is deleted and the
  * period already paid for is kept — but it is a money decision that is annoying
  * to undo by hand, so it does not happen on a single stray click.
+ *
+ * When Whop refuses the request, the link to Whop appears. That is the opposite
+ * of the dark pattern above and is why it is shown only then: a cancellation
+ * that cannot go through here leaves somebody trying to stop paying with no way
+ * to do it, and the route that still works — the same page Whop gives them for
+ * the card — was sitting three sections up the page under "Payment method".
+ * Reklu's API key needing a scope is not their problem to be stuck behind.
  */
 export function CancelPlan({
   canManage,
   endsAt,
   scheduledToEnd,
+  manageUrl,
 }: {
   readonly canManage: boolean;
   readonly endsAt: string | null;
   readonly scheduledToEnd: boolean;
+  /** Whop's own page for this membership, where cancelling always works. */
+  readonly manageUrl: string | null;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -40,6 +50,18 @@ export function CancelPlan({
       </p>
     );
   }
+
+  const whopEscape =
+    failed ? (
+      <a
+        href={manageUrl ?? 'https://whop.com/orders'}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 inline-block text-xs text-accent underline-offset-4 hover:underline"
+      >
+        Cancel on Whop instead
+      </a>
+    ) : null;
 
   const run = (action: () => Promise<{ ok: boolean; message: string }>) =>
     start(async () => {
@@ -62,9 +84,12 @@ export function CancelPlan({
           Keep my plan
         </button>
         {message ? (
-          <p role="status" className={`text-xs ${failed ? 'text-danger' : 'text-text-muted'}`}>
-            {message}
-          </p>
+          <div>
+            <p role="status" className={`text-xs ${failed ? 'text-danger' : 'text-text-muted'}`}>
+              {message}
+            </p>
+            {whopEscape}
+          </div>
         ) : null}
       </div>
     );
@@ -81,9 +106,12 @@ export function CancelPlan({
           Cancel plan
         </button>
         {message ? (
-          <p role="status" className={`text-xs ${failed ? 'text-danger' : 'text-text-muted'}`}>
-            {message}
-          </p>
+          <div>
+            <p role="status" className={`text-xs ${failed ? 'text-danger' : 'text-text-muted'}`}>
+              {message}
+            </p>
+            {whopEscape}
+          </div>
         ) : null}
       </div>
     );
@@ -132,9 +160,12 @@ export function CancelPlan({
       </div>
 
       {message ? (
-        <p role="alert" className={`mt-3 text-xs ${failed ? 'text-danger' : 'text-text-muted'}`}>
-          {message}
-        </p>
+        <div className="mt-3">
+          <p role="alert" className={`text-xs ${failed ? 'text-danger' : 'text-text-muted'}`}>
+            {message}
+          </p>
+          {whopEscape}
+        </div>
       ) : null}
     </div>
   );

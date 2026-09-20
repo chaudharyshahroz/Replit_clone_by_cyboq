@@ -204,6 +204,7 @@ export default async function BillingPage({
               canManage={workspace.role === 'owner' || workspace.role === 'admin'}
               endsAt={endsAt}
               scheduledToEnd={renewal.scheduledToEnd}
+              manageUrl={renewal.manageUrl ?? null}
             />
           </div>
         ) : null}
