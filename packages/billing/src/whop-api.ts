@@ -191,6 +191,27 @@ function rows(payload: Json | undefined): Json[] {
   return Array.isArray(data) ? (data.filter((row) => row && typeof row === 'object') as Json[]) : [];
 }
 
+/**
+ * Every way Whop says a membership is set to stop renewing.
+ *
+ * `cancel_at_period_end` is the documented field and is read first. The rest
+ * are read because a cancellation is not applied the instant it is accepted —
+ * Whop sends `membership.cancel_at_period_end_changed` as a webhook, which is
+ * only worth sending if the change lands after the response does. Reading the
+ * one boolean out of that response therefore called a scheduled cancellation a
+ * failure, and told the customer to go and check their account.
+ *
+ * `=== true` is not enough on its own either: this API has returned booleans as
+ * strings before, which is why the payment amount below reads four field names.
+ */
+function endsAtPeriodEnd(row: Json): boolean {
+  if (row.cancel_at_period_end === true || row.cancel_at_period_end === 'true') return true;
+  if (str(row.status) === 'canceling') return true;
+  if (str(row.cancelation_status) === 'canceling') return true;
+  /* Set when a cancellation was initiated, whatever mode it was given. */
+  return date(row.canceled_at) !== undefined;
+}
+
 function toMembership(row: Json): WhopMembership | undefined {
   const id = str(row.id);
   if (!id) return undefined;
@@ -202,7 +223,7 @@ function toMembership(row: Json): WhopMembership | undefined {
     checkoutConfigurationId: str(row.checkout_configuration_id),
     planId: str(plan.id) ?? str(row.plan_id),
     renewalPeriodEnd: date(row.renewal_period_end),
-    cancelAtPeriodEnd: row.cancel_at_period_end === true,
+    cancelAtPeriodEnd: endsAtPeriodEnd(row),
     manageUrl: str(row.manage_url),
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
   };
@@ -390,6 +411,29 @@ export async function cancelMembership(params: {
     params.apiKey,
     `/memberships/${encodeURIComponent(params.membershipId)}/cancel`,
     { cancellation_mode: 'at_period_end' },
+  );
+
+  return {
+    membership: result.payload ? toMembership(result.payload) : undefined,
+    failure: result.failure,
+  };
+}
+
+/**
+ * Read one membership back, for confirming a write actually landed.
+ *
+ * Separate from the list read because this is asked right after a cancellation,
+ * about one known id, and the list is capped at the most recent fifty — a
+ * long-standing customer's membership need not be among them.
+ */
+export async function getMembership(params: {
+  readonly apiKey: string;
+  readonly membershipId: string;
+}): Promise<{ readonly membership: WhopMembership | undefined; readonly failure: WhopFailure | undefined }> {
+  const result = await get(
+    params.apiKey,
+    `/memberships/${encodeURIComponent(params.membershipId)}`,
+    {},
   );
 
   return {

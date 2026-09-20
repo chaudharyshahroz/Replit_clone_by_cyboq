@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   REQUIRED_SCOPES,
   cancelMembership,
+  getMembership,
   grantsAccess,
   listMemberships,
   listPayments,
@@ -371,5 +372,90 @@ describe('resuming a membership', () => {
     respond({ error: 'forbidden' }, 403);
     const { failure } = await resumeMembership({ apiKey: 'k', membershipId: 'mem_1' });
     expect(failure?.detail).toContain('member:manage');
+  });
+});
+
+/**
+ * A cancellation Whop has accepted but not yet applied.
+ *
+ * Whop publishes `membership.cancel_at_period_end_changed` as a webhook, which
+ * would be pointless if the change were always finished by the time the
+ * response came back. Reading the one boolean out of that response called a
+ * scheduled cancellation a failure and told the customer to go and check their
+ * own account — while the cancellation went through.
+ *
+ * Every field below is from Whop's membership reference.
+ */
+describe('the ways Whop says a membership is ending', () => {
+  function respondWith(row: Record<string, unknown>) {
+    globalThis.fetch = vi.fn(
+      async () => new Response(JSON.stringify(row), { status: 200 }),
+    ) as unknown as typeof fetch;
+  }
+
+  const base = { id: 'mem_abc123', status: 'active', plan: { id: 'plan_xyz' }, metadata: {} };
+
+  it('reads the documented boolean', async () => {
+    respondWith({ ...base, cancel_at_period_end: true });
+    const { membership } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('accepts the boolean sent as a string', async () => {
+    /* This API has returned booleans as strings before; `=== true` misses it. */
+    respondWith({ ...base, cancel_at_period_end: 'true' });
+    const { membership } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('reads the canceling status', async () => {
+    respondWith({ ...base, status: 'canceling', cancel_at_period_end: false });
+    const { membership } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('reads the separate cancelation_status field', async () => {
+    respondWith({ ...base, cancelation_status: 'canceling' });
+    const { membership } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('reads a recorded cancellation timestamp', async () => {
+    respondWith({ ...base, canceled_at: '2026-09-20T10:00:00.000Z' });
+    const { membership } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('still reports a membership that is plainly renewing', async () => {
+    /*
+     * The safety rule this module exists for: never report a cancellation that
+     * did not happen, or somebody stops expecting a charge that is still due.
+     */
+    respondWith({ ...base, cancel_at_period_end: false });
+    const { membership } = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(membership?.cancelAtPeriodEnd).toBe(false);
+
+    respondWith({ ...base, cancelation_status: 'won_back', canceled_at: null });
+    const second = await cancelMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+    expect(second.membership?.cancelAtPeriodEnd).toBe(false);
+  });
+});
+
+describe('reading one membership back', () => {
+  it('asks for that membership by id, not the whole list', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ ...MEMBERSHIP, cancel_at_period_end: true }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+
+    const { membership } = await getMembership({ apiKey: 'k', membershipId: 'mem_abc123' });
+
+    expect(urls[0]).toContain('/memberships/mem_abc123');
+    // The list read is capped at fifty; a long-standing customer need not be in it.
+    expect(urls[0]).not.toContain('first=');
+    expect(membership?.cancelAtPeriodEnd).toBe(true);
   });
 });

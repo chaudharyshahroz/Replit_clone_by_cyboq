@@ -18,7 +18,7 @@ import { eq } from 'drizzle-orm';
 import { db, subscriptions } from '@reklu/database';
 import { logger } from '@reklu/shared';
 import { billingConfig } from './config';
-import { cancelMembership, resumeMembership } from './whop-api';
+import { cancelMembership, getMembership, resumeMembership } from './whop-api';
 
 export interface ChangeResult {
   readonly ok: boolean;
@@ -98,21 +98,39 @@ export async function cancelWorkspacePlan(workspaceId: string): Promise<ChangeRe
    * Whop's own answer, not an assumption about it. If they report the
    * membership as still renewing, saying otherwise here would leave someone
    * expecting no charge and receiving one.
+   *
+   * Asked twice before believing that, though. Whop applies a cancellation
+   * after accepting it — they publish `membership.cancel_at_period_end_changed`
+   * as a webhook, which would be pointless if the change were always done by
+   * the time the response came back. Reading the response alone called a
+   * scheduled cancellation a failure and sent the customer off to check their
+   * account, while the cancellation went through.
    */
-  if (!membership.cancelAtPeriodEnd) {
+  let confirmed = membership;
+
+  if (!confirmed.cancelAtPeriodEnd) {
+    const reread = await getMembership({
+      apiKey: config.apiKey,
+      membershipId: current.membershipId,
+    });
+    if (reread.membership) confirmed = reread.membership;
+  }
+
+  if (!confirmed.cancelAtPeriodEnd) {
     logger.error('Whop accepted a cancellation but did not mark the membership', {
       workspaceId,
       membershipId: current.membershipId,
-      status: membership.status,
+      status: confirmed.status,
     });
     return {
       ok: false,
       message:
-        'Whop accepted the request but has not marked the subscription as ending. Please check your Whop account before assuming it is cancelled.',
+        'Whop accepted the cancellation but has not applied it yet. It often lands a moment later — reload this page shortly, and if it still shows as renewing, cancel it on Whop.',
     };
   }
 
-  const endsAt = membership.renewalPeriodEnd ?? current.periodEnd ?? undefined;
+  const membershipEnd = confirmed.renewalPeriodEnd ?? membership.renewalPeriodEnd;
+  const endsAt = membershipEnd ?? current.periodEnd ?? undefined;
 
   await db
     .update(subscriptions)
